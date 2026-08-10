@@ -1,0 +1,34 @@
+[Unit]
+Description=Terminal Assistant
+Documentation=file://@@PROJECT_DIR@@/README.md
+
+# Estas duas moram em [Unit], não em [Service]. Postas em [Service] o systemd as
+# ignora com um aviso discreto no journal, e o limite de reinício simplesmente
+# não existe.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# É um user unit de propósito, não system. O daemon precisa do barramento de
+# sessão do usuário para três coisas: notificação de desktop, gsettings da
+# Lighter, e o Evolution Data Server da agenda. Um serviço de sistema não
+# alcançaria nenhuma delas.
+
+[Service]
+Type=simple
+WorkingDirectory=@@PROJECT_DIR@@
+
+# Segredos vêm daqui, nunca do repositório. O `-` faz o systemd tolerar o arquivo
+# ausente: sem ele, um .env que não existe impede o serviço de subir, e a captura
+# de notas não depende de segredo nenhum.
+EnvironmentFile=-@@PROJECT_DIR@@/.env
+
+ExecStart=@@PROJECT_DIR@@/.venv/bin/python -m ta.daemon
+
+Restart=on-failure
+RestartSec=3
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

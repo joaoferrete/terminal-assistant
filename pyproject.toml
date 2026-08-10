@@ -1,0 +1,44 @@
+[project]
+name = "terminal-assistant"
+version = "0.1.0"
+description = "Assistente pessoal de terminal: casa inteligente e notas, sob um motor de gatilhos"
+requires-python = ">=3.12,<3.13"
+
+# 3.12 é o Python do sistema, e o pin é intencional: PyGObject (`gi`) só existe
+# em /usr/bin/python3, e é ele quem fala com o Evolution Data Server.
+# Ver docs/adr/0005-python-do-sistema-por-causa-do-pygobject.md
+
+dependencies = [
+    "starlette>=0.40",
+    "uvicorn>=0.30",
+    "httpx>=0.27",
+    "pydantic>=2.8",
+    "google-genai>=0.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "ruff>=0.6"]
+
+[project.scripts]
+ta = "ta.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ta = ["web/*.html", "web/static/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

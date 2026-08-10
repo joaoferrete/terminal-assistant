@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mural — Terminal Assistant</title>
+<style>
+  :root {
+    --bg: #f2f0eb; --grid: #e3e0d8; --fg: #2a2723; --muted: #6f6a61;
+    --line: #d6d2c8; --panel: #fbfaf7; --accent: #b4531f; --shadow: rgba(0,0,0,.16);
+    --col: #eae7e0; --ink: #2a2723;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16181b; --grid: #1d2024; --fg: #e8e4dc; --muted: #9a948a;
+      --line: #2c3035; --panel: #1d2024; --shadow: rgba(0,0,0,.5); --col: #1b1e22;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+  body.view-geral {
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  /* ── Cabeçalho ───────────────────────────────────────────────────────── */
+  header {
+    position: sticky; top: 0; z-index: 30;
+    display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
+    padding: .6rem 1rem; background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  header h1 { font-size: 1rem; margin: 0; font-weight: 650; flex: 0 0 auto; }
+  /* flex:0 0 auto + nowrap: sem isso o input cresce e corta o que vem depois. */
+  header .count, header .hint { flex: 0 0 auto; white-space: nowrap; color: var(--muted); font-size: .85rem; }
+  header .count { font-variant-numeric: tabular-nums; }
+  #capture {
+    flex: 1 1 12rem; min-width: 0; padding: .45rem .7rem;
+    background: var(--bg); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 7px; font: inherit;
+  }
+  #capture:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  .views { display: flex; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .views button {
+    border: 0; background: transparent; color: var(--muted);
+    padding: .4rem .7rem; font: inherit; font-size: .85rem; cursor: pointer;
+  }
+  .views button + button { border-left: 1px solid var(--line); }
+  /* Encolhe antes de empurrar o contador para fora: com três seletores o
+     cabeçalho passou a estourar em telas de ~1200px, e o contador era o
+     primeiro a ser cortado. `min-width: 0` é o que permite o encolhimento. */
+  .filtros { display: flex; gap: .3rem; flex: 0 1 auto; min-width: 0; }
+  .filtros select {
+    font: inherit; font-size: .8rem; padding: .28rem .4rem; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+    min-width: 0; max-width: 9rem;
+  }
+  /* Filtro ativo fica visível: sem isto, "não tem nota" e "o filtro esconde
+     tudo" são indistinguíveis — e o segundo é o que assusta. */
+  .filtros select.ativo { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(0,0,0,.06); }
+  .acao {
+    font: inherit; font-size: .8rem; padding: .3rem .55rem; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+    cursor: pointer; flex: 0 0 auto; white-space: nowrap;
+  }
+  /* Estado "confirmar?": vermelho, porque a ação custa chamadas de modelo e
+     reescreve etiqueta de tudo. O segundo clique é o que executa. */
+  .acao[data-armado="1"] { border-color: #c0392b; color: #c0392b; font-weight: 650; }
+  .acao:disabled { opacity: .55; cursor: default; }
+  /* Só existe na lixeira, e é a única ação do app sem volta: nasce vermelha em
+     vez de ficar vermelha só quando armada. */
+  .acao.perigo { border-color: #c0392b; color: #ffc4bb; background: transparent; }
+  .acao.perigo[data-armado="1"] { background: #c0392b; color: #fff; font-weight: 700; }
+  .views button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+  /* ── Post-it (compartilhado pelas três visões) ───────────────────────── */
+  .note {
+    background: var(--note-bg, #ffe9a8); color: var(--ink);
+    border-radius: 3px; box-shadow: 0 3px 10px var(--shadow);
+    /* O padding de baixo reserva espaço para a barra, que é absoluta e agora
+       pode ocupar duas linhas. Sem isto ela subiria por cima do texto. */
+    padding: .7rem .8rem 3.1rem; position: relative;
+  }
+  .note .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .note .meta { margin-top: .4rem; font-size: .74rem; color: #6b5f3e; display: flex; flex-wrap: wrap; gap: .3rem; }
+  .note .meta span { background: rgba(0,0,0,.07); padding: .05rem .35rem; border-radius: 3px; }
+  .note .meta .overdue { background: #c0392b; color: #fff; }
+  .note.terminal { opacity: .55; }
+  .note.st-done .text { text-decoration: line-through; }
+  .note.st-cancelled .text { text-decoration: line-through; text-decoration-style: wavy; }
+
+  /* `flex-wrap` é obrigatório aqui: o seletor de estado sozinho come 110 dos
+     222px disponíveis, e o conteúdo da barra precisava de 260px. Sem quebrar
+     linha, o excedente ESCAPAVA para fora do card — a barra é `absolute` com
+     `left`/`right` fixos, então não corta, transborda. Primeiro o `#id`, e
+     depois de eu mover o `×` para o fim, o próprio botão de apagar. */
+  .note .bar {
+    position: absolute; left: .55rem; right: .55rem; bottom: .45rem;
+    display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; row-gap: .25rem;
+  }
+  .note button, .note select {
+    border: 0; background: rgba(0,0,0,.09); color: var(--ink);
+    border-radius: 4px; cursor: pointer; font: inherit; font-size: .74rem; padding: .1rem .3rem;
+  }
+  .note button:hover { background: rgba(0,0,0,.18); }
+  /* nowrap: a paleta é uma unidade visual, e partir ela ao meio confunde. */
+  .note .cores { display: flex; align-items: center; gap: .3rem; flex: 0 0 auto; flex-wrap: nowrap; }
+  .swatch { width: 13px; height: 13px; border-radius: 50%; border: 1px solid rgba(0,0,0,.25); padding: 0; }
+  .swatch.auto { font-size: 8px; line-height: 1; font-weight: 700; color: rgba(0,0,0,.5);
+                 border-style: dashed; margin-right: .15rem; }
+  /* A cor ativa é a do próprio post-it, então o swatch dela some no fundo. */
+  .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px rgba(0,0,0,.55); }
+  .note .id { margin-left: auto; color: #6b5f3e; font-size: .7rem; flex: 0 0 auto; }
+  .note .del {
+    border: 0; background: transparent; color: #6b5f3e; cursor: pointer;
+    font-size: .95rem; line-height: 1; padding: 0 .2rem; opacity: .45;
+    margin-left: .3rem; flex: 0 0 auto;
+  }
+  .note .del:hover { opacity: 1; color: #c0392b; }
+  /* Armado: vermelho e legível, porque o próximo clique apaga de verdade. */
+  .note .del[data-armado="1"] {
+    opacity: 1; color: #c0392b; font-weight: 700; font-size: .7rem;
+    border: 1px solid #c0392b; border-radius: 5px; padding: .1rem .25rem;
+  }
+  /* Faixa no topo deixa óbvio que este mural não é o normal — sem ela, a
+     lixeira parece o mural vazio e assusta. Os tons claros aqui são obrigatórios:
+     na primeira versão o título ficou escuro sobre escuro e sumiu. */
+  body.lixeira header { background: #4a3b3b; }
+  body.lixeira header h1 { color: #ffe9e4; }
+  body.lixeira header h1::after { content: " · lixeira"; color: #ffb4a8; }
+  body.lixeira header .count { color: #d8c4c0; }
+  /* Restaurar é a ação principal desta tela, então não fica escondida como o
+     `×` fica no mural. */
+  body.lixeira .note .del { opacity: 1; font-size: 1.05rem; font-weight: 700; }
+  body.lixeira .note .del:hover { color: #1e7a3c; }
+
+  /* ── Visão geral: posição livre ──────────────────────────────────────── */
+  #board.geral { position: relative; min-height: calc(100vh - 4rem); padding: 1rem; }
+  #board.geral .note { position: absolute; width: 15rem; min-height: 6.6rem; cursor: grab; transform: rotate(var(--tilt, -.4deg)); transition: box-shadow .15s, transform .15s; }
+  #board.geral .note:hover { box-shadow: 0 6px 18px var(--shadow); }
+  #board.geral .note.dragging { cursor: grabbing; z-index: 50; transform: rotate(0) scale(1.02); }
+
+  /* ── Visão lista ─────────────────────────────────────────────────────── */
+  #board.lista { display: flex; flex-direction: column; gap: .5rem; padding: 1rem; max-width: 56rem; margin: 0 auto; }
+  /* Posição explícita para os três filhos: deixar qualquer um por auto-placement
+     faz a barra cair na coluna 1 e empurrar o texto para baixo. */
+  #board.lista .note { padding: .55rem .7rem; display: grid; grid-template-columns: 1fr auto; gap: .2rem .8rem; }
+  #board.lista .note .text { grid-column: 1; grid-row: 1; }
+  #board.lista .note .meta { grid-column: 1; grid-row: 2; margin-top: 0; }
+  #board.lista .note .bar {
+    position: static; left: auto; right: auto; bottom: auto;
+    grid-column: 2; grid-row: 1 / span 2; align-self: center;
+  }
+  /* Prioridade como borda colorida, não como texto. A primeira versão usava
+     writing-mode vertical e ficava um borrão de três letras ilegível — e
+     redundante, porque a prioridade já aparece como chip no meta. */
+  #board.lista .note { border-left: 4px solid var(--prio-color, transparent); }
+  #board.lista .note.p-alta  { --prio-color: #c0392b; }
+  #board.lista .note.p-media { --prio-color: #d68910; }
+  #board.lista .note.p-baixa { --prio-color: #7f8c8d; }
+  #board.lista .divider { color: var(--muted); font-size: .8rem; padding: .6rem 0 .1rem; border-top: 1px solid var(--line); }
+
+  /* ── Visão kanban ────────────────────────────────────────────────────── */
+  #board.kanban { display: flex; gap: .75rem; padding: 1rem; overflow-x: auto; align-items: flex-start; }
+  .col {
+    flex: 0 0 17rem; background: var(--col); border: 1px solid var(--line);
+    border-radius: 9px; padding: .6rem; min-height: 8rem;
+  }
+  .col.over { outline: 2px dashed var(--accent); outline-offset: -3px; }
+  .col h2 { font-size: .8rem; margin: 0 0 .5rem; color: var(--muted); font-weight: 650; display: flex; justify-content: space-between; }
+  .col .stack { display: flex; flex-direction: column; gap: .5rem; min-height: 3rem; }
+  .col .note { cursor: grab; touch-action: none; }  /* touch-action: o navegador não rola durante o arraste */
+  .col .note.dragging { cursor: grabbing; box-shadow: 0 10px 26px var(--shadow); transform: scale(1.02); }
+
+  .empty { color: var(--muted); padding: 2rem 1rem; }
+  .erro {
+    margin: .6rem 1rem; padding: .6rem .8rem; border-radius: 7px;
+    background: #ffe1dc; color: #7a2018; border: 1px solid #c0392b;
+    font-size: .85rem; white-space: pre-line;
+  }
+
+  @media (max-width: 720px) {
+    /* Posição livre é hostil no celular: a visão geral cai para fluxo. */
+    #board.geral { display: flex; flex-direction: column; gap: .8rem; }
+    #board.geral .note { position: static !important; width: auto; cursor: default; transform: none; }
+  }
+</style>
+</head>
+<body class="view-geral">
+<header>
+  <h1>Mural</h1>
+  <div class="views" id="views">
+    <button data-view="geral">geral</button>
+    <button data-view="lista">lista</button>
+    <button data-view="kanban">kanban</button>
+  </div>
+  <div class="filtros">
+    <select id="fEixo" title="filtrar por área" aria-label="área">
+      <option value="">todas as áreas</option>
+      <option value="trabalho">trabalho</option>
+      <option value="pessoal">pessoal</option>
+    </select>
+    <select id="fTipo" title="filtrar por tipo" aria-label="tipo">
+      <option value="">todos os tipos</option>
+      <option value="tarefa">tarefa</option>
+      <option value="compromisso">compromisso</option>
+      <option value="anotacao">anotação</option>
+    </select>
+    <select id="fTag" title="filtrar por tag" aria-label="tag">
+      <option value="">todas as tags</option>
+    </select>
+  </div>
+  <input id="capture" placeholder='nota nova — ex: ligar dentista @sexta #saude !alta @@09:00'>
+  <button id="revisar" class="acao" title="pede à LLM para reetiquetar todas as notas abertas">
+    revisar tudo</button>
+  <button id="esvaziar" class="acao perigo" hidden
+    title="apaga em definitivo tudo que está na lixeira">esvaziar lixeira</button>
+  <span class="count" id="count"></span>
+  <label class="hint" id="doneToggle"><input type="checkbox" id="showDone"> concluídas</label>
+</header>
+
+<div id="board" class="geral"><div class="empty">carregando…</div></div>
+
+<script>
+// Paleta manual tirada do MESMO sistema das cores automáticas, para uma escolha
+// sua não parecer de outro app. Conferida em CIELAB: a menor distância entre
+// duas quaisquer é ΔE 10 — o par cinza-azulado/lilás ficava em 6,3 e o
+// cinza saiu.
+const PALETTE = [
+  "#ffe7a1",  // âmbar
+  "#ffc5b3",  // salmão
+  "#fbc1c4",  // rosa
+  "#d3ead8",  // menta
+  "#dcd8f0",  // lilás
+  "#efefe6",  // neutro
+];
+
+// Cor padrão por prioridade. Pastéis de propósito: o post-it tem tinta escura, e
+// os tons fortes da borda da visão em lista (#c0392b e cia) deixariam o texto
+// ilegível como fundo.
+const PRIO_BG = { alta: "#ffc4bb", media: "#ffe9a8", baixa: "#ccd9e0" };
+
+// Cor por eixo, para quando não há prioridade nem cor escolhida. Matizes bem
+// afastadas das de prioridade (vermelho / âmbar / cinza-azulado) para os dois
+// eixos não se confundirem: aqui é "de que área é", lá é "quão urgente é".
+const EIXO_BG = { trabalho: "#dcd8f0", pessoal: "#d3ead8" };
+const SEM_NADA_BG = "#efefe6";   // papel neutro: nada a dizer nem de área nem de urgência
+
+const AREAS = ["trabalho", "pessoal"];
+const TIPOS = ["tarefa", "compromisso", "anotacao"];
+const EIXOS = [...AREAS, ...TIPOS];
+
+const eixoDe = (n) => (n.tags || []).find(t => AREAS.includes(t)) || null;
+
+// Prioridade × área. A prioridade escolhe a família (vermelho / âmbar /
+// cinza-azulado) e a área desloca o tom dentro dela: trabalho puxa para o frio,
+// pessoal para o quente.
+//
+// Os seis valores são fixos e medidos, não derivados em tempo de execução. A
+// primeira versão misturava a cor de área na de prioridade com um peso único, e
+// não funcionou: as três bases têm saturações muito diferentes, então o mesmo
+// peso ficava imperceptível no cinza (ΔE 5,8) e exagerado no âmbar (ΔE 16 da
+// própria base). Girar o matiz teve o problema inverso. Estes pares foram
+// escolhidos e conferidos em CIELAB para ficarem entre ΔE 8 e 11 um do outro —
+// visíveis lado a lado, sem deixar de ser a mesma prioridade.
+const PRIO_AREA_BG = {
+  alta:  { trabalho: "#fbc1c4", pessoal: "#ffc5b3" },
+  media: { trabalho: "#f6e8b0", pessoal: "#ffe7a1" },
+  baixa: { trabalho: "#cfd5e4", pessoal: "#cadddb" },
+};
+
+/** A cor que a nota mostra, em ordem de precedência decrescente:
+ *
+ *  1. o que a sua mão escolheu
+ *  2. prioridade, com o **tom deslocado pela área** — prioridade escolhe a
+ *     família (vermelho/âmbar/cinza), área desloca o tom dentro dela. É o que
+ *     permite ver os dois eixos na mesma cor, em vez de um esconder o outro.
+ *  3. área sozinha, quando não há prioridade (o caso das anotações)
+ *  4. papel neutro
+ */
+const corDe = (n) => {
+  if (n.color) return n.color;
+  const area = eixoDe(n);
+  if (n.priority) {
+    const porArea = PRIO_AREA_BG[n.priority];
+    return (area && porArea?.[area]) || PRIO_BG[n.priority];
+  }
+  return EIXO_BG[area] || SEM_NADA_BG;
+};
+const STATUSES = ["todo", "doing", "hold", "done", "cancelled"];
+const LABEL = {
+  todo: "Não feito", doing: "Em andamento", hold: "Em hold",
+  done: "Concluída", cancelled: "Cancelada",
+};
+const PRIO_RANK = { alta: 0, media: 1, baixa: 2 };
+
+const boardEl = document.getElementById("board");
+const capture = document.getElementById("capture");
+const showDone = document.getElementById("showDone");
+const doneToggle = document.getElementById("doneToggle");
+const countEl = document.getElementById("count");
+const viewsEl = document.getElementById("views");
+const fEixo = document.getElementById("fEixo");
+const fTipo = document.getElementById("fTipo");
+const fTag = document.getElementById("fTag");
+const btnRevisar = document.getElementById("revisar");
+const btnEsvaziar = document.getElementById("esvaziar");
+
+// A visão sobrevive ao reload: voltar sempre para "geral" seria irritante.
+let view = localStorage.getItem("ta.view") || "geral";
+
+// Lixeira: ligada por `#lixeira` na URL, não por botão. Escondida de propósito —
+// é uma tela de recuperação, não parte do fluxo diário, e um botão permanente
+// para "ver o que apaguei" só ocuparia espaço no cabeçalho.
+let lixeira = location.hash === "#lixeira";
+window.addEventListener("hashchange", () => {
+  lixeira = location.hash === "#lixeira";
+  load();
+});
+let todas = [];      // o que veio da API
+let notes = [];      // o que os renderizadores desenham: `todas` já filtrado
+let fEixoV = localStorage.getItem("ta.filtro.eixo") || "";
+let fTipoV = localStorage.getItem("ta.filtro.tipo") || "";
+let fTagV = localStorage.getItem("ta.filtro.tag") || "";
+
+const api = async (method, path, body) => {
+  const r = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : null,
+  });
+  if (!r.ok) {
+    // 404 numa rota que este HTML conhece quer dizer daemon velho: o mural é
+    // servido com `no-store` e atualiza na hora, mas as rotas Python só depois
+    // de reiniciar. Aconteceu de verdade — o botão de esvaziar apareceu antes de
+    // o endpoint existir, e "falhou" não dizia nada.
+    if (r.status === 404) {
+      throw new Error(
+        `rota ${path} não existe neste daemon — ele está desatualizado.\n` +
+        `Rode: systemctl --user restart ta`
+      );
+    }
+    // Mensagem do servidor, quando houver: ela é escrita para ser lida.
+    let detalhe = "";
+    try { detalhe = (await r.json()).error || ""; } catch { /* sem corpo JSON */ }
+    throw new Error(detalhe || `${method} ${path} → ${r.status}`);
+  }
+  return r.json();
+};
+
+// Lista e kanban precisam das terminais: a lista as mostra no fim, e o kanban
+// tem colunas para elas. Só a visão geral respeita o checkbox.
+const wantsAll = () => view !== "geral" || showDone.checked;
+
+const load = async () => {
+  const q = lixeira ? "?deleted=1" : (wantsAll() ? "?done=1" : "");
+  todas = (await api("GET", `/notes${q}`)).notes;
+  aplicarFiltros();
+  render();
+};
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+const metaHTML = (n) => {
+  const bits = [];
+  if (n.roles.task) {
+    const late = n.due < today() && !n.terminal;
+    bits.push(`<span class="${late ? "overdue" : ""}">${late ? "vencida " : "prazo "}${n.due}</span>`);
+  }
+  if (n.roles.reminder) bits.push(`<span>lembra ${n.remind_at.slice(5, 16).replace("T", " ")}</span>`);
+  if (n.priority) bits.push(`<span>${n.priority}</span>`);
+  if (view !== "kanban" && n.status !== "todo") bits.push(`<span>${LABEL[n.status]}</span>`);
+  n.tags.forEach(t => bits.push(`<span>#${t}</span>`));
+  return bits.length ? `<div class="meta">${bits.join("")}</div>` : "";
+};
+
+/** Cria o elemento de um post-it. `extras` decide o que vai na barra inferior. */
+const noteEl = (n, { withStatusSelect = false, withSwatches = true } = {}) => {
+  const el = document.createElement("div");
+  el.className = `note st-${n.status}`
+    + (n.terminal ? " terminal" : "")
+    + (n.priority ? ` p-${n.priority}` : "");
+  el.dataset.id = n.id;
+  el.dataset.status = n.status;
+  el.style.setProperty("--note-bg", corDe(n));
+  el.style.setProperty("--tilt", ((n.id * 37) % 15 - 7) / 10 + "deg");
+
+  const select = withStatusSelect
+    ? `<select class="st" title="estado">${STATUSES.map(s =>
+        `<option value="${s}"${s === n.status ? " selected" : ""}>${LABEL[s]}</option>`).join("")}</select>`
+    : "";
+  // O botão "auto" limpa a cor manual e devolve a nota ao padrão da prioridade.
+  // Sem ele, um clique errado prenderia a cor para sempre.
+  const auto = `<button class="swatch auto" data-color="" title="cor automática (pela prioridade)"
+      style="background:${corDe({ ...n, color: null })}"
+      aria-pressed="${!n.color}">A</button>`;
+  // Os swatches vão num grupo que não quebra internamente: sem isto a barra
+  // partia no meio da paleta e sobrava um swatch órfão na segunda linha.
+  const swatches = withSwatches
+    ? `<span class="cores">` + auto
+      + PALETTE.map(c => `<button class="swatch" data-color="${c}" style="background:${c}" title="${c}"
+        aria-pressed="${n.color === c}"></button>`).join("")
+      + `</span>`
+    : "";
+
+  // `×` para apagar, ou `↩` na lixeira. Último item da barra, depois do número:
+  // é o canto mais longe do texto e do seletor de estado, e apagar por engano é
+  // o risco que a posição tem que reduzir.
+  const acao = lixeira
+    ? `<button class="del" title="restaurar" data-restore="1">↩</button>`
+    : `<button class="del" title="apagar (reversível)">×</button>`;
+
+  el.innerHTML = `
+    <div class="text"></div>
+    ${metaHTML(n)}
+    <div class="bar">${select}${swatches}<span class="id">#${n.id}</span>${acao}</div>`;
+  // textContent, nunca innerHTML: o texto da nota é entrada do usuário.
+  el.querySelector(".text").textContent = n.text;
+
+  const del = el.querySelector(".del");
+  if (del) {
+    // Restaurar é inócuo e vai direto. Apagar pede dois cliques: o primeiro
+    // troca o `×` por `apagar?` e volta sozinho em 4s. Mesma escolha do
+    // "revisar tudo" — sem `confirm()`, que trava a página e não é testável.
+    let armadoAte = 0;
+    const desarmar = () => {
+      del.dataset.armado = "0";
+      del.textContent = "×";
+      del.title = "apagar (reversível)";
+      armadoAte = 0;
+    };
+
+    del.onclick = async (e) => {
+      e.stopPropagation();
+      if (del.dataset.restore) {
+        await api("POST", `/notes/${n.id}/restore`);
+        await load();
+        return;
+      }
+      if (Date.now() > armadoAte) {
+        del.dataset.armado = "1";
+        del.textContent = "apagar?";
+        del.title = "clique de novo para apagar";
+        armadoAte = Date.now() + 4000;
+        setTimeout(() => { if (Date.now() > armadoAte) desarmar(); }, 4050);
+        return;
+      }
+      await api("DELETE", `/notes/${n.id}`);
+      await load();
+    };
+    del.onpointerdown = (e) => e.stopPropagation();   // não arrasta
+  }
+
+  el.querySelectorAll(".swatch").forEach(s => {
+    s.onclick = async (e) => {
+      e.stopPropagation();
+      await api("POST", `/notes/${n.id}/move`, { color: s.dataset.color });  // "" = automático
+      await load();
+    };
+  });
+  const sel = el.querySelector(".st");
+  if (sel) {
+    sel.onchange = async (e) => {
+      e.stopPropagation();
+      await api("POST", `/notes/${n.id}/status`, { status: sel.value });
+      await load();
+    };
+    sel.onpointerdown = (e) => e.stopPropagation();  // mexer no select não arrasta
+  }
+  return el;
+};
+
+// ── Visão geral ────────────────────────────────────────────────────────────
+const fallbackPos = (i) => {
+  const perRow = Math.max(1, Math.floor((boardEl.clientWidth - 32) / 272));
+  return { x: 16 + (i % perRow) * 272, y: 16 + Math.floor(i / perRow) * 170 };
+};
+
+const renderGeral = () => {
+  notes.forEach((n, i) => {
+    const el = noteEl(n, { withStatusSelect: true });
+    const p = n.pos ? { x: n.pos[0], y: n.pos[1] } : fallbackPos(i);
+    el.style.left = p.x + "px";
+    el.style.top = p.y + "px";
+    makeDraggable(el, n);
+    boardEl.appendChild(el);
+  });
+};
+
+const makeDraggable = (el, n) => {
+  el.addEventListener("pointerdown", (ev) => {
+    if (ev.target.closest("button, select")) return;
+    if (window.matchMedia("(max-width: 720px)").matches) return;
+    ev.preventDefault();
+    const rect = el.getBoundingClientRect(), boardRect = boardEl.getBoundingClientRect();
+    const dx = ev.clientX - rect.left, dy = ev.clientY - rect.top;
+    el.setPointerCapture(ev.pointerId);
+    el.classList.add("dragging");
+    const move = (e) => {
+      el.style.left = Math.max(0, e.clientX - boardRect.left - dx) + "px";
+      el.style.top = Math.max(0, e.clientY - boardRect.top - dy) + "px";
+    };
+    const up = async () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.classList.remove("dragging");
+      // Persistir aqui é o que faz a mão do usuário vencer o LLM (ADR 0003).
+      await api("POST", `/notes/${n.id}/move`, {
+        pos_x: Math.round(parseFloat(el.style.left)),
+        pos_y: Math.round(parseFloat(el.style.top)),
+      });
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+  });
+};
+
+// ── Visão lista ────────────────────────────────────────────────────────────
+const renderLista = () => {
+  const sorted = [...notes].sort((a, b) =>
+    (a.terminal - b.terminal) ||
+    ((PRIO_RANK[a.priority] ?? 3) - (PRIO_RANK[b.priority] ?? 3)) ||
+    ((a.due === null) - (b.due === null)) ||
+    String(a.due).localeCompare(String(b.due)) ||
+    (a.sort_key - b.sort_key));
+
+  let dividerPosto = false;
+  sorted.forEach(n => {
+    if (n.terminal && !dividerPosto) {
+      dividerPosto = true;
+      const d = document.createElement("div");
+      d.className = "divider";
+      d.textContent = "fora da fila";
+      boardEl.appendChild(d);
+    }
+    boardEl.appendChild(noteEl(n, { withStatusSelect: true, withSwatches: false }));
+  });
+};
+
+// ── Visão kanban ───────────────────────────────────────────────────────────
+// Arrastar entre colunas usa pointer events, NÃO a API de drag-and-drop do
+// HTML5. Dois motivos: a de HTML5 não funciona em toque nenhum, e o mural
+// precisa funcionar no celular; e ela exige o gesto nativo do navegador, o que a
+// torna intestável por automação.
+const renderKanban = () => {
+  const byStatus = Object.fromEntries(STATUSES.map(s => [s, []]));
+  notes.forEach(n => byStatus[n.status]?.push(n));
+
+  STATUSES.forEach(status => {
+    const col = document.createElement("section");
+    col.className = "col";
+    col.dataset.status = status;
+    col.innerHTML = `<h2>${LABEL[status]}<span>${byStatus[status].length}</span></h2><div class="stack"></div>`;
+    const stack = col.querySelector(".stack");
+    byStatus[status].forEach(n => {
+      const el = noteEl(n, { withStatusSelect: false });
+      makeColumnDraggable(el, n);
+      stack.appendChild(el);
+    });
+    boardEl.appendChild(col);
+  });
+};
+
+const makeColumnDraggable = (el, n) => {
+  el.addEventListener("pointerdown", (ev) => {
+    if (ev.target.closest("button, select")) return;
+    ev.preventDefault();
+    const rect = el.getBoundingClientRect();
+    const dx = ev.clientX - rect.left, dy = ev.clientY - rect.top;
+    const w = rect.width;
+    let alvo = null;
+
+    // Os retângulos das colunas são capturados uma vez, no início do arraste, e
+    // a coluna alvo sai de comparação de coordenadas — não de
+    // `document.elementFromPoint`. Isso evita depender de como o hit-testing se
+    // comporta debaixo de `setPointerCapture`, que é onde a primeira versão
+    // disto falhou silenciosamente.
+    const colRects = [...document.querySelectorAll(".col")].map(c => ({
+      el: c, status: c.dataset.status, r: c.getBoundingClientRect(),
+    }));
+    const colunaEm = (x, y) =>
+      colRects.find(({ r }) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) || null;
+
+    el.setPointerCapture(ev.pointerId);
+    el.classList.add("dragging");
+    Object.assign(el.style, {
+      position: "fixed", width: w + "px", zIndex: "100",
+      left: rect.left + "px", top: rect.top + "px",
+    });
+
+    const move = (e) => {
+      el.style.left = (e.clientX - dx) + "px";
+      el.style.top = (e.clientY - dy) + "px";
+      const hit = colunaEm(e.clientX, e.clientY);
+      if (hit?.el !== alvo?.el) {
+        alvo?.el.classList.remove("over");
+        alvo = hit;
+        alvo?.el.classList.add("over");
+      }
+    };
+
+    const up = async () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      alvo?.el.classList.remove("over");
+      const novo = alvo?.status;
+      if (novo && novo !== n.status) {
+        await api("POST", `/notes/${n.id}/status`, { status: novo });
+      }
+      await load();   // recarrega de qualquer forma: desfaz o estilo inline
+    };
+
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+  });
+};
+
+// ── Filtros ────────────────────────────────────────────────────────────────
+/** Repopula o seletor de tags com o que existe de fato nas notas.
+ *
+ * Só as tags presentes entram: um seletor com nove opções das quais sete não
+ * casam com nada é pior que nenhum. O eixo fica fora porque tem seletor próprio.
+ */
+const popularTags = () => {
+  const presentes = [...new Set(todas.flatMap(n => n.tags || []))]
+    .filter(x => !EIXOS.includes(x))     // área e tipo têm seletor próprio
+    .sort();
+  // Preserva uma seleção que não está mais presente, para o filtro não sumir
+  // silenciosamente sob o usuário enquanto ele lê a tela.
+  if (fTagV && !presentes.includes(fTagV)) presentes.push(fTagV);
+
+  // Montado pelo DOM, não por innerHTML: tag é texto do usuário, e a regra
+  // "nunca innerHTML para entrada do usuário" vale aqui como no post-it.
+  fTag.replaceChildren();
+  const todasOpt = new Option("todas as tags", "");
+  fTag.add(todasOpt);
+  presentes.forEach(x => fTag.add(new Option(`#${x}`, x)));
+  fTag.value = fTagV;
+  fTag.disabled = presentes.length === 0;
+};
+
+const aplicarFiltros = () => {
+  notes = todas.filter(n => {
+    const tags = n.tags || [];
+    return [fEixoV, fTipoV, fTagV].every(f => !f || tags.includes(f));
+  });
+  popularTags();
+  [[fEixo, fEixoV], [fTipo, fTipoV], [fTag, fTagV]].forEach(([el, v]) => {
+    el.value = v;
+    el.classList.toggle("ativo", !!v);
+  });
+  render();
+};
+
+const FILTROS = [[fEixo, "eixo"], [fTipo, "tipo"], [fTag, "tag"]];
+
+FILTROS.forEach(([el, chave]) => {
+  el.addEventListener("change", () => {
+    if (chave === "eixo") fEixoV = el.value;
+    else if (chave === "tipo") fTipoV = el.value;
+    else fTagV = el.value;
+    localStorage.setItem(`ta.filtro.${chave}`, el.value);
+    aplicarFiltros();
+  });
+});
+
+const limparFiltros = () => {
+  fEixoV = fTipoV = fTagV = "";
+  FILTROS.forEach(([, chave]) => localStorage.removeItem(`ta.filtro.${chave}`));
+  aplicarFiltros();
+};
+
+// ── Revisar tudo ───────────────────────────────────────────────────────────
+// Duplo check por botão, não por `confirm()`: um diálogo modal do navegador
+// travaria a página e não é automatizável em teste. Aqui o primeiro clique arma,
+// e some sozinho em 4s se você mudar de ideia.
+let armadoAte = 0;
+// 6s, não 4: você clica, LÊ "confirmar? reetiqueta tudo", e decide. Quatro
+// segundos desarmavam antes de a pessoa terminar de ler.
+const RESET_ARMADO_MS = 6000;
+
+const desarmar = () => {
+  btnRevisar.dataset.armado = "0";
+  btnRevisar.textContent = "revisar tudo";
+  armadoAte = 0;
+};
+
+btnRevisar.addEventListener("click", async () => {
+  if (Date.now() > armadoAte) {
+    btnRevisar.dataset.armado = "1";
+    btnRevisar.textContent = "confirmar? reetiqueta tudo";
+    armadoAte = Date.now() + RESET_ARMADO_MS;
+    setTimeout(() => { if (Date.now() > armadoAte) desarmar(); }, RESET_ARMADO_MS + 50);
+    return;
+  }
+
+  desarmar();
+  btnRevisar.disabled = true;
+  btnRevisar.textContent = "enfileirando…";
+  try {
+    const r = await api("POST", "/review-all");
+    btnRevisar.textContent = `${r.queued} na fila…`;
+    acompanharRevisao();
+  } catch (e) {
+    btnRevisar.textContent = "falhou";
+    boardEl.insertAdjacentHTML("afterbegin", `<div class="erro"></div>`);
+    boardEl.firstChild.textContent = e.message;
+    setTimeout(() => { btnRevisar.disabled = false; desarmar(); }, 2500);
+  }
+});
+
+/** Acompanha a fila drenando e recarrega quando acaba. */
+const acompanharRevisao = async () => {
+  for (let i = 0; i < 240; i++) {          // teto de ~8 min, não laço infinito
+    await new Promise(r => setTimeout(r, 2000));
+    let s;
+    try { s = await api("GET", "/review-status"); } catch { break; }
+    btnRevisar.textContent = s.pending ? `${s.pending} na fila…` : "revisar tudo";
+    await load();
+    if (!s.pending && !s.running) break;
+  }
+  btnRevisar.disabled = false;
+  desarmar();
+};
+
+// ── Esvaziar a lixeira ─────────────────────────────────────────────────────
+// Duplo check como as outras duas ações destrutivas, e com janela maior: esta é
+// a única do app que não tem volta nenhuma.
+let esvaziarAte = 0;
+const RESET_ESVAZIAR_MS = 8000;
+
+const desarmarEsvaziar = () => {
+  btnEsvaziar.dataset.armado = "0";
+  btnEsvaziar.textContent = "esvaziar lixeira";
+  esvaziarAte = 0;
+};
+
+btnEsvaziar.addEventListener("click", async () => {
+  if (Date.now() > esvaziarAte) {
+    btnEsvaziar.dataset.armado = "1";
+    btnEsvaziar.textContent = `apagar ${todas.length} para sempre?`;
+    esvaziarAte = Date.now() + RESET_ESVAZIAR_MS;
+    setTimeout(() => { if (Date.now() > esvaziarAte) desarmarEsvaziar(); },
+               RESET_ESVAZIAR_MS + 50);
+    return;
+  }
+  desarmarEsvaziar();
+  btnEsvaziar.disabled = true;
+  try {
+    const r = await api("DELETE", "/trash", { confirmed: true });
+    btnEsvaziar.textContent = `${r.purged} apagada(s)`;
+    await load();
+  } catch (e) {
+    btnEsvaziar.textContent = "falhou";
+    // O motivo vai para a tela, não só para o console: quem clica é você.
+    boardEl.insertAdjacentHTML("afterbegin",
+      `<div class="erro"></div>`);
+    boardEl.firstChild.textContent = e.message;
+  }
+  setTimeout(() => { btnEsvaziar.disabled = false; desarmarEsvaziar(); }, 2000);
+});
+
+// ── Auto-refresh ───────────────────────────────────────────────────────────
+// A revisão muda a nota alguns segundos depois da captura, e sem isto o mural
+// mostrava o resultado do regex até você apertar F5.
+const REFRESH_MS = 15000;
+
+setInterval(() => {
+  // Nunca recarrega no meio de um gesto ou de uma digitação: recarregar
+  // reconstrói o DOM e derrubaria o arraste ou apagaria o que está sendo escrito.
+  if (document.hidden) return;
+  if (document.querySelector(".note.dragging")) return;
+  if (document.activeElement === capture && capture.value.trim()) return;
+  if (btnRevisar.disabled) return;         // `acompanharRevisao` já recarrega
+  load().catch(() => {});                  // falha de rede não polui a tela
+}, REFRESH_MS);
+
+// ── Render ─────────────────────────────────────────────────────────────────
+const render = () => {
+  boardEl.className = view;
+  document.body.className = "view-" + view + (lixeira ? " lixeira" : "");
+  boardEl.innerHTML = "";
+  doneToggle.style.display = (view === "geral" && !lixeira) ? "" : "none";
+  btnRevisar.style.display = lixeira ? "none" : "";
+  // Só aparece na lixeira, e só quando há algo para esvaziar.
+  btnEsvaziar.hidden = !lixeira || !todas.length;
+  // Capturar dentro da lixeira criaria uma nota que você não veria: ela nasce
+  // viva e esta tela só mostra apagadas.
+  capture.disabled = lixeira;
+  capture.placeholder = lixeira
+    ? "na lixeira — `↩` restaura, ou volte ao mural para escrever"
+    : "nota nova — ex: ligar dentista @sexta #saude !alta @@09:00";
+  const filtrando = fEixoV || fTipoV || fTagV;
+  countEl.textContent = notes.length
+    ? (filtrando ? `${notes.length} de ${todas.length}` : `${notes.length} nota(s)`)
+    : "";
+  [...viewsEl.children].forEach(b => b.setAttribute("aria-pressed", b.dataset.view === view));
+
+  if (!notes.length && lixeira) {
+    boardEl.innerHTML = '<div class="empty">lixeira vazia. '
+      + '<a href="#">voltar ao mural</a></div>';
+    return;
+  }
+  if (!notes.length) {
+    // A mensagem tem que dizer QUAL dos dois vazios é este.
+    boardEl.innerHTML = todas.length
+      ? '<div class="empty">nenhuma nota passa pelo filtro. <button id="limpar">limpar filtros</button></div>'
+      : '<div class="empty">nada aqui. Escreva algo acima, ou use <code>ta note</code>.</div>';
+    const limpar = document.getElementById("limpar");
+    if (limpar) limpar.onclick = limparFiltros;
+    return;
+  }
+  ({ geral: renderGeral, lista: renderLista, kanban: renderKanban })[view]();
+};
+
+viewsEl.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-view]");
+  if (!b) return;
+  view = b.dataset.view;
+  localStorage.setItem("ta.view", view);
+  load();
+});
+
+capture.addEventListener("keydown", async (e) => {
+  if (e.key !== "Enter" || !capture.value.trim()) return;
+  const text = capture.value;
+  capture.value = "";
+  try {
+    await api("POST", "/notes", { text });
+    await load();
+  } catch (err) {
+    capture.value = text;   // não engolir o que a pessoa escreveu
+    alert("não deu para salvar: " + err.message);
+  }
+});
+
+showDone.addEventListener("change", load);
+load().catch(e => { boardEl.innerHTML = `<div class="empty">erro ao carregar: ${e.message}</div>`; });
+</script>
+</body>
+</html>
