@@ -568,7 +568,24 @@ async def reuniao_tarde(ctx):
 
 Os gatilhos disponíveis hoje: microfone entrando e saindo de uso, hora do dia,
 Reminder vencendo, e mudança de estado de qualquer entity do HA. As ações alcançam
-a casa, o ringlight, a agenda e as notificações.
+a casa, a agenda, as notificações e o **ringlight**.
+
+O ringlight é o [Lighter](https://github.com/joaoferrete/Lighter), extensão do
+GNOME que desenha bordas luminosas na tela para iluminar videochamada. Ela é
+comandada por `gsettings`, e uma Rule aplica um profile **pelo nome**:
+
+```python
+await ctx.lighter.apply_profile("Meet")
+```
+
+A divisão importa: a Rule diz *qual* profile, e a extensão sabe *como* ele é. A
+calibração assimétrica da sua webcam — topo 255, esquerda 250, base 160, direita 25 —
+mora lá, e duplicá-la numa Rule criaria uma segunda fonte de verdade.
+
+Aplicar profile de fora só passou a funcionar depois de um
+[PR na própria extensão](https://github.com/joaoferrete/Lighter/pull/3): a chave
+`active-profile` existia, mas só o processo de preferências a escutava, e só para
+atualizar a própria interface.
 
 **O guia completo, com referência de API e receitas prontas para copiar, está em
 [docs/automacoes.md](docs/automacoes.md).** As receitas dele são validadas por

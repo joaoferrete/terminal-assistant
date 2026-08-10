@@ -148,6 +148,9 @@ um bug real deste projeto.
 
 ### `ctx.lighter` — o ringlight
 
+O ringlight é o [Lighter](https://github.com/joaoferrete/Lighter), extensão do GNOME mantida no mesmo
+GitHub. O daemon a comanda por `gsettings`.
+
 ```python
 await ctx.lighter.apply_profile("Meet")   # por nome, nunca por uid
 await ctx.lighter.enable(False)
@@ -158,6 +161,11 @@ perfis = await ctx.lighter.profiles()
 A **calibração mora na extensão**, não aqui. A Rule diz *qual* profile; a Lighter
 sabe *como* ele é. Duplicar os 9 valores de borda numa Rule seria criar uma
 segunda fonte de verdade.
+
+Aplicar profile de fora não funcionava até um
+[PR na extensão](https://github.com/joaoferrete/Lighter/pull/3): a chave `active-profile` existia, mas só o
+processo de preferências a escutava, e só para atualizar a própria interface. Escrever
+a chave de fora não mudava nada na tela.
 
 ### `ctx.calendar` — a agenda
 
@@ -334,8 +342,14 @@ regra é contido.
 
 **Mudei a regra e nada mudou.** Falta o `systemctl --user restart ta`.
 
-**A regra de ringlight não aplica o profile.** No Wayland o GNOME Shell não
-recarrega extensão: precisa de logout/login depois de alterar a Lighter.
+**A regra de ringlight não aplica o profile.** Duas causas possíveis, nesta ordem:
+
+1. No Wayland o GNOME Shell não recarrega extensão, então **alterar o código** da
+   [Lighter](https://github.com/joaoferrete/Lighter) só vale depois de logout/login. Mudança de
+   *configuração* vale na hora.
+2. O *auto-switch* da própria extensão está ligado e sobrescreve o que a Rule fez no
+   próximo `notify::focus-window`. O daemon desliga essa chave ao subir, e a devolve
+   ao sair — se ele morreu de morte matada, a chave fica desligada.
 
 ## Os limites de hoje
 
