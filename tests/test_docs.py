@@ -15,7 +15,7 @@ from ta.actuators.notify import Notifier
 from ta.daemon import CalendarAdapter
 from ta.engine import Context, load_rules
 
-GUIA = Path(__file__).resolve().parents[1] / "docs" / "automacoes.md"
+GUIA = Path(__file__).resolve().parents[1] / "docs" / "automations.md"
 
 
 def blocos_python() -> list[str]:

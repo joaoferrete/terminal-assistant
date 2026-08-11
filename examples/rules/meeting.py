@@ -25,14 +25,14 @@ sem subir o daemon, e o daemon recarrega no restart.
 from ta.engine import after, mic_active, mic_inactive, rule
 
 # Apelido do inventário real da casa, conferido via API do HA.
-LUZ = "light.lampada_do_quarto"
-PROFILE_RINGLIGHT = "Meet"
+LIGHT = "light.bedroom_lamp"
+RINGLIGHT_PROFILE = "Meet"
 
-HORA_DE_ESCURECER = "16:00"
-NIVEL_DE_ESTAR = 40
+DARK_AFTER = "16:00"
+LIVING_LEVEL = 40
 
 
-def _ja_escureceu(ctx) -> bool:
+def _is_dark(ctx) -> bool:
     """Se `HORA_DE_ESCURECER` já passou.
 
     Um lugar só decide o que "16:00" quer dizer, e os dois usos leem daqui: ligar
@@ -43,10 +43,10 @@ def _ja_escureceu(ctx) -> bool:
     que atravessa as 16h conta como tarde na saída. Quem decide é a janela, não a
     agenda.
     """
-    return after(HORA_DE_ESCURECER)(ctx)
+    return after(DARK_AFTER)(ctx)
 
 
-async def _titulo_agora(ctx) -> str:
+async def _current_title(ctx) -> str:
     """O título do compromisso em curso, ou vazio.
 
     A agenda entra como contexto, não como gatilho (ADR 0008): ela diz QUAL
@@ -56,37 +56,37 @@ async def _titulo_agora(ctx) -> str:
     return (evento or {}).get("summary", "")
 
 
-def _sem_producao(titulo: str) -> bool:
+def _no_production(title: str) -> bool:
     """1:1 não precisa de produção.
 
     Exemplo de condição que só existe porque o app tem acesso à agenda além do
     sinal do microfone.
     """
-    return bool(titulo) and "1:1" in titulo
+    return bool(title) and "1:1" in title
 
 
-@rule(on=mic_active(), name="reuniao")
-async def reuniao(ctx):
+@rule(on=mic_active(), name="meeting")
+async def meeting(ctx):
     """Chamada com microfone ativo: luz sempre, ringlight só depois de escurecer."""
-    titulo = await _titulo_agora(ctx)
-    if _sem_producao(titulo):
+    title = await _current_title(ctx)
+    if _no_production(title):
         return
 
-    await ctx.home.light(LUZ, 100)
+    await ctx.home.light(LIGHT, 100)
 
-    escuro = _ja_escureceu(ctx)
-    if escuro:
-        await ctx.lighter.apply_profile(PROFILE_RINGLIGHT)
+    dark = _is_dark(ctx)
+    if dark:
+        await ctx.lighter.apply_profile(RINGLIGHT_PROFILE)
 
-    if titulo:
+    if title:
         # A notificação diz o que de fato aconteceu. Anunciar ringlight de manhã
         # seria mentira barata, e é assim que se deixa de confiar no aviso.
-        o_que = "luz e ringlight ligados" if escuro else "luz ligada"
-        await ctx.notify.send("Reunião", f"{titulo} — {o_que}", urgency="low")
+        what = "light and ringlight on" if dark else "light on"
+        await ctx.notify.send("Meeting", f"{title} — {what}", urgency="low")
 
 
-@rule(on=mic_inactive(), name="fim_da_reuniao")
-async def fim_da_reuniao(ctx):
+@rule(on=mic_inactive(), name="meeting_end")
+async def meeting_end(ctx):
     """Saiu da chamada: o ringlight sai sempre, a luz só cai se ainda for cedo.
 
     Apagar por completo seria hostil — a pessoa continua no quarto.
@@ -102,10 +102,10 @@ async def fim_da_reuniao(ctx):
     **depois** da hora marcada cai no caminho comum e tem a luz ajustada. Errar
     para o lado de ajustar é o lado barato.
     """
-    if _sem_producao(await _titulo_agora(ctx)):
+    if _no_production(await _current_title(ctx)):
         return
 
     await ctx.lighter.enable(False)
 
-    if not _ja_escureceu(ctx):
-        await ctx.home.light(LUZ, NIVEL_DE_ESTAR)
+    if not _is_dark(ctx):
+        await ctx.home.light(LIGHT, LIVING_LEVEL)

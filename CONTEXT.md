@@ -1,93 +1,115 @@
 # Terminal Assistant
 
-Assistente pessoal de linha de comando para uma única máquina, reunindo o
-controle da casa inteligente e a captura de anotações do dia sob a mesma
-ferramenta. O que une os dois lados é um motor de gatilhos compartilhado.
+A personal command-line assistant for a single machine, bringing smart-home
+control and daily note capture under the same tool. What unites the two halves is
+a shared trigger engine.
 
-Os termos são grafados em inglês porque o vocabulário do Home Assistant é em
-inglês e ele é a fonte de verdade do inventário da casa. As definições ficam em
-português.
+Terms are written in English. For the home half that is not a style choice: Home
+Assistant's vocabulary is English, and it is the source of truth for what is in
+the house — using a different word for the same thing would mean translating at
+every boundary.
 
 ## Language
 
-### Casa
+### Home
 
 **Device**:
-Um aparelho físico da casa — uma lâmpada, uma tomada. Existe no mundo, tem
-marca e protocolo.
-_Avoid_: dispositivo, gadget, coisa
+A physical appliance — a lamp, a plug. It exists in the world, has a brand and a
+protocol.
+_Avoid_: gadget, thing, unit
 
 **Entity**:
-A menor unidade controlável ou observável exposta pelo Home Assistant. Um único
-Device pode expor várias Entities, e é sempre uma Entity que um comando
-endereça — nunca um Device.
-_Avoid_: entidade, item, recurso
+The smallest controllable or observable unit exposed by Home Assistant. A single
+Device can expose several Entities, and a command always addresses an Entity —
+never a Device.
+_Avoid_: item, resource, object
 
-### Automação
+### Automation
 
 **Trigger**:
-A condição que dá início a uma automação. Pode nascer do tempo, de um sinal da
-própria máquina ou da mudança de estado de uma Entity.
-_Avoid_: evento, disparo, hook
+The condition that starts an automation. It can come from time, from a signal
+produced by the machine itself, or from an Entity changing state.
+_Avoid_: event, hook, fire
 
 **Rule**:
-Um Trigger, suas condições e suas ações, tomados como uma unidade. É a forma que
-uma automação assume quando escrita.
-_Avoid_: automação, receita, cena
+A Trigger, its conditions and its actions, taken as one unit. It is the shape an
+automation takes once written down.
+_Avoid_: automation, recipe, scene
 
-### Notas
+### Notes
 
 **Note**:
-A unidade de captura: um texto que o usuário registrou. É a única entidade do
-módulo de notas — os papéis que ela assume vêm da presença de atributos, não de
-um tipo escolhido na captura.
-_Avoid_: item, card, entrada
+The unit of capture: a piece of text the user wrote down. It is the only entity
+in the notes half — the roles it takes on come from the presence of attributes,
+never from a type chosen at capture time.
+_Avoid_: item, card, entry
 
 **Task**:
-O papel que uma Note assume quando ganha prazo. É cobrável e pode ser concluída.
-Não é uma entidade separada.
-_Avoid_: to-do, pendência
+The role a Note takes on when it gains a deadline. It is chaseable and can be
+completed. Not a separate entity.
+_Avoid_: to-do, item
 
 **Horizon**:
-A faixa de tempo em que o prazo de uma Task cai, contada a partir de hoje:
-`vencida`, `hoje`, `semana` (os próximos 7 dias, janela rolante) ou `depois`. É
-**derivado do relógio e nunca gravado** — a mesma Note muda de faixa à
-meia-noite sem ninguém escrever nada. Uma Note sem prazo tem Horizon `depois`,
-junto do futuro distante. É o primeiro critério da ordem de exibição: o Horizon
-diz *quando*, e Priorities só ordena dentro da faixa.
-_Avoid_: prazo, urgência, faixa
+The band of time a Task's deadline falls into, counted from today: `overdue`,
+`today`, `week` (the next 7 days, a rolling window) or `later`. It is **derived
+from the clock and never stored** — the same Note changes band at midnight
+without anything being written. A Note with no deadline has Horizon `later`,
+alongside the distant future. It is the first criterion of display order: the
+Horizon says *when*, and Priorities only orders within the band.
+_Avoid_: deadline, urgency, bucket
 
 **Reminder**:
-O papel que uma Note assume quando ganha um instante de disparo. É consumido
-quando dispara. Não é uma entidade separada.
-_Avoid_: alarme, aviso
+The role a Note takes on when it gains a moment to fire. It is consumed when it
+fires. Not a separate entity.
+_Avoid_: alarm, alert
 
 **Status**:
-O estado de uma Note na fila de trabalho: `todo`, `doing`, `hold`, `done` ou
-`cancelled`. É um eixo próprio, independente dos papéis — uma Note pode ser Task
-e estar em `hold`. `done` e `cancelled` são terminais: a Note saiu da fila, por
-caminhos diferentes.
-_Avoid_: estado, situação, coluna
+A Note's state in the work queue: `todo`, `doing`, `hold`, `done` or `cancelled`.
+It is an axis of its own, independent of the roles — a Note can be a Task and be
+on `hold`. `done` and `cancelled` are both terminal: the Note left the queue, by
+different doors.
+_Avoid_: state, column, stage
 
 **Post-it**:
-A representação visual de uma Note no quadro. É desenho, nunca dado — nada é
-"um Post-it" no modelo.
-_Avoid_: usar como sinônimo de Note
+The visual representation of a Note on the board. It is drawing, never data —
+nothing in the model *is* a Post-it.
+_Avoid_: using it as a synonym for Note
 
 **Priorities**:
-A descrição, mantida pelo próprio usuário, do que importa para ele: trabalho,
-o que é relevante, o que vem antes. É o que dá sentido à palavra "prioridade"
-quando uma Note é ordenada — dentro de um Horizon, nunca por cima dele.
-_Avoid_: perfil, preferências, contexto
+The description, maintained by the user, of what matters to them: their work,
+what is relevant, what comes first. It is what gives the word "priority" meaning
+when a Note is ordered — within a Horizon, never above it.
+_Avoid_: profile, preferences, context
 
 **Digest**:
-A visão consolidada de um dia, reunindo compromissos da agenda e Notes
-cobráveis.
-_Avoid_: resumo, briefing, agenda do dia
+The consolidated view of one day, bringing together calendar events and chaseable
+Notes.
+_Avoid_: summary, briefing, agenda
 
-### Desambiguação
+### Runtime
 
-**Profile** é ambíguo neste projeto e não deve ser usado sozinho. A extensão
-[Lighter](https://github.com/joaoferrete/Lighter) chama de _profile_ um conjunto de valores de aparência da borda
-luminosa. A descrição do que importa para o usuário é **Priorities**. Quando o
-sentido da Lighter for necessário, escrever _Lighter profile_.
+**Capability**:
+A subsystem that may be alive or dead on this particular machine — notes,
+calendar, microphone, home, ringlight, AI. A Capability knows whether it is
+available, **why not** when it is not, and **how to fix it**. One registry
+answers for all of them, and `ta doctor`, `/health`, the grouped `--help` and the
+runtime error messages all read from it, so they cannot disagree.
+_Avoid_: feature, module, integration (when the availability is what matters)
+
+**Language**:
+The active language of the tool, resolved once per process from `TA_LANG`, the
+config file, or the system locale. It governs three surfaces together — the
+capture parser, the interface text, and the language the model writes prose in.
+Exactly one is active at a time, because accepting two would make a numeric date
+ambiguous.
+It is **not** the language of the documentation, which is a separate and fixed
+decision.
+_Avoid_: locale, i18n, translation
+
+### Disambiguation
+
+**Profile** is ambiguous in this project and should not be used on its own. The
+[Lighter](https://github.com/joaoferrete/Lighter) extension calls a set of
+ring-light appearance values a _profile_. The description of what matters to the
+user is **Priorities**. When Lighter's meaning is needed, write _Lighter
+profile_.

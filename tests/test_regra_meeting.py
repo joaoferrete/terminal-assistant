@@ -18,7 +18,7 @@ from ta.engine import Context, Trigger
 
 # As Rules de exemplo moram em `examples/rules/`, e são carregadas por caminho.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples" / "rules"))
-import reuniao  # noqa: E402
+import meeting  # noqa: E402
 
 
 class FakeHome:
@@ -74,38 +74,38 @@ async def _rodar(fn, *, hora, titulo, ativo=True):
 @pytest.mark.parametrize("hora", ["09:00", "14:00", "17:00", "23:30"])
 async def test_entrar_na_chamada_acende_a_luz_a_qualquer_hora(hora):
     """O pedido original amarrava isto às 16h. Numa call a luz ajuda sempre."""
-    home, _, _ = await _rodar(reuniao.reuniao, hora=hora, titulo="Planning")
+    home, _, _ = await _rodar(meeting.meeting, hora=hora, titulo="Planning")
     assert home.brilhos == [100]
 
 
 @pytest.mark.parametrize("hora", ["16:00", "17:00", "23:30"])
 async def test_o_ringlight_entra_depois_que_escurece(hora):
     """`16:00` em ponto já conta como escuro: `after` é maior **ou igual**."""
-    _, lighter, _ = await _rodar(reuniao.reuniao, hora=hora, titulo="Planning")
-    assert ("profile", reuniao.PROFILE_RINGLIGHT) in lighter.acoes
+    _, lighter, _ = await _rodar(meeting.meeting, hora=hora, titulo="Planning")
+    assert ("profile", meeting.RINGLIGHT_PROFILE) in lighter.acoes
 
 
 @pytest.mark.parametrize("hora", ["09:00", "14:00", "15:59"])
 async def test_de_dia_a_luz_acende_sozinha(hora):
     """A luz natural já dá conta; borda acesa de manhã é produção não pedida."""
-    home, lighter, _ = await _rodar(reuniao.reuniao, hora=hora, titulo="Planning")
+    home, lighter, _ = await _rodar(meeting.meeting, hora=hora, titulo="Planning")
     assert home.brilhos == [100]
     assert lighter.acoes == []
 
 
 @pytest.mark.parametrize(
-    ("hora", "esperado"), [("09:00", "luz ligada"), ("17:00", "luz e ringlight ligados")]
+    ("hora", "esperado"), [("09:00", "light on"), ("17:00", "light and ringlight on")]
 )
 async def test_o_aviso_nao_anuncia_ringlight_que_nao_ligou(hora, esperado):
     """Um aviso que mente uma vez deixa de ser lido nas outras."""
-    _, _, notify = await _rodar(reuniao.reuniao, hora=hora, titulo="Planning")
+    _, _, notify = await _rodar(meeting.meeting, hora=hora, titulo="Planning")
     [(_, corpo)] = notify.enviadas
     assert corpo.endswith(esperado)
 
 
 @pytest.mark.parametrize("hora", ["14:00", "17:00"])
 async def test_um_a_um_nao_aciona_nada(hora):
-    home, lighter, notify = await _rodar(reuniao.reuniao, hora=hora, titulo="1:1 com Ana")
+    home, lighter, notify = await _rodar(meeting.meeting, hora=hora, titulo="1:1 com Ana")
     assert home.brilhos == []
     assert lighter.acoes == []
     assert notify.enviadas == []
@@ -114,9 +114,9 @@ async def test_um_a_um_nao_aciona_nada(hora):
 # ── Fim: aqui a hora manda ──────────────────────────────────────────────────
 async def test_sair_antes_das_16h_devolve_a_luz_ao_nivel_de_estar():
     home, lighter, _ = await _rodar(
-        reuniao.fim_da_reuniao, hora="15:59", titulo="Planning", ativo=False
+        meeting.meeting_end, hora="15:59", titulo="Planning", ativo=False
     )
-    assert home.brilhos == [reuniao.NIVEL_DE_ESTAR]
+    assert home.brilhos == [meeting.LIVING_LEVEL]
     assert ("enable", False) in lighter.acoes
 
 
@@ -127,7 +127,7 @@ async def test_sair_depois_das_16h_deixa_a_luz_onde_esta(hora):
     `16:30` é a reunião que atravessou as 16h — quem decide é a hora de sair.
     """
     home, lighter, _ = await _rodar(
-        reuniao.fim_da_reuniao, hora=hora, titulo="Planning", ativo=False
+        meeting.meeting_end, hora=hora, titulo="Planning", ativo=False
     )
     assert home.brilhos == []               # a luz não foi tocada
     assert ("enable", False) in lighter.acoes   # mas o ringlight saiu
@@ -142,14 +142,14 @@ async def test_o_ringlight_e_desligado_mesmo_tendo_comecado_de_dia(hora):
     desligar o que já está desligado não custa nada.
     """
     _, lighter, _ = await _rodar(
-        reuniao.fim_da_reuniao, hora=hora, titulo="Planning", ativo=False
+        meeting.meeting_end, hora=hora, titulo="Planning", ativo=False
     )
     assert ("enable", False) in lighter.acoes
 
 
 async def test_fim_de_um_a_um_nao_desfaz_o_que_nunca_foi_feito():
     home, lighter, _ = await _rodar(
-        reuniao.fim_da_reuniao, hora="14:00", titulo="1:1 com Ana", ativo=False
+        meeting.meeting_end, hora="14:00", titulo="1:1 com Ana", ativo=False
     )
     assert home.brilhos == []
     assert lighter.acoes == []
@@ -161,6 +161,6 @@ async def test_sem_compromisso_na_agenda_o_fim_segue_o_caminho_comum():
     A regra ajusta assim mesmo: errar para o lado de ajustar é o lado barato.
     """
     home, _, _ = await _rodar(
-        reuniao.fim_da_reuniao, hora="14:00", titulo="", ativo=False
+        meeting.meeting_end, hora="14:00", titulo="", ativo=False
     )
-    assert home.brilhos == [reuniao.NIVEL_DE_ESTAR]
+    assert home.brilhos == [meeting.LIVING_LEVEL]
