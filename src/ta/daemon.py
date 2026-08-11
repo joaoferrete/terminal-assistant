@@ -41,12 +41,21 @@ BOARD_HTML = Path(__file__).parent / "web" / "board.html"
 RULES_DIR = Path(__file__).resolve().parents[2] / "rules"
 
 
-def _note_json(n: store.Note) -> dict:
+def _note_json(n: store.Note, *, today: date | None = None) -> dict:
+    """Serializa uma Note para o cliente.
+
+    `horizon` vai junto e é derivado aqui, no servidor: ele depende do relógio, e
+    uma segunda definição de "próximos 7 dias" vivendo no JS do mural seria uma
+    definição que nenhum teste compara com esta (ADR 0010). Quem serializa uma
+    lista passa `today` calculado UMA vez, para um payload longo não atravessar a
+    meia-noite no meio dele.
+    """
     return {
         "id": n.id,
         "text": n.text,
         "created_at": n.created_at,
         "due": n.due,
+        "horizon": store.horizon(n.due, today=today),
         "remind_at": n.remind_at,
         "done": n.is_done,
         # O instante em que entrou em `done`. Distinto de `status`: estado e
@@ -432,7 +441,12 @@ async def notes_list(request: Request) -> JSONResponse:
     notes = store.list_notes(
         request.app.state.conn, include_done=include_done, deleted=deleted
     )
-    return JSONResponse({"notes": [_note_json(n) for n in notes]})
+    # A ordem de exibição sai daqui, não do cliente: as três visões do mural, o
+    # `ta list` e qualquer outro consumidor recebem a mesma ordem sem cada um
+    # reimplementá-la (ADR 0010).
+    hoje = date.today()
+    notes = store.by_urgency(notes, today=hoje)
+    return JSONResponse({"notes": [_note_json(n, today=hoje) for n in notes]})
 
 
 async def notes_delete(request: Request) -> JSONResponse:
@@ -571,7 +585,11 @@ async def today(request: Request) -> JSONResponse:
             await warm
 
     eventos = await asyncio.to_thread(app.state.calendar.today, dia)
-    tarefas = store.due_today(app.state.conn, today=dia)
+    # `dia` e não `date.today()`: com `--date`, a faixa tem de ser contada contra
+    # o dia pedido, senão tudo o que ele devolve vira `vencida`. Aqui só aparecem
+    # `vencida` e `hoje`, porque `due_today` filtra `due <= dia`.
+    hoje = dia or date.today()
+    tarefas = store.by_urgency(store.due_today(app.state.conn, today=dia), today=hoje)
     # Clima entra no Digest porque foi pedido, e degrada a None em silêncio: o
     # Digest não deve falhar porque o HA está fora do ar.
     clima = None
@@ -579,13 +597,13 @@ async def today(request: Request) -> JSONResponse:
         clima = (await app.state.home.sensors())["weather"]
     return JSONResponse(
         {
-            "date": (dia or date.today()).isoformat(),
+            "date": hoje.isoformat(),
             "weather": clima,
             "calendar_available": app.state.calendar.available,
             "calendar_error": app.state.calendar.error,
             "calendar_warming": aquecendo,
             "events": [_event_json(e) for e in eventos],
-            "tasks": [_note_json(n) for n in tarefas],
+            "tasks": [_note_json(n, today=hoje) for n in tarefas],
         }
     )
 
@@ -727,15 +745,22 @@ async def organize(request: Request) -> JSONResponse:
 
     Abrir o mural depois nunca chama o modelo, e o que foi arrastado à mão não é
     desfeito (ADR 0003).
+
+    Desde o ADR 0010 o prazo não é mais assunto do modelo: a faixa de horizonte é
+    derivada do relógio e vem na frente de tudo na exibição. O que o `organize`
+    grava em `sort_key` refina a ordem **dentro** da faixa.
     """
     app = request.app
     conn = app.state.conn
+    # De propósito na ordem GRAVADA, sem `by_urgency`: é o que o modelo tem de
+    # ver para refinar, e é a ordem que ele vai reescrever.
     notes = store.list_notes(conn)
     if not notes:
         return JSONResponse({"placed": 0, "groups": []})
+    hoje = date.today()
     try:
         res = await app.state.llm.organize(
-            [_note_json(n) for n in notes], priorities.current(conn) or ""
+            [_note_json(n, today=hoje) for n in notes], priorities.current(conn) or ""
         )
     except LLMUnavailable as e:
         return JSONResponse({"error": str(e)}, status_code=503)
@@ -849,10 +874,11 @@ async def digest_prose(request: Request) -> JSONResponse:
     """A prosa do dia. Enfeite opcional — a listagem é o padrão (ADR 0003)."""
     app = request.app
     eventos = await asyncio.to_thread(app.state.calendar.today)
-    tarefas = store.due_today(app.state.conn)
+    hoje = date.today()
+    tarefas = store.by_urgency(store.due_today(app.state.conn), today=hoje)
     try:
         texto = await app.state.llm.digest_prose(
-            [_event_json(e) for e in eventos], [_note_json(n) for n in tarefas]
+            [_event_json(e) for e in eventos], [_note_json(n, today=hoje) for n in tarefas]
         )
     except LLMUnavailable as e:
         return JSONResponse({"error": str(e)}, status_code=503)

@@ -225,6 +225,10 @@
   <label class="hint" id="doneToggle"><input type="checkbox" id="showDone"> concluídas</label>
 </header>
 
+<!-- Fora do `#board` de propósito: na visão geral os post-its são
+     `position: absolute` dentro dele e cobririam o aviso. -->
+<div id="aviso" class="erro" hidden></div>
+
 <div id="board" class="geral"><div class="empty">carregando…</div></div>
 
 <script>
@@ -298,9 +302,22 @@ const LABEL = {
   todo: "Não feito", doing: "Em andamento", hold: "Em hold",
   done: "Concluída", cancelled: "Cancelada",
 };
-const PRIO_RANK = { alta: 0, media: 1, baixa: 2 };
+// As faixas de horizonte, com o rótulo que a divisória da lista mostra. Este é o
+// ÚNICO lugar do mural que sabe algo sobre horizonte: a ordem e a faixa de cada
+// nota vêm prontas do servidor, em `n.horizon` (ADR 0010). Nada de aritmética de
+// data aqui — uma segunda definição de "próximos 7 dias" seria uma definição que
+// nenhum teste compara com a do Python.
+//
+// `depois e sem prazo` diz a verdade: a faixa junta o futuro distante e o que não
+// tem data nenhuma, para uma nota `!alta` sem prazo não afundar embaixo de uma
+// `!baixa` de setembro.
+const HORIZON_LABEL = {
+  vencida: "vencidas", hoje: "hoje",
+  semana: "próximos 7 dias", depois: "depois e sem prazo",
+};
 
 const boardEl = document.getElementById("board");
+const avisoEl = document.getElementById("aviso");
 const capture = document.getElementById("capture");
 const showDone = document.getElementById("showDone");
 const doneToggle = document.getElementById("doneToggle");
@@ -325,9 +342,28 @@ window.addEventListener("hashchange", () => {
 });
 let todas = [];      // o que veio da API
 let notes = [];      // o que os renderizadores desenham: `todas` já filtrado
+let daemonVelho = false;   // rotas Python mais velhas que este HTML (ver `load`)
 let fEixoV = localStorage.getItem("ta.filtro.eixo") || "";
 let fTipoV = localStorage.getItem("ta.filtro.tipo") || "";
 let fTagV = localStorage.getItem("ta.filtro.tag") || "";
+
+// Este HTML pode ser mais novo que o daemon que o serve: o mural é servido com
+// `no-store` e atualiza na hora, mas as rotas Python só depois de reiniciar. Uma
+// mensagem só, para as duas detecções (rota que não existe e campo que não existe)
+// nunca divergirem.
+const MSG_DESATUALIZADO =
+  "O daemon está desatualizado — este mural é mais novo que ele.\n" +
+  "Rode: systemctl --user restart ta";
+
+/** Mostra o aviso acima do quadro, ou o esconde com `null`.
+ *
+ * `textContent`, nunca `innerHTML`: parte destas mensagens vem do servidor. O
+ * `.erro` tem `white-space: pre-line`, então o `\n` quebra a linha sozinho.
+ */
+const avisar = (msg) => {
+  avisoEl.hidden = !msg;
+  avisoEl.textContent = msg || "";
+};
 
 const api = async (method, path, body) => {
   const r = await fetch(path, {
@@ -336,15 +372,11 @@ const api = async (method, path, body) => {
     body: body ? JSON.stringify(body) : null,
   });
   if (!r.ok) {
-    // 404 numa rota que este HTML conhece quer dizer daemon velho: o mural é
-    // servido com `no-store` e atualiza na hora, mas as rotas Python só depois
-    // de reiniciar. Aconteceu de verdade — o botão de esvaziar apareceu antes de
-    // o endpoint existir, e "falhou" não dizia nada.
+    // 404 numa rota que este HTML conhece quer dizer daemon velho. Aconteceu de
+    // verdade — o botão de esvaziar apareceu antes de o endpoint existir, e
+    // "falhou" não dizia nada.
     if (r.status === 404) {
-      throw new Error(
-        `rota ${path} não existe neste daemon — ele está desatualizado.\n` +
-        `Rode: systemctl --user restart ta`
-      );
+      throw new Error(`rota ${path} não existe neste daemon.\n${MSG_DESATUALIZADO}`);
     }
     // Mensagem do servidor, quando houver: ela é escrita para ser lida.
     let detalhe = "";
@@ -361,17 +393,27 @@ const wantsAll = () => view !== "geral" || showDone.checked;
 const load = async () => {
   const q = lixeira ? "?deleted=1" : (wantsAll() ? "?done=1" : "");
   todas = (await api("GET", `/notes${q}`)).notes;
+  // A ordem das notas vem do servidor (ADR 0010). Contra um daemon velho ela vem
+  // crua de `sort_key`, e o mural não teria como saber: desenharia ordem errada
+  // com cara de ordem certa — a pior falha possível aqui, porque parece que a
+  // mudança não funcionou. `horizon` é o campo que prova a versão; sem ele, nada
+  // do que está na tela está ordenado. Aconteceu de verdade, e é por isso que
+  // esta guarda existe.
+  //
+  // Com zero notas não há o que checar, e também não há ordem errada a mostrar.
+  daemonVelho = todas.length > 0 && !("horizon" in todas[0]);
   aplicarFiltros();
   render();
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
-
 const metaHTML = (n) => {
   const bits = [];
   if (n.roles.task) {
-    const late = n.due < today() && !n.terminal;
-    bits.push(`<span class="${late ? "overdue" : ""}">${late ? "vencida " : "prazo "}${n.due}</span>`);
+    // A faixa vem do servidor, então "vencida" e "hoje" não dependem de o relógio
+    // do navegador concordar com o do daemon.
+    const late = n.horizon === "vencida" && !n.terminal;
+    const quando = n.horizon === "hoje" && !n.terminal ? "hoje" : n.due;
+    bits.push(`<span class="${late ? "overdue" : ""}">${late ? "vencida " : "prazo "}${quando}</span>`);
   }
   if (n.roles.reminder) bits.push(`<span>lembra ${n.remind_at.slice(5, 16).replace("T", " ")}</span>`);
   if (n.priority) bits.push(`<span>${n.priority}</span>`);
@@ -522,22 +564,33 @@ const makeDraggable = (el, n) => {
 };
 
 // ── Visão lista ────────────────────────────────────────────────────────────
-const renderLista = () => {
-  const sorted = [...notes].sort((a, b) =>
-    (a.terminal - b.terminal) ||
-    ((PRIO_RANK[a.priority] ?? 3) - (PRIO_RANK[b.priority] ?? 3)) ||
-    ((a.due === null) - (b.due === null)) ||
-    String(a.due).localeCompare(String(b.due)) ||
-    (a.sort_key - b.sort_key));
+// Não há sort aqui: `notes` chega do servidor já na ordem de exibição, e a lista
+// só desenha as divisórias que explicam a ordem (ADR 0010). Reordenar de novo no
+// cliente seria a mesma regra escrita duas vezes.
+const divisoria = (texto) => {
+  const d = document.createElement("div");
+  d.className = "divider";
+  d.textContent = texto;
+  boardEl.appendChild(d);
+};
 
-  let dividerPosto = false;
-  sorted.forEach(n => {
-    if (n.terminal && !dividerPosto) {
-      dividerPosto = true;
-      const d = document.createElement("div");
-      d.className = "divider";
-      d.textContent = "fora da fila";
-      boardEl.appendChild(d);
+const renderLista = () => {
+  let faixa = null;
+  let foraDaFilaPosto = false;
+  notes.forEach(n => {
+    if (n.terminal) {
+      // A partir daqui não se divide mais por faixa: `fora da fila` seguido de
+      // `hoje` não quer dizer nada — uma nota concluída não tem urgência.
+      if (!foraDaFilaPosto) {
+        foraDaFilaPosto = true;
+        divisoria("fora da fila");
+      }
+    } else if (n.horizon !== faixa) {
+      faixa = n.horizon;
+      // Sem faixa (daemon velho, ver `load`) não se desenha divisória nenhuma: um
+      // traço sem rótulo não explica ordem alguma, e o aviso no topo já diz o que
+      // está acontecendo.
+      if (faixa) divisoria(HORIZON_LABEL[faixa] || faixa);
     }
     boardEl.appendChild(noteEl(n, { withStatusSelect: true, withSwatches: false }));
   });
@@ -550,6 +603,9 @@ const renderLista = () => {
 // torna intestável por automação.
 const renderKanban = () => {
   const byStatus = Object.fromEntries(STATUSES.map(s => [s, []]));
+  // Distribuir preservando a ordem de `notes` dá a ordem por urgência dentro de
+  // cada coluna de graça. Sem divisória: a coluna tem 17rem, e quatro rótulos ali
+  // custariam mais do que dizem — a ordem e o selo vermelho de `vencida` bastam.
   notes.forEach(n => byStatus[n.status]?.push(n));
 
   STATUSES.forEach(status => {
@@ -709,8 +765,7 @@ btnRevisar.addEventListener("click", async () => {
     acompanharRevisao();
   } catch (e) {
     btnRevisar.textContent = "falhou";
-    boardEl.insertAdjacentHTML("afterbegin", `<div class="erro"></div>`);
-    boardEl.firstChild.textContent = e.message;
+    avisar(e.message);
     setTimeout(() => { btnRevisar.disabled = false; desarmar(); }, 2500);
   }
 });
@@ -759,9 +814,7 @@ btnEsvaziar.addEventListener("click", async () => {
   } catch (e) {
     btnEsvaziar.textContent = "falhou";
     // O motivo vai para a tela, não só para o console: quem clica é você.
-    boardEl.insertAdjacentHTML("afterbegin",
-      `<div class="erro"></div>`);
-    boardEl.firstChild.textContent = e.message;
+    avisar(e.message);
   }
   setTimeout(() => { btnEsvaziar.disabled = false; desarmarEsvaziar(); }, 2000);
 });
@@ -782,7 +835,7 @@ setInterval(() => {
 }, REFRESH_MS);
 
 // ── Render ─────────────────────────────────────────────────────────────────
-const render = () => {
+const desenhar = () => {
   boardEl.className = view;
   document.body.className = "view-" + view + (lixeira ? " lixeira" : "");
   boardEl.innerHTML = "";
@@ -817,6 +870,18 @@ const render = () => {
     return;
   }
   ({ geral: renderGeral, lista: renderLista, kanban: renderKanban })[view]();
+};
+
+/** `desenhar` tem três saídas que escrevem `boardEl.innerHTML` por conta própria
+ * (lixeira vazia, sem notas, e o desenho normal). O aviso entra depois de todas,
+ * num ponto só — e nenhum chamador de `render` precisa mudar.
+ *
+ * Não lançar exceção aqui: `load` é chamado de sete lugares e três não têm
+ * `catch`, então um `throw` viraria rejeição não tratada em vez de aviso na tela.
+ */
+const render = () => {
+  desenhar();
+  avisar(daemonVelho ? MSG_DESATUALIZADO : null);
 };
 
 viewsEl.addEventListener("click", (e) => {

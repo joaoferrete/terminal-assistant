@@ -232,8 +232,8 @@ def cmd_media(cfg: Config, args) -> int:
     return 0
 
 
-# Rótulo de largura fixa, para as linhas alinharem sem tabela.
-PRIO_RANK = {"alta": 0, "media": 1, "baixa": 2}
+# Rótulo de largura fixa, para as linhas alinharem sem tabela. Só formatação: a
+# ordem vem pronta do daemon, e o CLI não tem mais tabela de rank própria.
 PRIO_LABEL = {"alta": "!ALTA", "media": "!med ", "baixa": "!bax "}
 
 
@@ -356,10 +356,17 @@ def cmd_today(cfg: Config, args) -> int:
         print("  tarefas: nada cobrável hoje.")
     else:
         print("  tarefas:")
-        # Prioridade na frente, e ordenada por ela: no fim da linha era fácil não
-        # ver, e uma tarefa `!alta` embaixo de três sem prioridade não ajuda.
-        for n in sorted(d["tasks"], key=lambda n: (PRIO_RANK.get(n["priority"], 3), n["due"])):
-            atraso = "  ATRASADA" if n["due"] < d["date"] else ""
+        # O `ta` roda do mesmo source tree, então o CLI é sempre o código novo
+        # enquanto o daemon é o do último restart. Sem esta linha, um daemon velho
+        # daria KeyError em `horizon` — alto, mas inútil. Dizer o que fazer é
+        # melhor que um traceback, e melhor que degradar calado.
+        if "horizon" not in d["tasks"][0]:
+            print("    (daemon desatualizado — rode: systemctl --user restart ta)")
+        # Sem `sorted`: o daemon já devolve na ordem de exibição — atrasadas
+        # primeiro, prioridade dentro da faixa (ADR 0010). O rótulo continua na
+        # frente porque no fim da linha era fácil não ver.
+        for n in d["tasks"]:
+            atraso = "  ATRASADA" if n.get("horizon") == "vencida" else ""
             prio = PRIO_LABEL.get(n["priority"], "     ")   # 5 chars, sempre
             print(f"    {prio} #{n['id']} {n['text']}{atraso}")
     return 0

@@ -8,14 +8,26 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from .db import STATUSES, TERMINAL_STATUSES, transaction
 from .notes import ParsedNote, parse
 
-# Ordem de exibição da prioridade na visão em lista. Sem prioridade vem depois de
-# baixa: não declarar não é o mesmo que declarar baixa.
+# Desempate DENTRO de uma faixa de horizonte — não é mais o primeiro critério de
+# exibição (ver `by_urgency`). Sem prioridade vem depois de baixa: não declarar
+# não é o mesmo que declarar baixa.
 PRIORITY_RANK = {"alta": 0, "media": 1, "baixa": 2, None: 3}
+
+# O Horizon de uma Task: a faixa de tempo em que o prazo dela cai, medida contra
+# hoje. É **derivado do relógio, nunca gravado** — a mesma nota muda de faixa à
+# meia-noite sem ninguém escrever nada, e é justamente por isso que não pode
+# morar em `sort_key` (ADR 0010).
+HORIZONS = ("vencida", "hoje", "semana", "depois")
+HORIZON_RANK = {h: i for i, h in enumerate(HORIZONS)}
+
+# Janela **rolante**, não semana do calendário: numa sexta a semana do calendário
+# está quase vazia e a tarefa de segunda cairia em `depois`.
+DIAS_DE_SEMANA = 7
 
 
 @dataclass
@@ -359,20 +371,52 @@ def mark_undone(conn: sqlite3.Connection, note_id: int) -> None:
     set_status(conn, note_id, "todo")
 
 
-def by_priority(notes: list[Note]) -> list[Note]:
-    """Ordem da visão em lista: prioridade primeiro, terminais no fim.
+def horizon(due: str | None, *, today: date | None = None) -> str:
+    """A faixa de tempo de um prazo, contada de hoje. Um de `HORIZONS`.
 
-    Dentro do mesmo grupo, prazo mais próximo antes — e quem não tem prazo
-    depois de quem tem, para que uma tarefa datada nunca fique escondida atrás
-    de uma ideia solta.
+    Sem prazo cai em `depois`, junto do que é para muito longe. Isso é escolha,
+    não descuido: numa faixa própria no fim, uma nota `!alta` sem data ficaria
+    atrás de uma `!baixa` que vence em setembro — e o que não tem data marcada
+    não é, por isso, menos importante que o futuro distante.
     """
+    if due is None:
+        return "depois"
+    today = today or date.today()
+    dia = date.fromisoformat(due)
+    if dia < today:
+        return "vencida"
+    if dia == today:
+        return "hoje"
+    if dia <= today + timedelta(days=DIAS_DE_SEMANA):
+        return "semana"
+    return "depois"
+
+
+def by_urgency(notes: list[Note], *, today: date | None = None) -> list[Note]:
+    """Ordem de exibição: o relógio decide a faixa, o resto decide dentro dela.
+
+    O prazo domina a prioridade — uma `!baixa` que vence hoje vem antes de uma
+    `!alta` que vence em três dias, porque a de hoje é a que precisa ser feita
+    hoje (ADR 0010). A prioridade não perdeu valor, mudou de escopo: ela ordena
+    dentro da faixa.
+    """
+    today = today or date.today()
     return sorted(
         notes,
         key=lambda n: (
+            # Fora da fila, sempre no fim. Este termo vem ANTES do horizonte de
+            # propósito: sem isso, uma nota concluída na semana passada — prazo no
+            # passado, logo `vencida` — subiria para o topo do quadro.
             n.is_terminal,
+            HORIZON_RANK[horizon(n.due, today=today)],
             PRIORITY_RANK.get(n.priority, 3),
+            # Com prazo antes de sem prazo. Sem este termo, `n.due or ""` mapeia
+            # a nota sem data para `""`, que ordena antes de qualquer data ISO, e
+            # dentro de `depois` as ideias soltas passariam na frente das tarefas
+            # datadas.
             n.due is None,
             n.due or "",
+            # E por fim o que o `organize` gravou, ou a ordem de captura.
             n.sort_key,
         ),
     )
@@ -424,7 +468,7 @@ STATUS_MARK = {"todo": "[ ]", "doing": "[~]", "hold": "[-]", "done": "[x]", "can
 def export_markdown(conn: sqlite3.Connection) -> str:
     """Válvula de escape da escolha de SQLite: despeja tudo em markdown."""
     lines = ["# Notas", ""]
-    for n in by_priority(list_notes(conn, include_done=True)):
+    for n in by_urgency(list_notes(conn, include_done=True)):
         box = STATUS_MARK[n.status]
         bits = []
         if n.status not in ("todo", "done"):

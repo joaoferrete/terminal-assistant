@@ -48,6 +48,15 @@ O papel que uma Note assume quando ganha prazo. É cobrável e pode ser concluí
 Não é uma entidade separada.
 _Avoid_: to-do, pendência
 
+**Horizon**:
+A faixa de tempo em que o prazo de uma Task cai, contada a partir de hoje:
+`vencida`, `hoje`, `semana` (os próximos 7 dias, janela rolante) ou `depois`. É
+**derivado do relógio e nunca gravado** — a mesma Note muda de faixa à
+meia-noite sem ninguém escrever nada. Uma Note sem prazo tem Horizon `depois`,
+junto do futuro distante. É o primeiro critério da ordem de exibição: o Horizon
+diz *quando*, e Priorities só ordena dentro da faixa.
+_Avoid_: prazo, urgência, faixa
+
 **Reminder**:
 O papel que uma Note assume quando ganha um instante de disparo. É consumido
 quando dispara. Não é uma entidade separada.
@@ -68,7 +77,7 @@ _Avoid_: usar como sinônimo de Note
 **Priorities**:
 A descrição, mantida pelo próprio usuário, do que importa para ele: trabalho,
 o que é relevante, o que vem antes. É o que dá sentido à palavra "prioridade"
-quando uma Note é ordenada.
+quando uma Note é ordenada — dentro de um Horizon, nunca por cima dele.
 _Avoid_: perfil, preferências, contexto
 
 **Digest**:

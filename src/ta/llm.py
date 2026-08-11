@@ -42,7 +42,7 @@ class NotePlacement(BaseModel):
 class OrganizeResult(BaseModel):
     placements: list[NotePlacement]
     groups_in_order: list[str] = Field(
-        description="os grupos, do mais urgente para o menos urgente"
+        description="os grupos, do que merece atenção primeiro para o que pode esperar"
     )
 
 
@@ -159,10 +159,18 @@ class LLM:
 
     # ── As três chamadas ────────────────────────────────────────────────────
     async def organize(self, notes: list[dict], priorities: str) -> OrganizeResult:
-        """Agrupa e ordena. O resultado é GRAVADO pelo chamador (ADR 0003)."""
+        """Agrupa e ordena. O resultado é GRAVADO pelo chamador (ADR 0003).
+
+        O prazo **não** é assunto desta chamada. A faixa de horizonte é derivada
+        do relógio e vem na frente de tudo na exibição (ADR 0010), então pedir
+        urgência ao modelo era pedir que ele competisse com uma regra que sempre
+        ganha dele. O que sobra é o que só ele sabe fazer: agrupar por tema e ver
+        o que desbloqueia o quê.
+        """
         linhas = "\n".join(
             f"- id={n['id']} | {n['text']}"
             f"{' | prazo ' + n['due'] if n.get('due') else ''}"
+            f"{' | faixa ' + n['horizon'] if n.get('horizon') else ''}"
             f"{' | prio ' + n['priority'] if n.get('priority') else ''}"
             f"{' | tags ' + ','.join(n['tags']) if n.get('tags') else ''}"
             f"{' | fixada pelo usuário' if n.get('pinned_by_user') else ''}"
@@ -173,8 +181,12 @@ class LLM:
                 f"Hoje é {date.today().isoformat()}.\n\n"
                 f"O que importa para esta pessoa:\n{priorities or '(não informado)'}\n\n"
                 f"Notas:\n{linhas}\n\n"
-                "Agrupe por tema e ordene por urgência real, considerando prazo, "
-                "prioridade declarada e o que a pessoa disse que importa. "
+                "Agrupe por tema. **Não ordene por prazo**: a faixa de cada nota "
+                "(vencida, hoje, semana, depois) já está resolvida e vem antes da "
+                "sua ordem na hora de mostrar — ordenar por prazo aqui não muda "
+                "nada. Ordene pelo que a sua ordem decide de fato: o que desbloqueia "
+                "outra coisa vem antes do que não desbloqueia nada, e o que a pessoa "
+                "disse que importa vem antes do que ela disse que costuma adiar. "
                 "Notas marcadas como fixadas pelo usuário devem manter a posição "
                 "relativa que já têm — a mão dela vence a sua."
             ),

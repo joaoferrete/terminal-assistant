@@ -1,8 +1,11 @@
+from datetime import date, timedelta
+
 import pytest
 from starlette.testclient import TestClient
 
 from ta.config import Config
 from ta.daemon import create_app
+from ta.llm import NotePlacement, OrganizeResult
 
 
 class FakeCalendar:
@@ -125,6 +128,80 @@ def test_list_esconde_concluidas_por_padrao(client):
     client.post(f"/notes/{b}/done")
     assert [n["id"] for n in client.get("/notes").json()["notes"]] == [a]
     assert len(client.get("/notes?done=1").json()["notes"]) == 2
+
+
+# ── Ordem de exibição chega pronta ao cliente (ADR 0010) ────────────────────
+# Aqui os prazos são RELATIVOS a `date.today()`: a rota lê o relógio de verdade, e
+# uma data ISO fixa envelheceria de faixa sozinha.
+def _daqui(dias):
+    return (date.today() + timedelta(days=dias)).isoformat()
+
+
+def test_notes_vem_ordenado_por_urgencia(client):
+    """O teste que prova que o mural recebe a ordem em vez de calculá-la.
+
+    A `!alta` distante está embaixo da `!media` de hoje: era exatamente o contrário
+    quando a prioridade era o primeiro critério.
+    """
+    for texto in (
+        f"distante !alta @{_daqui(30)}",
+        f"hoje !media @{_daqui(0)}",
+        f"atrasada !baixa @{_daqui(-3)}",
+        f"esta semana !alta @{_daqui(4)}",
+        "sem prazo !baixa",
+    ):
+        client.post("/notes", json={"text": texto})
+
+    notes = client.get("/notes").json()["notes"]
+    assert [n["text"] for n in notes] == [
+        "atrasada", "hoje", "esta semana", "distante", "sem prazo",
+    ]
+    assert [n["horizon"] for n in notes] == [
+        "vencida", "hoje", "semana", "depois", "depois",
+    ]
+
+
+def test_today_vem_com_vencidas_primeiro(client):
+    client.post("/notes", json={"text": f"hoje !alta @{_daqui(0)}"})
+    client.post("/notes", json={"text": f"atrasada !baixa @{_daqui(-5)}"})
+    tasks = client.get("/today").json()["tasks"]
+    assert [t["text"] for t in tasks] == ["atrasada", "hoje"]
+    assert [t["horizon"] for t in tasks] == ["vencida", "hoje"]
+
+
+def test_organize_grava_a_ordem_e_respeita_o_arrastado(client):
+    """O `/organize` não tinha teste nenhum. Ele grava, e a mão vence (ADR 0003)."""
+    a = client.post("/notes", json={"text": "primeira"}).json()["id"]
+    b = client.post("/notes", json={"text": "segunda"}).json()["id"]
+    # `b` foi arrastada à mão: o modelo não a toca.
+    client.post(f"/notes/{b}/move", json={"pos_x": 10, "pos_y": 10})
+
+    class LLMFalso:
+        model = "modelo-de-mentira"
+
+        async def organize(self, notes, priorities):
+            self.notes = notes
+            return OrganizeResult(
+                placements=[
+                    NotePlacement(id=a, group="casa", rank=1, reason="x"),
+                    NotePlacement(id=b, group="casa", rank=2, reason="y"),
+                ],
+                groups_in_order=["casa"],
+            )
+
+    falso = LLMFalso()
+    client.app.state.llm = falso
+    r = client.post("/organize").json()
+
+    assert r == {
+        "placed": 1,                # só `a`: `b` está fixada pela mão do usuário
+        "skipped_pinned": 1,
+        "groups": ["casa"],
+        "model": "modelo-de-mentira",
+    }
+    # E o modelo viu a faixa de cada nota, que é o que o impede de reordenar por
+    # prazo (ADR 0010).
+    assert all("horizon" in n for n in falso.notes)
 
 
 def test_board_e_servido_na_raiz_e_em_board(client):

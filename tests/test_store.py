@@ -138,7 +138,60 @@ def test_due_today_ignora_canceladas(conn):
     assert store.due_today(conn, today=date(2026, 8, 10)) == []
 
 
-def test_by_priority_ordena_e_joga_terminais_pro_fim(conn):
+# ── Ordem de exibição: horizonte, e prioridade dentro dele (ADR 0010) ───────
+# Todo teste daqui para baixo passa `today=` explícito. Um que dependesse de
+# `date.today()` passaria em agosto de 2026 e falharia em 2027.
+HOJE = NOW.date()   # 2026-08-10
+
+
+def _ordem(conn, *, include_done=False):
+    return [
+        n.text
+        for n in store.by_urgency(
+            store.list_notes(conn, include_done=include_done), today=HOJE
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("due", "faixa"),
+    [
+        ("2026-08-09", "vencida"),   # ontem
+        ("2026-08-10", "hoje"),
+        ("2026-08-13", "semana"),
+        ("2026-08-17", "semana"),    # dia 7 exato: dentro, o limite é inclusivo
+        ("2026-08-18", "depois"),    # dia 8: fora
+        (None, "depois"),            # sem prazo mora com o futuro distante
+    ],
+)
+def test_horizon_das_faixas(due, faixa):
+    assert store.horizon(due, today=HOJE) == faixa
+
+
+def test_prazo_de_hoje_vence_prioridade_alta_de_semana_que_vem(conn):
+    """O pedido que originou o ADR 0010, como frase executável.
+
+    Antes, prioridade era o primeiro critério e a `!alta` distante ficava em cima.
+    """
+    store.add_note(conn, "RFC semana que vem !alta @2026-08-14", now=NOW)
+    store.add_note(conn, "condominio hoje !media @2026-08-10", now=NOW)
+    assert _ordem(conn) == ["condominio hoje", "RFC semana que vem"]
+
+
+def test_vencida_vem_antes_de_hoje(conn):
+    store.add_note(conn, "hoje !alta @2026-08-10", now=NOW)
+    store.add_note(conn, "atrasada !baixa @2026-08-01", now=NOW)
+    assert _ordem(conn) == ["atrasada", "hoje"]
+
+
+def test_alta_sem_prazo_nao_fica_atras_de_baixa_de_setembro(conn):
+    """Por que `sem prazo` mora em `depois` e não numa faixa própria no fim."""
+    store.add_note(conn, "setembro !baixa @2026-09-01", now=NOW)
+    store.add_note(conn, "sem data !alta", now=NOW)
+    assert _ordem(conn) == ["sem data", "setembro"]
+
+
+def test_prioridade_ordena_dentro_da_faixa(conn):
     store.add_note(conn, "sem prio", now=NOW)
     store.add_note(conn, "baixa !baixa", now=NOW)
     store.add_note(conn, "alta !alta", now=NOW)
@@ -146,17 +199,46 @@ def test_by_priority_ordena_e_joga_terminais_pro_fim(conn):
     feita = store.add_note(conn, "feita !alta", now=NOW)
     store.set_status(conn, feita.id, "done", now=NOW)
 
-    ordem = [n.text for n in store.by_priority(store.list_notes(conn, include_done=True))]
+    # Nenhuma tem prazo, então todas caem em `depois` e a prioridade decide.
     # Terminal vai pro fim mesmo sendo prioridade alta.
-    assert ordem == ["alta", "media", "baixa", "sem prio", "feita"]
+    assert _ordem(conn, include_done=True) == ["alta", "media", "baixa", "sem prio", "feita"]
 
 
-def test_by_priority_prazo_antes_de_sem_prazo(conn):
+def test_prazo_antes_de_sem_prazo_dentro_da_mesma_faixa(conn):
+    """Guarda o termo `n.due is None` da chave.
+
+    Sem ele, `n.due or ""` mapeia a nota sem data para `""`, que ordena antes de
+    qualquer data ISO, e dentro de `depois` a ideia solta passaria na frente da
+    tarefa datada.
+    """
     store.add_note(conn, "sem prazo !alta", now=NOW)
-    store.add_note(conn, "com prazo !alta @2026-09-01", now=NOW)
-    store.add_note(conn, "prazo perto !alta @2026-08-15", now=NOW)
-    ordem = [n.text for n in store.by_priority(store.list_notes(conn))]
-    assert ordem == ["prazo perto", "com prazo", "sem prazo"]
+    store.add_note(conn, "setembro !alta @2026-09-01", now=NOW)
+    store.add_note(conn, "outubro !alta @2026-10-01", now=NOW)
+    assert _ordem(conn) == ["setembro", "outubro", "sem prazo"]
+
+
+def test_terminal_fica_no_fim_mesmo_vencida(conn):
+    """Guarda `is_terminal` como PRIMEIRO termo, à frente do horizonte.
+
+    Sem isso, uma nota concluída na semana passada — prazo no passado, logo
+    `vencida` — subiria para o topo do quadro.
+    """
+    store.add_note(conn, "aberta sem prazo", now=NOW)
+    feita = store.add_note(conn, "feita e vencida !alta @2026-08-01", now=NOW)
+    store.set_status(conn, feita.id, "done", now=NOW)
+    assert _ordem(conn, include_done=True) == ["aberta sem prazo", "feita e vencida"]
+
+
+def test_dentro_da_faixa_o_sort_key_ainda_decide(conn):
+    """A promessa do ADR 0003 sob teste: o que foi gravado continua valendo.
+
+    Duas notas idênticas em faixa e prioridade — só o `sort_key` as separa.
+    """
+    a = store.add_note(conn, "primeira", now=NOW)
+    b = store.add_note(conn, "segunda", now=NOW)
+    assert _ordem(conn) == ["primeira", "segunda"]
+    store.move_note(conn, b.id, sort_key=a.sort_key - 1)
+    assert _ordem(conn) == ["segunda", "primeira"]
 
 
 def test_export_mostra_estado_nao_binario(conn):
