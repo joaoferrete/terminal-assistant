@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import shutil
 import sys
 import webbrowser
 
 import httpx
 
-from .config import Config
+from .config import Config, load_env_file
 from .i18n import LANGS, lang, lang_source, reset_cache, t
 
 # O daemon responde rápido em tudo que é determinístico. As rotas que chamam o
@@ -433,6 +435,89 @@ def cmd_init(cfg: Config, args) -> int:
     return 0
 
 
+def _migrar_layout(cfg: Config) -> list[str]:
+    """Move a configuração para `~/.config/ta/`, sem perder nada. Idempotente.
+
+    **Copia, nunca move**, e nunca sobrescreve o que já existe. Rodar duas vezes
+    não custa nada, que é o que permite chamá-la de dentro do `doctor` sem
+    perguntar antes.
+    """
+    from .config import config_dir, config_file
+    from .daemon import EXAMPLE_RULES
+
+    feitos = []
+    destino = config_dir()
+    destino.mkdir(parents=True, exist_ok=True)
+
+    if not config_file().exists():
+        exemplo = EXAMPLE_RULES.parent / "config.toml"
+        if exemplo.exists():
+            shutil.copy2(exemplo, config_file())
+            feitos.append(f"criado {config_file()}")
+
+    regras = destino / "rules"
+    legado = EXAMPLE_RULES.resolve().parents[1] / "rules"
+    if not regras.exists():
+        regras.mkdir(parents=True)
+        # O legado é o `<repo>/rules` de quem já usava: as regras dele são DELE, e
+        # perdê-las por causa de uma mudança de layout seria inaceitável. Quem não
+        # tem legado começa vazio — os exemplos são copiados conscientemente.
+        origem = legado if legado.is_dir() else None
+        if origem:
+            for f in origem.glob("*.py"):
+                shutil.copy2(f, regras / f.name)
+            feitos.append(f"copiadas {len(list(regras.glob('*.py')))} regra(s) para {regras}")
+        else:
+            feitos.append(f"criado {regras}")
+    return feitos
+
+
+def cmd_doctor(cfg: Config, args) -> int:
+    """O que funciona nesta máquina, e o que fazer com o que não funciona.
+
+    **Não fala com o daemon**, de propósito: quem mais precisa deste comando é
+    quem não conseguiu subir o daemon.
+    """
+    from .capabilities import ambiente, inspect
+    from .config import load_env_file
+
+    # Sem isto o diagnóstico mente: o CLI não recebe o `.env` (só o systemd
+    # recebe, via EnvironmentFile), então `HA_TOKEN` e `GEMINI_API_KEY`
+    # apareceriam como ausentes numa máquina onde estão configurados e
+    # funcionando. Falso negativo aqui manda a pessoa consertar o que não está
+    # quebrado — pior que não diagnosticar.
+    if (arquivo := load_env_file()) is not None:
+        cfg = Config.from_env()
+        print(f"  · lido {arquivo}\n")
+
+    feitos = _migrar_layout(cfg)
+    for f in feitos:
+        print(f"  · {f}")
+    if feitos:
+        print()
+
+    for chave, valor in ambiente(cfg):
+        print(f"  {chave:10} {valor}")
+    print()
+
+    caps = inspect(cfg)
+    largura = max(len(c.label) for c in caps)
+    quebrado = False
+    for c in caps:
+        marca = "ok  " if c.ok else ("FALHA" if c.essential else "—   ")
+        print(f"  {marca} {c.label:{largura}}  {c.reason}")
+        if not c.ok and c.fix:
+            print(f"       {' ' * largura}  → {c.fix}")
+        quebrado = quebrado or (c.essential and not c.ok)
+
+    print()
+    vivas = sum(1 for c in caps if c.ok)
+    print(f"  {vivas}/{len(caps)} disponíveis. O que está marcado com — é opcional.")
+    # Sai != 0 só quando o NÚCLEO está quebrado. Integração ausente é o estado
+    # normal de quem acabou de clonar, e não pode se parecer com erro.
+    return 1 if quebrado else 0
+
+
 def cmd_lang(cfg: Config, args) -> int:
     """Mostra ou fixa o idioma. Não fala com o daemon: é decisão local.
 
@@ -534,7 +619,6 @@ def cmd_capture_popup(cfg: Config, args) -> int:
     Usa zenity se existir; sem ele, cai para notificação explicando o conserto —
     nunca falha em silêncio num atalho de teclado.
     """
-    import shutil
     import subprocess
 
     zenity = shutil.which("zenity")
@@ -556,9 +640,64 @@ def cmd_capture_popup(cfg: Config, args) -> int:
     return 0
 
 
+# Cada grupo traz os PRÓPRIOS comandos. A sondagem de capacidade só acrescenta a
+# marca de indisponível — nunca decide o que aparece. Sem essa separação, uma
+# sonda que falha faz o `--help` esconder metade dos comandos, que foi exatamente
+# o que aconteceu num ambiente sem D-Bus.
+GRUPOS_DE_AJUDA = (
+    ("notes", "Notas e tarefas", "note list done rm restore board export today"),
+    ("home", "Casa", "on off luz light entities temp router media"),
+    ("calendar", "Agenda", "today event"),
+    ("ai", "IA", "init priorities organize prose revise event"),
+    ("lighter", "Ringlight", "lighter"),
+    (None, "Ferramenta", "doctor lang rules capture-popup"),
+)
+
+
+def _epilogo() -> str:
+    """A lista de comandos agrupada por subsistema, marcando o que não funciona.
+
+    Existe porque `ta --help` anunciava 23 comandos dos quais 14 exigem um Home
+    Assistant, uma extensão do GNOME ou uma chave de IA que o visitante pode não
+    ter — sem nenhuma marca dizendo isso. A diferença entre "ferramenta com
+    integrações opcionais" e "ferramenta quebrada" é essa marca.
+
+    Lê o MESMO registro que o `ta doctor` e o `/health`, então os três não podem
+    divergir sobre o que está vivo.
+
+    Degrada para o rótulo cru se a sondagem falhar: um `--help` que estoura é
+    muito pior que um `--help` sem a marca de disponibilidade.
+    """
+    from .capabilities import inspect
+
+    try:
+        por_chave = {c.key: c for c in inspect()}
+    except Exception:  # noqa: BLE001 — help nunca pode morrer por causa de sonda
+        por_chave = {}
+
+    linhas = []
+    for chave, titulo, comandos in GRUPOS_DE_AJUDA:
+        cap = por_chave.get(chave) if chave else None
+        marca = f"  —  {cap.resumo}" if (cap and not cap.ok) else ""
+        linhas.append(f"  {titulo}{marca}\n      {comandos}")
+
+    return (
+        "comandos, por subsistema:\n\n"
+        + "\n".join(linhas)
+        + "\n\n`ta doctor` diz o que falta para cada um, e como conseguir."
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="ta", description="Terminal Assistant")
-    sub = p.add_subparsers(dest="cmd", required=True)
+    p = argparse.ArgumentParser(
+        prog="ta",
+        description="Terminal Assistant",
+        epilog=_epilogo(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    # `metavar` troca a chave de 23 nomes na linha de uso por um marcador; a lista
+    # de verdade é o epílogo, que sabe o que está disponível.
+    sub = p.add_subparsers(dest="cmd", required=True, metavar="<comando>")
 
     n = sub.add_parser("note", help="captura uma nota")
     n.add_argument("text", nargs="+")
@@ -598,10 +737,14 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--date", help="AAAA-MM-DD (padrão: hoje)")
     t.set_defaults(func=cmd_today)
 
-    lz = sub.add_parser("luz", help="acende/ajusta uma luz")
-    lz.add_argument("entity", help="apelido (quarto) ou entity_id")
-    lz.add_argument("brightness", nargs="?", type=int, help="0-100")
-    lz.set_defaults(func=cmd_luz)
+    # `luz` fica, e `light` entra ao lado: era o único comando em português dos
+    # 23, e renomear custaria a memória muscular de quem já usa sem comprar nada
+    # que o alias não compre.
+    for nome in ("luz", "light"):
+        lz = sub.add_parser(nome, help="acende/ajusta uma luz")
+        lz.add_argument("entity", help="apelido (quarto) ou entity_id")
+        lz.add_argument("brightness", nargs="?", type=int, help="0-100")
+        lz.set_defaults(func=cmd_luz)
 
     of = sub.add_parser("off", help="apaga tudo, ou uma entity")
     of.add_argument("entity", nargs="?")
@@ -666,10 +809,36 @@ def build_parser() -> argparse.ArgumentParser:
     lg = sub.add_parser("lang", help="mostra ou fixa o idioma (pt | en)")
     lg.add_argument("code", nargs="?", choices=LANGS, help="idioma a fixar")
     lg.set_defaults(func=cmd_lang)
+
+    sub.add_parser(
+        "doctor", help="o que funciona nesta máquina, e como consertar o resto"
+    ).set_defaults(func=cmd_doctor)
+
+    # A lista plana do argparse sai: ela repetiria os 25 comandos que o epílogo já
+    # mostra agrupados, e sem dizer quais funcionam aqui. `_choices_actions` é API
+    # privada, e o `getattr` é o que garante que a pior consequência de ela mudar
+    # de nome seja o help ficar redundante — nunca estourar.
+    if (entradas := getattr(sub, "_choices_actions", None)) is not None:
+        entradas.clear()
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
+    # O `.env` entra antes de tudo. O systemd o entrega ao daemon, mas ninguém o
+    # entregava ao CLI — e isso tinha duas consequências: `ta doctor` e `ta --help`
+    # relatavam `HA_TOKEN não está definido` numa máquina onde ele estava
+    # configurado e funcionando, e um `TA_PORT` no arquivo valia para o daemon e
+    # não para o CLI, que continuava batendo na porta padrão.
+    #
+    # Não sobrescreve o que já está no ambiente, então `TA_LANG=en ta ...` segue
+    # valendo mais que a linha do arquivo.
+    load_env_file()
+
+    # O CLI não é lugar de log de biblioteca. Sem isto, sondar as capacidades
+    # para montar o `--help` imprimia `WARNING` do Lighter e da agenda em cima
+    # da própria ajuda. O daemon configura o seu logging por conta.
+    logging.basicConfig(level=logging.ERROR, format="ta: %(message)s")
+
     args = build_parser().parse_args(argv)
     try:
         return args.func(Config.from_env(), args)

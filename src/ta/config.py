@@ -36,6 +36,43 @@ class ConfigError(RuntimeError):
     """Configuração que não dá para corrigir em runtime. O daemon não sobe."""
 
 
+def env_file() -> Path:
+    """O `.env` do projeto — o mesmo que o `EnvironmentFile` do systemd aponta."""
+    return Path(__file__).resolve().parents[2] / ".env"
+
+
+def load_env_file() -> Path | None:
+    """Carrega o `.env` no ambiente do processo, sem sobrescrever o que já existe.
+
+    O daemon **não** precisa disto: o systemd já lhe entrega o arquivo. Quem
+    precisa é o CLI, e o `ta doctor` em particular — sem isto ele reportava
+    `HA_TOKEN não está definido` numa máquina onde o token estava configurado e
+    funcionando, porque o processo do CLI simplesmente não enxerga o arquivo.
+
+    Falso negativo em diagnóstico é pior que diagnóstico nenhum: manda a pessoa
+    consertar o que não está quebrado.
+
+    Não sobrescrever o ambiente existente importa: `TA_LANG=en ta doctor` tem de
+    continuar valendo mais que a linha do arquivo.
+    """
+    caminho = env_file()
+    if not caminho.exists():
+        return None
+    try:
+        for linha in caminho.read_text().splitlines():
+            linha = linha.strip()
+            if not linha or linha.startswith("#") or "=" not in linha:
+                continue
+            chave, _, valor = linha.partition("=")
+            chave = chave.strip()
+            if chave and chave not in os.environ:
+                os.environ[chave] = valor.strip().strip("\"'")
+    except OSError as e:
+        log.warning("%s não pôde ser lido: %s", caminho, e)
+        return None
+    return caminho
+
+
 @dataclass(frozen=True)
 class Config:
     host: str = DEFAULT_HOST

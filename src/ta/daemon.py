@@ -22,7 +22,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
-from . import engine, i18n, priorities, store
+from . import capabilities, engine, i18n, priorities, store
 from . import notes as notes_mod
 from .actuators.home import Home, HomeError, StateWatcher
 from .actuators.lighter import Lighter
@@ -221,9 +221,20 @@ async def health(request: Request) -> JSONResponse:
     """
     app = request.app
     cfg: Config = app.state.config
+    caps = capabilities.inspect(cfg)
     return JSONResponse(
         {
-            "ok": True,
+            # Era `True` literal. Um diagnóstico que responde "ok" mesmo com o
+            # núcleo quebrado não é diagnóstico — é decoração.
+            "ok": all(c.ok for c in caps if c.essential),
+            "lang": {"code": i18n.lang(), "source": i18n.lang_source()},
+            # `reason` e `fix` vão junto: o `Calendar` já calculava um motivo com
+            # o conserto embutido, e esta rota jogava fora, expondo só o booleano.
+            # Quem lê `available: false` fica sabendo o quê, não o que fazer.
+            "capabilities": [
+                {"key": c.key, "ok": c.ok, "reason": c.reason, "fix": c.fix}
+                for c in caps
+            ],
             "ha": {"url": cfg.ha_url, "token_configured": bool(cfg.ha_token)},
             "gemini": {
                 "key_configured": bool(cfg.gemini_api_key),
