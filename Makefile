@@ -6,7 +6,7 @@ VENV       = .venv
 PY         = $(VENV)/bin/python
 PIP        = $(VENV)/bin/pip
 
-.PHONY: help venv install check-gi lint test run install-service clean
+.PHONY: help venv install check-gi lint test run demo install-service clean
 
 help:
 	@echo "make venv            cria a venv no python do sistema"
@@ -15,6 +15,7 @@ help:
 	@echo "make lint            ruff"
 	@echo "make test            pytest"
 	@echo "make run             sobe o daemon em primeiro plano (dev)"
+	@echo "make demo            daemon isolado com dados ficticios, na porta 7778"
 	@echo "make install-service instala e habilita o systemd user unit"
 
 # --system-site-packages nao e opcional: e o que faz a venv enxergar o
@@ -49,6 +50,19 @@ test: venv
 
 run: venv
 	$(PY) -m ta.daemon
+
+# Daemon isolado, com banco proprio e dados ficticios em ingles. NAO toca o banco
+# de verdade: e de la que saem as imagens do README, e da para clicar em tudo e
+# apagar tudo sem consequencia.
+#
+# Porta 7778 para conviver com o daemon de verdade na 7777.
+DEMO_DB   = /tmp/ta-demo/demo.db
+DEMO_PORT = 7778
+
+demo: venv
+	@$(PY) examples/demo.py
+	@echo "mural de demonstracao em http://127.0.0.1:$(DEMO_PORT)/board  (ctrl-c encerra)"
+	@TA_DB=$(DEMO_DB) TA_PORT=$(DEMO_PORT) TA_AUTO_REVIEW=0 $(PY) -m ta.daemon
 
 install-service:
 	mkdir -p $(HOME)/.config/systemd/user

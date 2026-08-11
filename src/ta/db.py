@@ -30,6 +30,12 @@ TERMINAL_STATUSES = ("done", "cancelled")
 
 
 def default_db_path() -> Path:
+    # `TA_DB` aponta o banco para outro lugar. É o que permite subir um daemon de
+    # demonstração ou de experimento sem chegar perto do banco de verdade — e o
+    # banco de verdade tem notas que a pessoa escreveu, então "sem chegar perto"
+    # é requisito, não conveniência.
+    if escolhido := os.environ.get("TA_DB"):
+        return Path(escolhido).expanduser()
     base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
     return base / "ta" / "ta.db"
 

@@ -192,6 +192,14 @@ MENSAGENS: dict[str, dict[str, str]] = {
     "board.view.geral": {"pt": "geral", "en": "board"},
     "board.view.lista": {"pt": "lista", "en": "list"},
     "board.view.kanban": {"pt": "kanban", "en": "kanban"},
+    "board.filtro.area": {"pt": "todas as áreas", "en": "all areas"},
+    "board.filtro.tipo": {"pt": "todos os tipos", "en": "all types"},
+    "board.filtro.tag": {"pt": "todas as tags", "en": "all tags"},
+    "board.contador": {"pt": "nota(s)", "en": "note(s)"},
+    "board.na_lixeira": {
+        "pt": "na lixeira — `↩` restaura, ou volte ao mural para escrever",
+        "en": "in the trash — `↩` restores; go back to the board to write",
+    },
     # ── CLI ─────────────────────────────────────────────────────────────────
     "cli.nada_cobravel": {
         "pt": "nada cobrável hoje.",

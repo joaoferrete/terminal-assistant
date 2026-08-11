@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="pt-BR">
+<html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mural — Terminal Assistant</title>
+<title>Terminal Assistant</title>
 <style>
   :root {
     --bg: #f2f0eb; --grid: #e3e0d8; --fg: #2a2723; --muted: #6f6a61;
@@ -194,35 +194,35 @@
 </head>
 <body class="view-geral">
 <header>
-  <h1>Mural</h1>
+  <h1 id="titulo">Mural</h1>
   <div class="views" id="views">
-    <button data-view="geral">geral</button>
-    <button data-view="lista">lista</button>
-    <button data-view="kanban">kanban</button>
+    <button data-view="geral"></button>
+    <button data-view="lista"></button>
+    <button data-view="kanban"></button>
   </div>
   <div class="filtros">
     <select id="fEixo" title="filtrar por área" aria-label="área">
-      <option value="">todas as áreas</option>
+      <option value="" data-i18n="board.filtro.area"></option>
       <option value="trabalho">trabalho</option>
       <option value="pessoal">pessoal</option>
     </select>
     <select id="fTipo" title="filtrar por tipo" aria-label="tipo">
-      <option value="">todos os tipos</option>
+      <option value="" data-i18n="board.filtro.tipo"></option>
       <option value="tarefa">tarefa</option>
       <option value="compromisso">compromisso</option>
       <option value="anotacao">anotação</option>
     </select>
     <select id="fTag" title="filtrar por tag" aria-label="tag">
-      <option value="">todas as tags</option>
+      <option value="" data-i18n="board.filtro.tag"></option>
     </select>
   </div>
-  <input id="capture" placeholder='nota nova — ex: ligar dentista @sexta #saude !alta @@09:00'>
+  <input id="capture">
   <button id="revisar" class="acao" title="pede à LLM para reetiquetar todas as notas abertas">
-    revisar tudo</button>
+    </button>
   <button id="esvaziar" class="acao perigo" hidden
-    title="apaga em definitivo tudo que está na lixeira">esvaziar lixeira</button>
+    title="apaga em definitivo tudo que está na lixeira"></button>
   <span class="count" id="count"></span>
-  <label class="hint" id="doneToggle"><input type="checkbox" id="showDone"> concluídas</label>
+  <label class="hint" id="doneToggle"><input type="checkbox" id="showDone"> <span id="rotuloConcluidas"></span></label>
 </header>
 
 <!-- Fora do `#board` de propósito: na visão geral os post-its são
@@ -306,6 +306,26 @@ const STATUSES = ["todo", "doing", "hold", "done", "cancelled"];
 // que é feio e visível, em vez de `undefined`, que passa despercebido.
 const I18N = /*__I18N__*/{};
 const tr = (chave) => I18N[chave] ?? chave;
+
+// Os rótulos estáticos são preenchidos aqui, e não escritos no HTML: o catálogo
+// só existe depois desta linha, e um texto fixo na marcação seria uma segunda
+// tradução — exatamente o que este arquivo não pode ter.
+//
+// Roda uma vez, antes do primeiro render. Se uma chave faltar, `tr` devolve a
+// própria chave: feio e visível, em vez de vazio e silencioso.
+(() => {
+  document.getElementById("titulo").textContent = tr("board.titulo");
+  document.getElementById("rotuloConcluidas").textContent = tr("board.concluidas");
+  document.getElementById("revisar").textContent = tr("board.revisar");
+  document.getElementById("esvaziar").textContent = tr("board.esvaziar");
+  document.querySelectorAll("button[data-view]").forEach(b => {
+    b.textContent = tr(`board.view.${b.dataset.view}`);
+  });
+  document.querySelectorAll("[data-i18n]").forEach(e => {
+    e.textContent = tr(e.dataset.i18n);
+  });
+  document.getElementById("capture").placeholder = tr("board.captura");
+})();
 
 const LABEL = Object.fromEntries(
   ["todo", "doing", "hold", "done", "cancelled"].map(s => [s, tr(`status.${s}`)])
@@ -446,10 +466,10 @@ const metaHTML = (n) => {
     // A faixa vem do servidor, então "vencida" e "hoje" não dependem de o relógio
     // do navegador concordar com o do daemon.
     const late = n.horizon === "vencida" && !n.terminal;
-    const quando = n.horizon === "hoje" && !n.terminal ? "hoje" : n.due;
-    bits.push(`<span class="${late ? "overdue" : ""}">${late ? "vencida " : "prazo "}${quando}</span>`);
+    const quando = n.horizon === "hoje" && !n.terminal ? tr("horizon.hoje") : n.due;
+    bits.push(`<span class="${late ? "overdue" : ""}">${late ? tr("board.vencida") : tr("board.prazo")}${quando}</span>`);
   }
-  if (n.roles.reminder) bits.push(`<span>lembra ${n.remind_at.slice(5, 16).replace("T", " ")}</span>`);
+  if (n.roles.reminder) bits.push(`<span>${tr("board.lembra")}${n.remind_at.slice(5, 16).replace("T", " ")}</span>`);
   if (n.priority) bits.push(`<span>${n.priority}</span>`);
   if (view !== "kanban" && n.status !== "todo") bits.push(`<span>${LABEL[n.status]}</span>`);
   n.tags.forEach(t => bits.push(`<span>#${t}</span>`));
@@ -489,7 +509,7 @@ const noteEl = (n, { withStatusSelect = false, withSwatches = true } = {}) => {
   // é o canto mais longe do texto e do seletor de estado, e apagar por engano é
   // o risco que a posição tem que reduzir.
   const acao = lixeira
-    ? `<button class="del" title="restaurar" data-restore="1">↩</button>`
+    ? `<button class="del" title="${tr("board.restaurar")}" data-restore="1">↩</button>`
     : `<button class="del" title="apagar (reversível)">×</button>`;
 
   el.innerHTML = `
@@ -521,7 +541,7 @@ const noteEl = (n, { withStatusSelect = false, withSwatches = true } = {}) => {
       }
       if (Date.now() > armadoAte) {
         del.dataset.armado = "1";
-        del.textContent = "apagar?";
+        del.textContent = tr("board.apagar");
         del.title = "clique de novo para apagar";
         armadoAte = Date.now() + 4000;
         setTimeout(() => { if (Date.now() > armadoAte) desarmar(); }, 4050);
@@ -728,7 +748,7 @@ const popularTags = () => {
   // Montado pelo DOM, não por innerHTML: tag é texto do usuário, e a regra
   // "nunca innerHTML para entrada do usuário" vale aqui como no post-it.
   fTag.replaceChildren();
-  const todasOpt = new Option("todas as tags", "");
+  const todasOpt = new Option(tr("board.filtro.tag"), "");
   fTag.add(todasOpt);
   presentes.forEach(x => fTag.add(new Option(`#${x}`, x)));
   fTag.value = fTagV;
@@ -777,14 +797,14 @@ const RESET_ARMADO_MS = 6000;
 
 const desarmar = () => {
   btnRevisar.dataset.armado = "0";
-  btnRevisar.textContent = "revisar tudo";
+  btnRevisar.textContent = tr("board.revisar");
   armadoAte = 0;
 };
 
 btnRevisar.addEventListener("click", async () => {
   if (Date.now() > armadoAte) {
     btnRevisar.dataset.armado = "1";
-    btnRevisar.textContent = "confirmar? reetiqueta tudo";
+    btnRevisar.textContent = tr("board.confirmar") + " " + tr("board.revisar");
     armadoAte = Date.now() + RESET_ARMADO_MS;
     setTimeout(() => { if (Date.now() > armadoAte) desarmar(); }, RESET_ARMADO_MS + 50);
     return;
@@ -798,7 +818,7 @@ btnRevisar.addEventListener("click", async () => {
     btnRevisar.textContent = `${r.queued} na fila…`;
     acompanharRevisao();
   } catch (e) {
-    btnRevisar.textContent = "falhou";
+    btnRevisar.textContent = tr("board.falhou");
     avisar(e.message);
     setTimeout(() => { btnRevisar.disabled = false; desarmar(); }, 2500);
   }
@@ -810,7 +830,7 @@ const acompanharRevisao = async () => {
     await new Promise(r => setTimeout(r, 2000));
     let s;
     try { s = await api("GET", "/review-status"); } catch { break; }
-    btnRevisar.textContent = s.pending ? `${s.pending} na fila…` : "revisar tudo";
+    btnRevisar.textContent = s.pending ? `${s.pending}…` : tr("board.revisar");
     await load();
     if (!s.pending && !s.running) break;
   }
@@ -826,7 +846,7 @@ const RESET_ESVAZIAR_MS = 8000;
 
 const desarmarEsvaziar = () => {
   btnEsvaziar.dataset.armado = "0";
-  btnEsvaziar.textContent = "esvaziar lixeira";
+  btnEsvaziar.textContent = tr("board.esvaziar");
   esvaziarAte = 0;
 };
 
@@ -846,7 +866,7 @@ btnEsvaziar.addEventListener("click", async () => {
     btnEsvaziar.textContent = `${r.purged} apagada(s)`;
     await load();
   } catch (e) {
-    btnEsvaziar.textContent = "falhou";
+    btnEsvaziar.textContent = tr("board.falhou");
     // O motivo vai para a tela, não só para o console: quem clica é você.
     avisar(e.message);
   }
@@ -881,11 +901,11 @@ const desenhar = () => {
   // viva e esta tela só mostra apagadas.
   capture.disabled = lixeira;
   capture.placeholder = lixeira
-    ? "na lixeira — `↩` restaura, ou volte ao mural para escrever"
-    : "nota nova — ex: ligar dentista @sexta #saude !alta @@09:00";
+    ? tr("board.na_lixeira")
+    : tr("board.captura");
   const filtrando = fEixoV || fTipoV || fTagV;
   countEl.textContent = notes.length
-    ? (filtrando ? `${notes.length} de ${todas.length}` : `${notes.length} nota(s)`)
+    ? (filtrando ? `${notes.length} / ${todas.length}` : `${notes.length} ${tr("board.contador")}`)
     : "";
   [...viewsEl.children].forEach(b => b.setAttribute("aria-pressed", b.dataset.view === view));
 
