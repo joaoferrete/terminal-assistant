@@ -161,9 +161,9 @@
      writing-mode vertical e ficava um borrão de três letras ilegível — e
      redundante, porque a prioridade já aparece como chip no meta. */
   #board.lista .note { border-left: 4px solid var(--prio-color, transparent); }
-  #board.lista .note.p-alta  { --prio-color: #c0392b; }
-  #board.lista .note.p-media { --prio-color: #d68910; }
-  #board.lista .note.p-baixa { --prio-color: #7f8c8d; }
+  #board.lista .note.p-high  { --prio-color: #c0392b; }
+  #board.lista .note.p-medium { --prio-color: #d68910; }
+  #board.lista .note.p-low   { --prio-color: #7f8c8d; }
   #board.lista .divider { color: var(--muted); font-size: .8rem; padding: .6rem 0 .1rem; border-top: 1px solid var(--line); }
 
   /* ── Visão kanban ────────────────────────────────────────────────────── */
@@ -248,7 +248,7 @@ const PALETTE = [
 // Cor padrão por prioridade. Pastéis de propósito: o post-it tem tinta escura, e
 // os tons fortes da borda da visão em lista (#c0392b e cia) deixariam o texto
 // ilegível como fundo.
-const PRIO_BG = { alta: "#ffc4bb", media: "#ffe9a8", baixa: "#ccd9e0" };
+const PRIO_BG = { high: "#ffc4bb", medium: "#ffe9a8", low: "#ccd9e0" };
 
 // Cor por eixo, para quando não há prioridade nem cor escolhida. Matizes bem
 // afastadas das de prioridade (vermelho / âmbar / cinza-azulado) para os dois
@@ -274,9 +274,9 @@ const eixoDe = (n) => (n.tags || []).find(t => AREAS.includes(t)) || null;
 // escolhidos e conferidos em CIELAB para ficarem entre ΔE 8 e 11 um do outro —
 // visíveis lado a lado, sem deixar de ser a mesma prioridade.
 const PRIO_AREA_BG = {
-  alta:  { trabalho: "#fbc1c4", pessoal: "#ffc5b3" },
-  media: { trabalho: "#f6e8b0", pessoal: "#ffe7a1" },
-  baixa: { trabalho: "#cfd5e4", pessoal: "#cadddb" },
+  high:   { trabalho: "#fbc1c4", pessoal: "#ffc5b3" },
+  medium: { trabalho: "#f6e8b0", pessoal: "#ffe7a1" },
+  low:    { trabalho: "#cfd5e4", pessoal: "#cadddb" },
 };
 
 /** A cor que a nota mostra, em ordem de precedência decrescente:

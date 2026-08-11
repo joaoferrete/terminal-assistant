@@ -75,8 +75,10 @@ class CaptureReview(BaseModel):
     remind_at: str = Field(
         default="", description="lembrete correto em ISO (2026-08-14T08:30), ou vazio para NENHUM"
     )
+    # Valor canônico, independente do idioma da resposta: é campo estruturado que
+    # vai para o banco, não texto para o usuário ler (emenda do ADR 0006).
     priority: str = Field(
-        default="", description="'alta', 'media', 'baixa', ou vazio se não der para dizer"
+        default="", description="'high', 'medium', 'low', ou vazio se não der para dizer"
     )
     tags: list[str] = Field(
         default_factory=list, description="1 a 2 temas, SOMENTE da lista oferecida"

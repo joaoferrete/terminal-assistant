@@ -234,7 +234,7 @@ def cmd_media(cfg: Config, args) -> int:
 
 # Rótulo de largura fixa, para as linhas alinharem sem tabela. Só formatação: a
 # ordem vem pronta do daemon, e o CLI não tem mais tabela de rank própria.
-PRIO_LABEL = {"alta": "!ALTA", "media": "!med ", "baixa": "!bax "}
+PRIO_LABEL = {"high": "!ALTA", "medium": "!med ", "low": "!bax "}
 
 
 def cmd_revise(cfg: Config, args) -> int:

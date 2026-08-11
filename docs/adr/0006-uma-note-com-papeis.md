@@ -41,3 +41,39 @@ nunca grava `done_at`.
   como tipo no banco.
 - Combinações estranhas são representáveis (uma Note concluída sem prazo, por
   exemplo). Cabe à interface não oferecê-las, já que o modelo não as impede.
+
+## Emenda, 2026-08-11: o valor gravado é canônico; idioma é entrada e exibição
+
+A prioridade era o **único enum em português** do schema (`alta|media|baixa`),
+convivendo com um `status` que sempre foi inglês (`todo|doing|hold|done|
+cancelled`). Conviveram bem enquanto nada pedia nada ao modelo em inglês.
+
+Levar `TA_LANG` ao LLM transforma isso em bug de verdade. Instruído a responder
+em inglês, o modelo devolve `"high"`; a validação da revisão recusa o valor por
+não estar no enum; e a prioridade some **em silêncio** — sem erro, sem log. A
+nota volta da revisão sem prioridade e ninguém entende por quê.
+
+A regra que resolve, e que passa a valer para todo campo estruturado:
+
+> **O valor gravado é canônico e único. Idioma é coisa de entrada e de exibição.**
+
+Na prática:
+
+- O banco guarda `high|medium|low`, alinhado com `status`. Quem abre o SQLite lê
+  uma língua só.
+- `!alta`, `!media`, `!baixa` continuam aceitos na captura **para sempre**. Foram
+  a sintaxe por toda a vida do projeto, estão na memória muscular de quem usa, e
+  quebrá-los não compraria nada. `!high` também vale.
+- A tela e o CLI mostram no idioma do usuário.
+- O que o modelo devolve em campo **estruturado** é canônico, independente do
+  idioma em que ele foi instruído a escrever a prosa.
+
+A migração 6 reescreveu os valores existentes. É a primeira migração do projeto
+que altera **dado** em vez de acrescentar estrutura, e por causa disso `connect()`
+passou a copiar o banco antes de aplicar qualquer migração pendente: migração é
+atômica, mas atômico não é reversível, e o arquivo tem notas que a pessoa
+escreveu.
+
+Não vale como precedente para traduzir o resto por gosto. Vale porque havia uma
+falha concreta, silenciosa, e um caminho de entrada que preserva o que já se
+digitava.

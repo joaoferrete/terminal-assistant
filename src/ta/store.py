@@ -16,7 +16,7 @@ from .notes import ParsedNote, parse
 # Desempate DENTRO de uma faixa de horizonte — não é mais o primeiro critério de
 # exibição (ver `by_urgency`). Sem prioridade vem depois de baixa: não declarar
 # não é o mesmo que declarar baixa.
-PRIORITY_RANK = {"alta": 0, "media": 1, "baixa": 2, None: 3}
+PRIORITY_RANK = {"high": 0, "medium": 1, "low": 2, None: 3}
 
 # O Horizon de uma Task: a faixa de tempo em que o prazo dela cai, medida contra
 # hoje. É **derivado do relógio, nunca gravado** — a mesma nota muda de faixa à

@@ -380,7 +380,15 @@ async def _revisar_uma(app: Starlette, note_id: int) -> None:
         # Anotação não tem prioridade, por definição: registro e ideia solta não
         # são cobráveis, e pedir urgência delas só suja o mural. Se havia
         # prioridade posta por máquina, ela sai.
-        nova = r.priority if (tipo != "anotacao" and r.priority in notes_mod.PRIORITIES) else None
+        #
+        # `resolve_priority` e não `in PRIORITIES`: o modelo pode devolver `alta`
+        # tanto quanto `high`, e as duas formas querem dizer a mesma coisa. Um
+        # valor que não é nem uma nem outra vira log — antes disso ele virava
+        # `None` calado, e o sintoma era a nota voltar da revisão sem prioridade
+        # sem que nada dissesse por quê.
+        nova = notes_mod.resolve_priority(r.priority) if tipo != "anotacao" else None
+        if r.priority and nova is None and tipo != "anotacao":
+            log.warning("revisão devolveu prioridade fora do enum: %r", r.priority)
         if nova != note.priority:
             store.set_priority(app.state.conn, note_id, nova)
             avisos.append(f"prioridade {nova}" if nova else "prioridade removida")

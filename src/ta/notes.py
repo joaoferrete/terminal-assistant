@@ -32,7 +32,25 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
-PRIORITIES = ("alta", "media", "baixa")
+# O valor CANÔNICO, o que vai para o banco. Inglês, como `STATUSES` sempre foi:
+# um schema com `status='todo'` ao lado de `priority='alta'` obriga quem lê o
+# banco a saber duas línguas, e transformaria `TA_LANG` num bug — instruído a
+# responder em inglês, o modelo devolve "high", a validação recusaria e a
+# prioridade sumiria em silêncio (emenda do ADR 0006).
+PRIORITIES = ("high", "medium", "low")
+
+# Aceitos na CAPTURA, e para sempre. `!alta` foi a sintaxe por toda a vida do
+# projeto e está na memória muscular de quem usa; quebrá-la não compraria nada.
+# Idioma é coisa de entrada e de exibição — o valor gravado é um só.
+PRIORITY_ALIASES = {
+    "alta": "high", "media": "medium", "média": "medium", "baixa": "low",
+    "high": "high", "medium": "medium", "low": "low",
+}
+
+
+def resolve_priority(token: str) -> str | None:
+    """Normaliza o que foi digitado para o valor canônico. `None` se não for um."""
+    return PRIORITY_ALIASES.get(token.lower())
 
 # Vocabulário fechado para a revisão escolher. Fechado de propósito: se o modelo
 # pudesse inventar tag, cada nota ganharia um tema quase-igual ("trabalho",
@@ -142,7 +160,15 @@ RE_NL_HORA_SOLTA = re.compile(r"(?<!\S)(\d{1,2})(?::(\d{2})|h(\d{2})?)(?!\S)", r
 # `!!` continua aceito porque no mural não há shell nenhum, e porque quebrar
 # nota já escrita não compra nada.
 RE_REMIND = re.compile(r"(?<!\S)(?:@@|!!)(\d{1,2}):(\d{2})(?!\S)")
-RE_PRIORITY = re.compile(r"(?<!\S)!(" + "|".join(PRIORITIES) + r")(?!\S)", re.IGNORECASE)
+# A alternância vem da tabela de apelidos, não de `PRIORITIES`: quem digita tem
+# mais formas válidas do que o banco guarda. Ordenada da mais longa para a mais
+# curta porque `media` é prefixo de `medium` — sem isso a alternância casaria o
+# prefixo e voltaria só depois de backtracking, o que funciona mas depende de um
+# detalhe do motor de regex em vez de estar escrito.
+RE_PRIORITY = re.compile(
+    r"(?<!\S)!(" + "|".join(sorted(PRIORITY_ALIASES, key=len, reverse=True)) + r")(?!\S)",
+    re.IGNORECASE,
+)
 RE_TAG = re.compile(r"(?<!\S)#([\w-]+)(?!\S)", re.UNICODE)
 # `/` entra na classe para aceitar @25/12 — sem ele, `\w` para no `2` de `25` e
 # o lookahead falha, descartando a marca inteira em silêncio.
@@ -298,7 +324,8 @@ def parse(raw: str, *, now: datetime | None = None) -> ParsedNote:
             consumed.append(m.span())
 
     if m := RE_PRIORITY.search(raw):
-        priority = m[1].lower()
+        # O que foi digitado pode ser `!alta` ou `!high`; o que é gravado é um só.
+        priority = resolve_priority(m[1])
         consumed.append(m.span())
 
     for m in RE_TAG.finditer(raw):

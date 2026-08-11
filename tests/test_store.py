@@ -23,7 +23,7 @@ def test_captura_com_atributos_e_tags(conn):
     n = store.add_note(conn, "ligar dentista @sexta #saude #urgente !alta", now=NOW)
     assert n.text == "ligar dentista"
     assert n.due == "2026-08-14"
-    assert n.priority == "alta"
+    assert n.priority == "high"
     assert n.tags == ["saude", "urgente"]
     assert n.is_task
 

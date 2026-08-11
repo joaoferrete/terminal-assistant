@@ -9,13 +9,17 @@ mão do usuário vencer o LLM de forma permanente (ADR 0003).
 
 from __future__ import annotations
 
+import logging
 import os
+import shutil
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 5
+log = logging.getLogger("ta")
+
+SCHEMA_VERSION = 6
 
 # Estados de uma Note. Guardados em inglês porque o resto do vocabulário é
 # (ver CONTEXT.md); os rótulos em português vivem na interface.
@@ -157,7 +161,48 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX idx_notes_deleted ON notes(deleted_at);
         """,
     ),
+    (
+        6,
+        """
+        -- A prioridade era o ÚNICO enum em português do schema, ao lado de um
+        -- `status` que sempre foi inglês. Conviveram bem enquanto ninguém pedia
+        -- nada ao modelo em inglês.
+        --
+        -- Levar `TA_LANG` ao LLM transforma isso em bug de verdade: instruído a
+        -- responder em inglês, ele devolve "high", a validação da revisão recusa
+        -- o valor por não estar no enum, e a prioridade some EM SILÊNCIO — sem
+        -- erro, sem log. A nota volta da revisão sem prioridade e ninguém
+        -- entende por quê.
+        --
+        -- A regra que resolve: o valor gravado é canônico e único; idioma é
+        -- coisa de entrada e de exibição. `!alta` continua aceito na captura
+        -- para sempre (`PRIORITY_ALIASES`), e a tela mostra no idioma do
+        -- usuário.
+        UPDATE notes SET priority = 'high'   WHERE priority = 'alta';
+        UPDATE notes SET priority = 'medium' WHERE priority = 'media';
+        UPDATE notes SET priority = 'low'    WHERE priority = 'baixa';
+        """,
+    ),
 ]
+
+
+def _backup_antes_de_migrar(db_path: Path, de: int, para: int) -> None:
+    """Cópia do banco antes de a primeira migração pendente rodar.
+
+    As migrações são atômicas — ou aplicam inteiras, ou nenhuma —, mas atômico não
+    é reversível: a 6 reescreve valores de prioridade, e um `UPDATE` bem-sucedido
+    e indesejado não tem volta sem cópia. O banco tem notas que a pessoa escreveu,
+    e é barato demais não fazer.
+
+    Só acontece quando há migração pendente, então não custa nada no boot comum.
+    Falhar o backup **impede** a migração: seguir sem rede de segurança seria
+    exatamente o oposto do motivo de ele existir.
+    """
+    destino = db_path.with_suffix(f"{db_path.suffix}.v{de}-antes-da-v{para}")
+    if destino.exists():
+        return   # já migramos daqui uma vez; não sobrescrever a cópia mais antiga
+    shutil.copy2(db_path, destino)
+    log.warning("banco copiado para %s antes de migrar v%d → v%d", destino, de, para)
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
@@ -171,6 +216,14 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 5000")
+
+    atual = conn.execute("PRAGMA user_version").fetchone()[0]
+    alvo = MIGRATIONS[-1][0] if MIGRATIONS else 0
+    # Banco recém-criado não tem o que preservar, e copiar um arquivo vazio só
+    # geraria lixo em todo teste.
+    if atual and atual < alvo and db_path.exists():
+        _backup_antes_de_migrar(db_path, atual, alvo)
+
     migrate(conn)
     return conn
 

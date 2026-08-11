@@ -617,7 +617,7 @@ async def test_prioridade_digitada_pelo_usuario_e_intocavel(tmp_path):
 
     await _revisar_captura(app, nota.id)
 
-    assert store.get_note(app.state.conn, nota.id).priority == "alta"
+    assert store.get_note(app.state.conn, nota.id).priority == "high"
 
 
 async def test_tema_digitado_pelo_usuario_sobrevive_e_ganha_os_eixos(tmp_path):
