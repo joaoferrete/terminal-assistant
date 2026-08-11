@@ -229,7 +229,7 @@
      `position: absolute` dentro dele e cobririam o aviso. -->
 <div id="aviso" class="erro" hidden></div>
 
-<div id="board" class="geral"><div class="empty">carregando…</div></div>
+<div id="board" class="geral"><div class="empty" id="carregando"></div></div>
 
 <script>
 // Paleta manual tirada do MESMO sistema das cores automáticas, para uma escolha
@@ -298,10 +298,18 @@ const corDe = (n) => {
   return EIXO_BG[area] || SEM_NADA_BG;
 };
 const STATUSES = ["todo", "doing", "hold", "done", "cancelled"];
-const LABEL = {
-  todo: "Não feito", doing: "Em andamento", hold: "Em hold",
-  done: "Concluída", cancelled: "Cancelada",
-};
+// Catálogo injetado pela rota do mural (`MARCA_I18N` em daemon.py). O idioma não
+// muda durante a vida da página, então vem no HTML em vez de numa segunda
+// requisição — que só acrescentaria latência e um instante desenhando chaves cruas.
+//
+// Nada de tabela paralela aqui: se uma chave falta, `tr` devolve a própria chave,
+// que é feio e visível, em vez de `undefined`, que passa despercebido.
+const I18N = /*__I18N__*/{};
+const tr = (chave) => I18N[chave] ?? chave;
+
+const LABEL = Object.fromEntries(
+  ["todo", "doing", "hold", "done", "cancelled"].map(s => [s, tr(`status.${s}`)])
+);
 // As faixas de horizonte, com o rótulo que a divisória da lista mostra. Este é o
 // ÚNICO lugar do mural que sabe algo sobre horizonte: a ordem e a faixa de cada
 // nota vêm prontas do servidor, em `n.horizon` (ADR 0010). Nada de aritmética de
@@ -311,10 +319,9 @@ const LABEL = {
 // `depois e sem prazo` diz a verdade: a faixa junta o futuro distante e o que não
 // tem data nenhuma, para uma nota `!alta` sem prazo não afundar embaixo de uma
 // `!baixa` de setembro.
-const HORIZON_LABEL = {
-  vencida: "vencidas", hoje: "hoje",
-  semana: "próximos 7 dias", depois: "depois e sem prazo",
-};
+const HORIZON_LABEL = Object.fromEntries(
+  ["vencida", "hoje", "semana", "depois"].map(h => [h, tr(`horizon.${h}`)])
+);
 
 const boardEl = document.getElementById("board");
 const avisoEl = document.getElementById("aviso");
@@ -351,9 +358,7 @@ let fTagV = localStorage.getItem("ta.filtro.tag") || "";
 // `no-store` e atualiza na hora, mas as rotas Python só depois de reiniciar. Uma
 // mensagem só, para as duas detecções (rota que não existe e campo que não existe)
 // nunca divergirem.
-const MSG_DESATUALIZADO =
-  "O daemon está desatualizado — este mural é mais novo que ele.\n" +
-  "Rode: systemctl --user restart ta";
+const MSG_DESATUALIZADO = tr("daemon.desatualizado");
 
 /** Mostra o aviso acima do quadro, ou o esconde com `null`.
  *
@@ -398,15 +403,14 @@ const api = async (method, path, body) => {
     if (r.status === 401) {
       localStorage.removeItem(TOKEN_KEY);
       throw new Error(
-        "Este mural está aberto para a rede e a credencial não confere.\n" +
-        "Abra pelo endereço com ?token=… que está no seu .env (TA_TOKEN)."
+        tr("auth.mural")
       );
     }
     // 404 numa rota que este HTML conhece quer dizer daemon velho. Aconteceu de
     // verdade — o botão de esvaziar apareceu antes de o endpoint existir, e
     // "falhou" não dizia nada.
     if (r.status === 404) {
-      throw new Error(`rota ${path} não existe neste daemon.\n${MSG_DESATUALIZADO}`);
+      throw new Error(`${path} → 404.\n${MSG_DESATUALIZADO}`);
     }
     // Mensagem do servidor, quando houver: ela é escrita para ser lida.
     let detalhe = "";
@@ -613,7 +617,7 @@ const renderLista = () => {
       // `hoje` não quer dizer nada — uma nota concluída não tem urgência.
       if (!foraDaFilaPosto) {
         foraDaFilaPosto = true;
-        divisoria("fora da fila");
+        divisoria(tr("board.fora_da_fila"));
       }
     } else if (n.horizon !== faixa) {
       faixa = n.horizon;
@@ -940,7 +944,7 @@ load().catch(e => {
   // Pelo `#aviso`, e não por `innerHTML` no quadro: a mensagem pode vir do
   // servidor (e `textContent` é o que impede injeção), e as de credencial e de
   // daemon velho têm duas linhas — o `.erro` tem `white-space: pre-line`.
-  boardEl.innerHTML = `<div class="empty">não deu para carregar</div>`;
+  boardEl.innerHTML = `<div class="empty">${tr("board.nao_carregou")}</div>`;
   avisar(e.message);
 });
 </script>

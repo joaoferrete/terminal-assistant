@@ -190,17 +190,26 @@ def test_marcadores_do_cli_e_do_export_sao_os_mesmos():
 MURAL = Path(__file__).resolve().parents[1] / "src" / "ta" / "web" / "board.html"
 
 
-def test_as_faixas_do_mural_e_do_python_sao_as_mesmas():
-    """`HORIZON_LABEL` é o único lugar onde o JS nomeia as faixas.
+def test_toda_faixa_tem_rotulo_nos_dois_idiomas():
+    """Desde o `TA_LANG`, o catálogo é a fonte única dos rótulos de faixa.
 
-    Sem este pino, renomear uma faixa no Python não quebra nada: a divisória
-    simplesmente perde o rótulo, em silêncio.
+    Sem este pino, renomear ou acrescentar uma faixa no Python não quebra nada: a
+    divisória simplesmente perde o rótulo, em silêncio, e só num idioma.
     """
+    from ta.i18n import LANGS, MENSAGENS
     from ta.store import HORIZONS
 
-    corpo = re.search(r"const HORIZON_LABEL = \{(.*?)\};", MURAL.read_text(), re.S)
-    assert corpo, "o mural perdeu o HORIZON_LABEL"
-    assert set(re.findall(r"(\w+):", corpo[1])) == set(HORIZONS)
+    for faixa in HORIZONS:
+        entrada = MENSAGENS.get(f"horizon.{faixa}")
+        assert entrada, f"a faixa {faixa!r} não tem rótulo no catálogo"
+        assert set(entrada) == set(LANGS), f"horizon.{faixa} não tem os dois idiomas"
+
+
+def test_o_mural_le_as_faixas_do_catalogo():
+    """E não de uma tabela própria — que seria uma tradução sem teste."""
+    corpo = MURAL.read_text()
+    assert 'tr(`horizon.${h}`)' in corpo, "o mural voltou a nomear faixas por conta própria"
+    assert "const I18N = /*__I18N__*/{}" in corpo, "o mural perdeu o ponto de injeção"
 
 
 def test_o_mural_nao_reimplementa_a_ordem():
@@ -217,9 +226,17 @@ def test_o_mural_avisa_quando_o_daemon_esta_velho():
     verdade. Sem harness de JS, este pino estático é o que impede a guarda de ser
     removida no próximo refactor.
     """
+    from ta.i18n import LANGS, MENSAGENS
+
     corpo = MURAL.read_text()
     assert '"horizon" in todas[0]' in corpo, "o mural perdeu a guarda de versão"
-    assert "systemctl --user restart ta" in corpo, "a guarda não diz o que fazer"
+    assert 'tr("daemon.desatualizado")' in corpo, "a guarda perdeu a mensagem"
+
+    # A mensagem migrou para o catálogo, então é lá que o comando do conserto tem
+    # de estar — nos dois idiomas. Uma guarda que detecta e não diz o que fazer
+    # deixa a pessoa exatamente onde estava.
+    for lang in LANGS:
+        assert "systemctl --user restart ta" in MENSAGENS["daemon.desatualizado"][lang]
 
 
 def test_o_aviso_fica_fora_do_quadro():

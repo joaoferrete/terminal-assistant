@@ -20,6 +20,7 @@ from datetime import date
 
 from pydantic import BaseModel, Field
 
+from . import i18n
 from .notes import TAGS_SUGERIDAS
 
 log = logging.getLogger("ta.llm")
@@ -90,7 +91,7 @@ class CaptureReview(BaseModel):
     account: str = Field(default="pessoal", description="'pessoal' ou 'trabalho'")
     confidence: float = Field(default=0.0, description="0 a 1")
     reason: str = Field(
-        default="", description="uma frase curta em português dizendo o que mudou e por quê"
+        default="", description="uma frase curta dizendo o que mudou e por quê"
     )
 
 
@@ -113,16 +114,39 @@ class LLM:
         if self._client is not None:
             return self._client
         if not self.api_key:
-            raise LLMUnavailable(
-                "GEMINI_API_KEY não está configurada. Confira o .env e "
-                "`curl localhost:7777/health`."
-            )
+            raise LLMUnavailable(i18n.t("ai.sem_chave"))
         try:
             from google import genai
         except ImportError as e:  # pragma: no cover - dependência declarada
-            raise LLMUnavailable("SDK google-genai não está instalado.") from e
+            raise LLMUnavailable(i18n.t("ai.sem_sdk")) from e
         self._client = genai.Client(api_key=self.api_key)
         return self._client
+
+    # ── Idioma de saída ─────────────────────────────────────────────────────
+    # O corpo dos prompts segue em português — é a fonte, e reescrevê-los mudaria
+    # o comportamento do modelo sem que eu tenha como comparar antes e depois sem
+    # queimar chamadas. O que muda com `TA_LANG` é o idioma em que ele RESPONDE,
+    # e isso cabe numa instrução de sistema, num lugar só.
+    #
+    # Só a prosa é traduzida. Campo estruturado (`priority`, `status`) é canônico:
+    # sem essa distinção, a revisão devolveria "alta" sob `TA_LANG=pt`, a
+    # validação recusaria por não estar no enum, e a prioridade sumiria em
+    # silêncio (emenda do ADR 0006).
+    IDIOMA_DE_SAIDA = {
+        "pt": "Escreva todo texto livre em português do Brasil.",
+        "en": "Write all free text in English.",
+    }
+
+    def _sistema(self, system: str = "") -> str:
+        from .i18n import lang
+
+        regra = (
+            f"{self.IDIOMA_DE_SAIDA[lang()]} "
+            "Isso vale para prosa e para nomes de grupo, NUNCA para campos de "
+            "valor fixo como prioridade ou status, que têm um vocabulário próprio "
+            "definido no schema."
+        )
+        return f"{system}\n\n{regra}".strip()
 
     async def _structured(self, prompt: str, schema: type[BaseModel], system: str = ""):
         """Uma chamada com saída validada contra o schema."""
@@ -134,18 +158,18 @@ class LLM:
         cfg = types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=schema,
-            system_instruction=system or None,
+            system_instruction=self._sistema(system),
         )
         try:
             resp = await asyncio.to_thread(
                 client.models.generate_content, model=self.model, contents=prompt, config=cfg
             )
         except Exception as e:
-            raise LLMUnavailable(f"Gemini falhou: {e}") from e
+            raise LLMUnavailable(i18n.t("ai.falhou", erro=e)) from e
 
         # `parsed` é a instância validada; o SDK a preenche quando há schema.
         if getattr(resp, "parsed", None) is None:
-            raise LLMUnavailable("Gemini respondeu fora do schema pedido.")
+            raise LLMUnavailable(i18n.t("ai.fora_do_schema"))
         return resp.parsed
 
     async def list_models(self) -> list[str]:
@@ -271,7 +295,7 @@ class LLM:
             ),
             schema=CaptureReview,
             system=(
-                "Você revisa anotações soltas em português. Preserve o que o parser "
+                "Você revisa anotações soltas escritas pelo usuário. Preserve o que o parser "
                 "acertou e corrija só o que está errado. Na dúvida sobre data, hora ou "
                 "intenção, devolva confidence baixa em vez de adivinhar — uma correção "
                 "errada é pior que nenhuma."
@@ -285,7 +309,7 @@ class LLM:
         r = await self._structured(
             prompt=(
                 f"Compromissos de hoje:\n{ev}\n\nTarefas cobráveis:\n{tk}\n\n"
-                "Escreva 2 a 4 frases sobre como o dia se apresenta, em português, "
+                "Escreva 2 a 4 frases sobre como o dia se apresenta, "
                 "direto ao ponto. Aponte o aperto se houver — reuniões coladas, "
                 "tarefa vencida. Sem saudação e sem lista."
             ),

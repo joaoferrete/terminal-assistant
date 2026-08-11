@@ -15,6 +15,7 @@ import webbrowser
 import httpx
 
 from .config import Config
+from .i18n import LANGS, lang, lang_source, reset_cache, t
 
 # O daemon responde rápido em tudo que é determinístico. As rotas que chamam o
 # LLM são a exceção, e por isso o timeout é por chamada, não global: 5s é o certo
@@ -43,11 +44,7 @@ def _request(
     try:
         r = httpx.request(method, url, json=payload, timeout=timeout)
     except httpx.ConnectError as e:
-        raise Problem(
-            f"daemon não está respondendo em {cfg.base_url}.\n"
-            "  systemctl --user status ta\n"
-            "  systemctl --user start ta"
-        ) from e
+        raise Problem(f"{t('daemon.fora_do_ar')} ({cfg.base_url})") from e
     except httpx.TimeoutException as e:
         raise Problem(f"daemon não respondeu em {timeout:.0f}s ({cfg.base_url}).") from e
 
@@ -95,7 +92,7 @@ def cmd_list(cfg: Config, args) -> int:
     suffix = "?done=1" if args.all else ""
     notes = _request(cfg, "GET", f"/notes{suffix}").json()["notes"]
     if not notes:
-        print("nenhuma nota.")
+        print(t("cli.sem_notas"))
         return 0
     for n in notes:
         print(_fmt_note(n))
@@ -282,7 +279,7 @@ def cmd_rm(cfg: Config, args) -> int:
     if args.note_id is None:
         raise Problem("diga qual nota apagar, ou use `ta rm --list`.")
     n = _request(cfg, "DELETE", f"/notes/{args.note_id}").json()
-    print(f"apagada: #{n['id']} {n['text']}  (`ta restore {n['id']}` desfaz)")
+    print(f"{t('cli.apagada')}: #{n['id']} {n['text']}  (`ta restore {n['id']}` {t('cli.desfaz')})")
     return 0
 
 
@@ -353,20 +350,20 @@ def cmd_today(cfg: Config, args) -> int:
             print(f"    {quando:14} {e['summary']}")
 
     if not d["tasks"]:
-        print("  tarefas: nada cobrável hoje.")
+        print(f"  {t('cli.tarefas')}: {t('cli.nada_cobravel')}")
     else:
-        print("  tarefas:")
+        print(f"  {t('cli.tarefas')}:")
         # O `ta` roda do mesmo source tree, então o CLI é sempre o código novo
         # enquanto o daemon é o do último restart. Sem esta linha, um daemon velho
         # daria KeyError em `horizon` — alto, mas inútil. Dizer o que fazer é
         # melhor que um traceback, e melhor que degradar calado.
         if "horizon" not in d["tasks"][0]:
-            print("    (daemon desatualizado — rode: systemctl --user restart ta)")
+            print("    (" + t("daemon.desatualizado").replace("\n", " ") + ")")
         # Sem `sorted`: o daemon já devolve na ordem de exibição — atrasadas
         # primeiro, prioridade dentro da faixa (ADR 0010). O rótulo continua na
         # frente porque no fim da linha era fácil não ver.
         for n in d["tasks"]:
-            atraso = "  ATRASADA" if n.get("horizon") == "vencida" else ""
+            atraso = f"  {t('cli.atrasada')}" if n.get("horizon") == "vencida" else ""
             prio = PRIO_LABEL.get(n["priority"], "     ")   # 5 chars, sempre
             print(f"    {prio} #{n['id']} {n['text']}{atraso}")
     return 0
@@ -433,6 +430,51 @@ def cmd_init(cfg: Config, args) -> int:
         print()
     r = _request(cfg, "POST", "/priorities", {"answers": respostas}).json()
     print(r["content"])
+    return 0
+
+
+def cmd_lang(cfg: Config, args) -> int:
+    """Mostra ou fixa o idioma. Não fala com o daemon: é decisão local.
+
+    Sem argumento, diz o idioma **e de onde ele veio** — dizer só "pt" não ajuda
+    quem esperava inglês, porque a pergunta seguinte é sempre "por quê?".
+
+    O idioma é da INSTALAÇÃO, não da invocação: `TA_LANG=en ta note "..."` não
+    muda como a nota é interpretada, porque quem faz o parsing é o daemon, e ele
+    resolveu o idioma no boot dele. Isso é o comportamento certo, não uma
+    limitação — se o idioma variasse por chamada, duas notas capturadas no mesmo
+    dia leriam `@03/04` como datas diferentes, e o banco guardaria as duas como se
+    fossem a mesma coisa (ADR 0013).
+
+    Por isso fixar exige restart, e a mensagem diz isso.
+    """
+    from .config import config_file
+
+    if not args.code:
+        print(f"{lang()}  (de: {lang_source()})")
+        return 0
+
+    caminho = config_file()
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    linhas = caminho.read_text().splitlines() if caminho.exists() else []
+    # Reescrever a chave onde ela já está preserva comentários e ordem; um
+    # `tomllib` de ida e volta não existe na biblioteca padrão, e trazer um
+    # escritor de TOML só para isto seria dependência nova por uma linha.
+    for i, linha in enumerate(linhas):
+        if linha.strip().startswith("lang"):
+            linhas[i] = f'lang = "{args.code}"'
+            break
+    else:
+        linhas.insert(0, f'lang = "{args.code}"')
+    caminho.write_text("\n".join(linhas) + "\n")
+
+    reset_cache()
+    from .config import _user_config
+
+    _user_config.cache_clear()
+    print(f"idioma: {args.code}  ({caminho})")
+    print("vale para a captura e para o mural depois de:")
+    print("  systemctl --user restart ta")
     return 0
 
 
@@ -620,6 +662,10 @@ def build_parser() -> argparse.ArgumentParser:
     rl.add_argument("check", nargs="?", const=True, default=False, help="valida sem o daemon")
     rl.add_argument("--dir", help="diretório de regras")
     rl.set_defaults(func=cmd_rules)
+
+    lg = sub.add_parser("lang", help="mostra ou fixa o idioma (pt | en)")
+    lg.add_argument("code", nargs="?", choices=LANGS, help="idioma a fixar")
+    lg.set_defaults(func=cmd_lang)
     return p
 
 

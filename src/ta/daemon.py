@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hmac
+import json
 import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -21,7 +22,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
-from . import engine, priorities, store
+from . import engine, i18n, priorities, store
 from . import notes as notes_mod
 from .actuators.home import Home, HomeError, StateWatcher
 from .actuators.lighter import Lighter
@@ -49,6 +50,11 @@ log = logging.getLogger("ta")
 BRILHO_PADRAO = 100
 
 BOARD_HTML = Path(__file__).parent / "web" / "board.html"
+
+# O marcador que a rota do mural troca pelo catálogo de mensagens. Escrito como
+# comentário JS para que o arquivo continue abrindo direto no navegador durante o
+# desenvolvimento, em vez de virar sintaxe inválida.
+MARCA_I18N = "/*__I18N__*/{}"
 
 # Regras de exemplo, versionadas como documentação. NÃO são carregadas: elas
 # miram o inventário de uma casa específica, e carregar isso no boot de outra
@@ -655,10 +661,17 @@ async def board(request: Request) -> HTMLResponse:
     no mural só aparecia depois de recarga forçada — e eu perdi tempo achando que
     o CSS estava errado quando era só cache.
     """
-    return HTMLResponse(
-        BOARD_HTML.read_text(encoding="utf-8"),
-        headers={"Cache-Control": "no-store, must-revalidate"},
+    # O catálogo é INJETADO no HTML, e não buscado por uma rota: o idioma não muda
+    # durante a vida da página, então uma segunda requisição só acrescentaria
+    # latência e um modo de falha (o mural desenhado antes de o catálogo chegar,
+    # mostrando chaves cruas por um instante).
+    #
+    # O JS não tem tabela paralela — mesma disciplina do `HORIZON_LABEL`. Uma
+    # segunda tradução vivendo no cliente seria uma que nenhum teste compara.
+    html = BOARD_HTML.read_text(encoding="utf-8").replace(
+        MARCA_I18N, json.dumps(i18n.catalogo(), ensure_ascii=False), 1
     )
+    return HTMLResponse(html, headers={"Cache-Control": "no-store, must-revalidate"})
 
 
 async def today(request: Request) -> JSONResponse:
