@@ -11,8 +11,11 @@ Uma automação é uma **Rule**, e uma Rule tem três partes:
 ```
    gatilho          condição            ações
    ───────          ────────            ─────
-   entrei numa  +   e passou das   →    acende a luz no máximo
-   call             16h                 e liga o ringlight
+   entrei numa  +   (nenhuma)      →    acende a luz no máximo
+   call                                 e liga o ringlight
+
+   saí da       +   e ainda não    →    devolve a luz ao nível
+   call             são 16h             de estar
 ```
 
 O gatilho é o **quando**, a condição é o **só se**, e as ações são o **então**.
@@ -46,7 +49,7 @@ ta rules check
 ```
 
 ```
-  ok   reuniao_tarde  (mic=True)
+  ok   reuniao  (mic=True)
   ok   fim_da_reuniao  (mic=False)
   ok   boa_noite  (time=23:00)
 
@@ -193,34 +196,54 @@ que falha não deve derrubar a Rule que o pediu.
 
 Todas usam o inventário real da casa. Copie, ajuste, salve em `rules/`.
 
-### 1. Reunião depois das 16h (a que já existe)
+### 1. Reunião (a que já existe)
 
 O caso original, em `rules/reuniao.py`. Note as duas coisas que só são possíveis
 porque o app é o cérebro: a condição de hora, e consultar a agenda para tratar
 1:1 diferente.
 
+A hora **não** decide se a regra roda, e sim **o que** ela faz — porque `16:00`
+quer dizer "já escureceu" ([ADR 0011](adr/0011-a-hora-decide-o-que-a-regra-faz.md)):
+
+| Efeito | Antes das 16h | Depois |
+|---|---|---|
+| Luz no máximo, ao entrar | sim | sim |
+| Ringlight | não | sim |
+| Luz volta ao nível de estar, ao sair | sim | não |
+
 ```python
 from ta.engine import after, mic_active, mic_inactive, rule
 
 LUZ = "light.lampada_do_quarto"
+HORA_DE_ESCURECER = "16:00"
 
 
-@rule(on=mic_active(), when=after("16:00"))
-async def reuniao_tarde(ctx):
+def _ja_escureceu(ctx) -> bool:
+    """Um lugar só decide o que "16:00" quer dizer, e os dois usos leem daqui."""
+    return after(HORA_DE_ESCURECER)(ctx)
+
+
+@rule(on=mic_active())
+async def reuniao(ctx):
     evento = await ctx.calendar.agora() if ctx.calendar else None
     titulo = (evento or {}).get("summary", "")
 
     if titulo and "1:1" in titulo:      # 1:1 não precisa de produção
         return
 
-    await ctx.home.switch_on(LUZ, 100)
-    await ctx.lighter.apply_profile("Meet")
+    await ctx.home.switch_on(LUZ, 100)  # a luz ajuda numa call de qualquer hora
+    if _ja_escureceu(ctx):              # de dia a luz natural já dá conta
+        await ctx.lighter.apply_profile("Meet")
 
 
 @rule(on=mic_inactive())
 async def fim_da_reuniao(ctx):
+    # O 1:1 é conferido aqui também: se nada foi aceso, nada deve ser desfeito.
+    # `enable(False)` é incondicional de propósito — a reunião que começa às 15h50
+    # e termina às 16h10 não ligou a borda, mas precisa poder desligá-la.
     await ctx.lighter.enable(False)
-    await ctx.home.switch_on(LUZ, 40)
+    if not _ja_escureceu(ctx):
+        await ctx.home.switch_on(LUZ, 40)
 ```
 
 ### 2. Lembrete que acende a luz

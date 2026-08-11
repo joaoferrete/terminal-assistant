@@ -229,7 +229,7 @@ ta organize                 # agrupa e ordena as notas, e grava
 | Comando | O que faz |
 |---|---|
 | `ta note "<texto>"` | Captura. A sintaxe leve está abaixo |
-| `ta list` | As notas abertas |
+| `ta list` | As notas abertas, na ordem do mural: prazo primeiro ([faixas](#a-ordem-do-quadro-prazo-primeiro)) |
 | `ta list --all` | Inclui concluídas e canceladas |
 | `ta done <id>` | Conclui. Repetir volta a abrir |
 | `ta board` | Abre o mural no navegador |
@@ -362,7 +362,7 @@ convite enviado para um colega, não.
 
 | Comando | O que faz |
 |---|---|
-| `ta today` | Clima, compromissos das duas agendas e tarefas **ordenadas por prioridade**. Determinístico |
+| `ta today` | Clima, compromissos das duas agendas e tarefas — **vencidas primeiro**, prioridade dentro da faixa. Determinístico |
 | `ta today --date 2026-08-15` | O mesmo, para outro dia |
 | `ta prose` | O mesmo dia em prosa. **Usa LLM**, é opcional |
 
@@ -393,7 +393,7 @@ gravado:
 | `ta init` | A entrevista de prioridades (4 perguntas). `--force` refaz |
 | `ta priorities` | Mostra as prioridades atuais |
 | `ta priorities "<instrução>"` | Reescreve por prompt, ex: `"prioriza estudo acima de casa"` |
-| `ta organize` | Agrupa e ordena as notas, e **grava**. Respeita o que você arrastou |
+| `ta organize` | Agrupa por tema e refina a ordem **dentro** de cada faixa de prazo, e **grava**. Respeita o que você arrastou |
 | `ta event "<texto>"` | Detecta um evento no texto e **propõe**. Só grava com o seu sim |
 | `ta event --note-id 7` | O mesmo, a partir de uma nota já capturada |
 
@@ -476,6 +476,33 @@ segundos depois da captura e sem isso você veria o resultado do regex até aper
 F5. Ele **não** recarrega no meio de um arraste, nem enquanto há texto no campo
 de captura — recarregar reconstrói o DOM e apagaria o que você está escrevendo.
 
+São esses 15s que fazem o quadro **virar o dia sozinho**: a faixa de prazo é
+contada contra hoje, então à meia-noite o que vencia amanhã passa a vencer hoje e
+sobe. Uma aba aberta e visível se corrige em até 15s; uma aba escondida não
+recarrega, e se corrige quando você volta para ela. Nada é reescrito no banco por
+causa disso — a faixa é derivada na hora de mostrar, nunca gravada
+([ADR 0010](docs/adr/0010-o-relogio-ordena-o-quadro.md)).
+
+### A ordem do quadro: prazo primeiro
+
+O que ordena o quadro é o **prazo**, não a prioridade declarada. Cada tarefa cai
+numa faixa contada a partir de hoje, e a prioridade ordena **dentro** da faixa:
+
+| Faixa | Quando | Divisória na lista |
+|---|---|---|
+| `vencida` | prazo antes de hoje | **vencidas** |
+| `hoje` | prazo é hoje | **hoje** |
+| `semana` | nos próximos 7 dias (janela rolante, não semana do calendário) | **próximos 7 dias** |
+| `depois` | daí para frente, **e tudo que não tem prazo** | **depois e sem prazo** |
+
+Então uma `!baixa` que vence hoje fica acima de uma `!alta` que vence em três
+dias: a de hoje é a que precisa ser feita hoje. Nota sem prazo mora em `depois`
+junto do futuro distante, e não numa faixa própria no fim, para que uma `!alta`
+sem data não afunde embaixo de uma `!baixa` de setembro.
+
+A ordem é calculada no servidor e chega pronta ao mural, ao `ta list` e ao
+`ta export` — as três visões concordam porque nenhuma delas reimplementa a regra.
+
 ### As três visões do mural
 
 O mural tem um alternador no topo, e a visão escolhida sobrevive ao reload.
@@ -483,8 +510,12 @@ O mural tem um alternador no topo, e a visão escolhida sobrevive ao reload.
 | Visão | Para que serve | O que o arrastar faz |
 |---|---|---|
 | **geral** | Mural livre. Post-it fica onde a mão deixou | muda a **posição** |
-| **lista** | Tudo em lista por prioridade, com borda colorida por prioridade e as terminais no fim | — (o estado muda pelo seletor) |
-| **kanban** | Cinco colunas: Não feito, Em andamento, Em hold, Concluída, Cancelada | muda o **Status** |
+| **lista** | Tudo em lista por prazo, com divisória por faixa, borda colorida por prioridade e as terminais no fim | — (o estado muda pelo seletor) |
+| **kanban** | Cinco colunas: Não feito, Em andamento, Em hold, Concluída, Cancelada. Dentro de cada uma, a ordem por prazo | muda o **Status** |
+
+⚠️ A visão **geral** é a default e mostra pouco disso: post-it que você já
+arrastou fica onde a mão deixou, e a ordem só aparece na disposição inicial de
+quem nunca foi arrastado. Para ver a ordem, use **lista**.
 
 ### Cor do post-it
 
@@ -557,14 +588,20 @@ Python em `rules/`, versionado junto do código.
 
 ```python
 # rules/reuniao.py — a regra original, resumida
-@rule(on=mic_active(), when=after("16:00"))
-async def reuniao_tarde(ctx):
+@rule(on=mic_active())
+async def reuniao(ctx):
     evento = await ctx.calendar.agora()          # a agenda diz QUAL reunião é
     if "1:1" in (evento or {}).get("summary", ""):
         return                                   # 1:1 não precisa de produção
     await ctx.home.switch_on("light.lampada_do_quarto", 100)
-    await ctx.lighter.apply_profile("Meet")
+    if _ja_escureceu(ctx):                       # de dia a luz natural dá conta
+        await ctx.lighter.apply_profile("Meet")
 ```
+
+A hora não decide **se** a regra roda, e sim **o que** ela faz — porque `16:00`
+quer dizer "já escureceu". A luz acende em qualquer horário; o ringlight só depois
+disso; e, ao sair da call, a luz volta ao nível de estar só enquanto ainda for cedo
+([ADR 0011](docs/adr/0011-a-hora-decide-o-que-a-regra-faz.md)).
 
 Os gatilhos disponíveis hoje: microfone entrando e saindo de uso, hora do dia,
 Reminder vencendo, e mudança de estado de qualquer entity do HA. As ações alcançam
@@ -602,8 +639,11 @@ desligue:
 1. **O LLM nunca está no caminho crítico.** Capturar uma nota e abrir o mural
    funcionam offline, sempre. Quando o modelo roda sozinho — a segunda passada
    sobre a captura — é **depois** da resposta, nunca antes, e o que ele produz é
-   gravado — então nada se reorganiza sozinho, e sua mão sempre vence.
-   ([ADR 0003](docs/adr/0003-llm-fora-do-caminho-critico.md))
+   gravado — então nenhum *modelo* reorganiza nada sozinho, e sua mão sempre vence.
+   O **relógio** reorganiza: a faixa de prazo é contada contra hoje e vira o dia
+   sozinha, sem escrever nada no banco.
+   ([ADR 0003](docs/adr/0003-llm-fora-do-caminho-critico.md) e sua emenda,
+   [ADR 0010](docs/adr/0010-o-relogio-ordena-o-quadro.md))
 2. **Nada é escrito na agenda sem confirmação, e nunca com convidados.** O modo de
    falha é um compromisso fantasma visível para colegas de trabalho.
    ([ADR 0007](docs/adr/0007-propor-e-confirmar-antes-de-escrever-na-agenda.md))
@@ -649,3 +689,4 @@ consome um tempo de espera fixo na conexão. As chamadas seguintes levam 0,04s.
 | A borda não acende | Conferir `gsettings get org.gnome.shell.extensions.lighter enabled` e se a extensão está ativa |
 | Atalho de teclado sumiu | A lista `custom-keybindings` foi sobrescrita — ver a armadilha 1 em [docs/aliases.md](docs/aliases.md) |
 | Automação disparou na hora errada | `journalctl --user -u ta -f`. Só existe um lugar para olhar, e isso é de propósito ([ADR 0002](docs/adr/0002-motor-de-automacao-proprio-em-python.md)) |
+| **Mudei o código e o mural não mudou** | O daemon não foi reiniciado: `systemctl --user restart ta`. O mural é servido com `no-store` e atualiza na hora, as rotas Python só no restart — então o HTML pode ser mais novo que quem o serve. O mural detecta isso e mostra uma faixa vermelha dizendo exatamente esse comando; o `ta today` diz o mesmo numa linha |

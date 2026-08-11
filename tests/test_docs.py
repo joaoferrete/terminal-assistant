@@ -37,6 +37,41 @@ def test_toda_receita_do_guia_carrega(tmp_path):
     assert len(rep.rules) >= len(receitas)
 
 
+# ── A doc cita as regras que existem de verdade (ADR 0011) ──────────────────
+REPO = Path(__file__).resolve().parents[1]
+DOCS_COM_REGRAS = (REPO / "README.md", GUIA)
+
+
+def regras_reais() -> set[str]:
+    return {r.name for r in load_rules(REPO / "rules").rules}
+
+
+def test_a_doc_nao_cita_regra_de_reuniao_que_nao_existe():
+    """A regra foi renomeada e a condição saiu; a doc ficou meio dia mentindo.
+
+    `README.md` e o guia mostravam `reuniao_tarde` com `when=after("16:00")` depois
+    de a função virar `reuniao` e a hora sair do gatilho. Ninguém percebeu porque
+    nada comparava os dois — `test_toda_receita_do_guia_carrega` só prova que o
+    bloco é Python válido, e um nome errado carrega perfeitamente.
+
+    Só os nomes de `reuniao` são cobrados: as outras receitas são didáticas e não
+    existem em `rules/` de propósito.
+    """
+    reais = regras_reais()
+    citadas: set[str] = set()
+    for doc in DOCS_COM_REGRAS:
+        citadas |= set(re.findall(r"async def (\w+)\(ctx\)", doc.read_text()))
+
+    fantasmas = {n for n in citadas if "reuniao" in n} - reais
+    assert not fantasmas, f"a doc cita regra(s) que não existem: {sorted(fantasmas)}"
+
+
+def test_toda_regra_real_aparece_no_guia():
+    """O lado inverso: regra nova que ninguém documentou também é doc errada."""
+    ausentes = {r for r in regras_reais() if r not in GUIA.read_text()}
+    assert not ausentes, f"regra sem menção no guia: {sorted(ausentes)}"
+
+
 # Os métodos que o guia promete em `ctx.*`. Se um for renomeado, o guia mente.
 @pytest.mark.parametrize(
     ("classe", "metodos"),
@@ -149,3 +184,50 @@ def test_marcadores_do_cli_e_do_export_sao_os_mesmos():
     from ta.store import STATUS_MARK as export_marks
 
     assert cli_marks == export_marks
+
+
+# ── O mural não reimplementa a ordem (ADR 0010) ─────────────────────────────
+MURAL = Path(__file__).resolve().parents[1] / "src" / "ta" / "web" / "board.html"
+
+
+def test_as_faixas_do_mural_e_do_python_sao_as_mesmas():
+    """`HORIZON_LABEL` é o único lugar onde o JS nomeia as faixas.
+
+    Sem este pino, renomear uma faixa no Python não quebra nada: a divisória
+    simplesmente perde o rótulo, em silêncio.
+    """
+    from ta.store import HORIZONS
+
+    corpo = re.search(r"const HORIZON_LABEL = \{(.*?)\};", MURAL.read_text(), re.S)
+    assert corpo, "o mural perdeu o HORIZON_LABEL"
+    assert set(re.findall(r"(\w+):", corpo[1])) == set(HORIZONS)
+
+
+def test_o_mural_nao_reimplementa_a_ordem():
+    """A ordem vem pronta de `GET /notes`; um sort no cliente é a regra em dobro."""
+    assert "PRIO_RANK" not in MURAL.read_text()
+
+
+def test_o_mural_avisa_quando_o_daemon_esta_velho():
+    """Tirar a ordenação do cliente criou dependência da versão do servidor.
+
+    O mural é servido com `no-store` e atualiza na hora; as rotas Python só depois
+    de reiniciar. Contra um daemon velho não vem `horizon`, a ordem vem crua de
+    `sort_key` e a tela fica **errada com cara de certa** — foi o que aconteceu de
+    verdade. Sem harness de JS, este pino estático é o que impede a guarda de ser
+    removida no próximo refactor.
+    """
+    corpo = MURAL.read_text()
+    assert '"horizon" in todas[0]' in corpo, "o mural perdeu a guarda de versão"
+    assert "systemctl --user restart ta" in corpo, "a guarda não diz o que fazer"
+
+
+def test_o_aviso_fica_fora_do_quadro():
+    """Na visão geral os post-its são `position: absolute` dentro do `#board`.
+
+    A primeira versão do aviso foi inserida DENTRO dele e ficou ilegível atrás do
+    primeiro post-it — visto na tela, não em teste. Fora do `#board` ele empurra o
+    quadro para baixo em vez de ser coberto.
+    """
+    corpo = MURAL.read_text()
+    assert corpo.index('id="aviso"') < corpo.index('id="board"')
