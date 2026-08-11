@@ -26,7 +26,15 @@ from . import notes as notes_mod
 from .actuators.home import Home, HomeError, StateWatcher
 from .actuators.lighter import Lighter
 from .actuators.notify import Notifier
-from .config import LOOPBACK, Config, ConfigError, _comandavel, resolve_entity, resolve_targets
+from .config import (
+    LOOPBACK,
+    Config,
+    ConfigError,
+    _comandavel,
+    config_dir,
+    resolve_entity,
+    resolve_targets,
+)
 from .db import connect
 from .llm import LLM, LLMUnavailable
 from .scheduler import Scheduler, atraso_de, texto_de_atraso
@@ -41,7 +49,33 @@ log = logging.getLogger("ta")
 BRILHO_PADRAO = 100
 
 BOARD_HTML = Path(__file__).parent / "web" / "board.html"
-RULES_DIR = Path(__file__).resolve().parents[2] / "rules"
+
+# Regras de exemplo, versionadas como documentação. NÃO são carregadas: elas
+# miram o inventário de uma casa específica, e carregar isso no boot de outra
+# pessoa seria a regra falhando em silêncio contra uma entity inexistente.
+EXAMPLE_RULES = Path(__file__).resolve().parents[2] / "examples" / "rules"
+
+
+def user_rules_dir() -> Path:
+    """Onde as Rules do usuário moram: `~/.config/ta/rules/`.
+
+    O nome não é `rules_dir` porque `create_app` tem um parâmetro com esse nome,
+    e a sombra faria a chamada silenciosamente virar outra coisa.
+
+    Cai de volta para `<repo>/rules` quando o destino novo ainda não existe, e é
+    de propósito: quem já tinha regras ali não pode perdê-las por causa desta
+    mudança. `ta doctor` copia — nunca move — e a partir daí o XDG vence
+    (ADR 0014).
+    """
+    novo = config_dir() / "rules"
+    if novo.is_dir():
+        return novo
+    legado = Path(__file__).resolve().parents[2] / "rules"
+    if legado.is_dir():
+        log.info("regras lidas de %s (legado); `ta doctor` migra para %s", legado, novo)
+        return legado
+    return novo
+
 
 # Um socket IPv6 aceitando IPv4 reporta o par como `::ffff:127.0.0.1`. Sem isto,
 # o CLI local passaria a precisar de token só por causa da família do socket.
@@ -951,7 +985,7 @@ async def rules_route(request: Request) -> JSONResponse:
     app = request.app
     return JSONResponse(
         {
-            "dir": str(RULES_DIR),
+            "dir": str(user_rules_dir()),
             "rules": [
                 {"name": r.name, "on": [str(t) for t in r.on], "source": r.source}
                 for r in app.state.rules
@@ -1029,7 +1063,7 @@ def create_app(
     # sobe. Fica aqui e não no `main()` para valer também para quem monta o app
     # por conta própria.
     cfg.check()
-    rules_path = Path(rules_dir) if rules_dir else RULES_DIR
+    rules_path = Path(rules_dir) if rules_dir else user_rules_dir()
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette):

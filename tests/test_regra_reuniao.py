@@ -16,8 +16,8 @@ import pytest
 
 from ta.engine import Context, Trigger
 
-# As Rules moram fora do pacote, em `rules/`, e são carregadas por caminho.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rules"))
+# As Rules de exemplo moram em `examples/rules/`, e são carregadas por caminho.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples" / "rules"))
 import reuniao  # noqa: E402
 
 

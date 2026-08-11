@@ -1,0 +1,28 @@
+# Terminal Assistant — exemplo de configuração do usuário.
+#
+# Copie para `~/.config/ta/config.toml` (ou `$XDG_CONFIG_HOME/ta/config.toml`).
+# `ta doctor` faz isso para você.
+#
+# Tudo aqui é opcional. Sem este arquivo o projeto funciona: `ta on light.o_que_for`
+# continua exato, e `ta on quarto` casa por trecho do nome que vem do próprio Home
+# Assistant. Os apelidos são conveniência de digitação, não modelo de domínio.
+#
+# Segredos NÃO moram aqui — eles vêm do ambiente, via `.env`. Veja `.env.example`.
+
+# ── Apelidos ────────────────────────────────────────────────────────────────
+# `ta on quarto` em vez de `ta on light.lampada_do_quarto`.
+# Para descobrir os `entity_id` da sua casa: `ta entities`.
+[aliases]
+# quarto = "light.lampada_do_quarto"
+# ventilador = "switch.ventilador_socket_1"
+
+# ── Grupos ──────────────────────────────────────────────────────────────────
+# Acrescentados aos embutidos, que já existem e não precisam ser declarados:
+#
+#     luz, luzes  -> light.
+#     tomada(s)   -> switch.
+#     tudo        -> light. e switch.
+#
+# O valor é uma lista de prefixos de domínio. Um nome repetido substitui o embutido.
+[groups]
+# escritorio = ["light.", "switch."]

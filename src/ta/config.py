@@ -10,8 +10,14 @@ início do projeto e está registrado no ROADMAP.
 
 from __future__ import annotations
 
+import logging
 import os
+import tomllib
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+
+log = logging.getLogger("ta")
 
 # Loopback por padrão. O mural no celular continua possível, mas passou a exigir
 # dois atos deliberados — `TA_HOST` e `TA_TOKEN` —, porque o daemon expõe as notas
@@ -98,23 +104,70 @@ class Config:
             )
 
 
-# Apelidos curtos para entity_id, para que a linha de comando não exija digitar
-# `light.lampada_do_quarto`. O inventário real está no README; estes apelidos são
-# conveniência de CLI, não modelo de domínio.
-ENTITY_ALIASES: dict[str, str] = {
-    "quarto": "light.lampada_do_quarto",
-    "ventilador": "switch.ventilador_socket_1",
-}
+# ── Configuração do usuário ─────────────────────────────────────────────────
+# Apelidos e grupos moram em `~/.config/ta/config.toml`, e não aqui. Enquanto o
+# repositório foi de uma pessoa só, ter `quarto = light.abajur` fixo no
+# código-fonte era prático. Aberto, isso significaria que configurar a própria
+# casa exige editar o pacote instalado — mudança que se perde em toda
+# reinstalação (ADR 0014).
+#
+# O caminho segue o mesmo padrão de `db.default_db_path()`, que já estava certo.
+def config_dir() -> Path:
+    base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    return base / "ta"
 
 
-# Grupos por domínio: `ta on luz` liga todas as luzes.
-GROUPS: dict[str, tuple[str, ...]] = {
+def config_file() -> Path:
+    return config_dir() / "config.toml"
+
+
+# Grupos por domínio: `ta on luz` liga todas as luzes. Diferente dos apelidos,
+# estes não são pessoais — valem para qualquer casa —, então vêm embutidos e o
+# arquivo do usuário só acrescenta.
+GRUPOS_PADRAO: dict[str, tuple[str, ...]] = {
     "luz": ("light.",),
     "luzes": ("light.",),
     "tomada": ("switch.",),
     "tomadas": ("switch.",),
     "tudo": ("light.", "switch."),
 }
+
+
+@lru_cache(maxsize=1)
+def _user_config() -> dict:
+    """Lê `config.toml` uma vez. Ausente ou ilegível não é erro.
+
+    Uma casa sem apelidos funciona: `ta on light.o_que_for` continua exato, e
+    `ta on quarto` casa por trecho do nome vindo do próprio Home Assistant. Falhar
+    o daemon por causa de um arquivo de conveniência seria desproporcional — mas
+    falhar **calado** por causa de TOML quebrado seria pior, então isso vira log.
+    """
+    caminho = config_file()
+    if not caminho.exists():
+        return {}
+    try:
+        with caminho.open("rb") as f:
+            return tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        log.warning("%s ignorado: %s", caminho, e)
+        return {}
+
+
+def entity_aliases() -> dict[str, str]:
+    """Apelidos curtos para `entity_id`, do arquivo do usuário. Pode ser vazio."""
+    bruto = _user_config().get("aliases", {})
+    return {str(k): str(v) for k, v in bruto.items()} if isinstance(bruto, dict) else {}
+
+
+def groups() -> dict[str, tuple[str, ...]]:
+    """Os grupos embutidos, mais os do usuário. O do usuário vence no conflito."""
+    do_usuario = _user_config().get("groups", {})
+    extras = (
+        {str(k): tuple(v) for k, v in do_usuario.items() if isinstance(v, list)}
+        if isinstance(do_usuario, dict)
+        else {}
+    )
+    return {**GRUPOS_PADRAO, **extras}
 
 
 def _sem_acento(s: str) -> str:
@@ -146,7 +199,7 @@ def resolve_entity(name: str) -> str:
     """Traduz apelido para entity_id. Um valor com ponto já é entity_id."""
     if "." in name:
         return name
-    return ENTITY_ALIASES.get(name, name)
+    return entity_aliases().get(name, name)
 
 
 def resolve_targets(term: str, entities: list[dict]) -> list[str]:
@@ -154,7 +207,7 @@ def resolve_targets(term: str, entities: list[dict]) -> list[str]:
 
     A ordem importa, do mais específico ao mais amplo:
 
-      1. `light.lampada_do_quarto` — já é entity_id
+      1. `light.abajur`          — já é entity_id
       2. `luz`, `tudo`            — grupo por domínio
       3. `quarto`                 — apelido explícito
       4. `sala`                   — ambiente, por trecho do nome
@@ -168,16 +221,18 @@ def resolve_targets(term: str, entities: list[dict]) -> list[str]:
 
     chave = _sem_acento(term)
 
-    if chave in GROUPS:
-        prefixos = GROUPS[chave]
+    grupos = groups()
+    if chave in grupos:
+        prefixos = grupos[chave]
         return [
             e["entity_id"]
             for e in entities
             if e["entity_id"].startswith(prefixos) and _comandavel(e)
         ]
 
-    if chave in ENTITY_ALIASES:
-        return [ENTITY_ALIASES[chave]]
+    apelidos = entity_aliases()
+    if chave in apelidos:
+        return [apelidos[chave]]
 
     def casa(e: dict, prefixo: str) -> bool:
         if not e["entity_id"].startswith(prefixo) or not _comandavel(e):

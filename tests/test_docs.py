@@ -43,7 +43,7 @@ DOCS_COM_REGRAS = (REPO / "README.md", GUIA)
 
 
 def regras_reais() -> set[str]:
-    return {r.name for r in load_rules(REPO / "rules").rules}
+    return {r.name for r in load_rules(REPO / "examples" / "rules").rules}
 
 
 def test_a_doc_nao_cita_regra_de_reuniao_que_nao_existe():
