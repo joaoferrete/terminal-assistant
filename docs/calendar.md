@@ -6,7 +6,7 @@ that ask for the current event just get nothing back.
 The design choice: this project **never talks to a calendar provider**. GNOME's
 Online Accounts already syncs your calendars into Evolution Data Server, handles
 OAuth and renews tokens. This reads what is already on disk
-([ADR 0004](adr/0004-agenda-via-gnome-online-accounts.md)).
+([ADR 0004](adr/0004-calendar-through-gnome-online-accounts.md)).
 
 That means: no OAuth app to register, no refresh token to babysit, no credential
 stored by this project — and reads that are local and instant. The cost is that
@@ -35,7 +35,7 @@ venv only sees it if it was created with `--system-site-packages`:
 
 `make install` does this for you. If you created the venv another way, delete it
 and rerun — this is the failure mode
-[ADR 0005](adr/0005-python-do-sistema-por-causa-do-pygobject.md) exists to warn
+[ADR 0005](adr/0005-the-system-python-because-of-pygobject.md) exists to warn
 about, because a `python3 -m venv` typed from reflex produces an environment
 where `import gi` fails with no obvious explanation.
 
@@ -63,7 +63,7 @@ to.
 If it does not exist, nothing is written **anywhere**. That is deliberate: a
 guessed event landing in your real work calendar shows you as busy to your
 colleagues, and falling back to the main calendar would be the wrong kind of
-helpful ([ADR 0007](adr/0007-propor-e-confirmar-antes-de-escrever-na-agenda.md)).
+helpful ([ADR 0007](adr/0007-propose-and-confirm-before-writing-to-the-calendar.md)).
 
 ### Did it work?
 
@@ -80,7 +80,7 @@ ta today --date 2026-08-15      # some other day
 ```
 
 And from a rule, where it is **context rather than a trigger**
-([ADR 0008](adr/0008-microfone-como-gatilho-de-reuniao.md)):
+([ADR 0008](adr/0008-the-microphone-is-the-meeting-trigger.md)):
 
 ```python
 event = await ctx.calendar.agora()      # the event happening right now, or None

@@ -24,7 +24,7 @@ are the **then**. Only the trigger is required.
 
 Rules are Python files in `~/.config/ta/rules/`. Not a template language — real
 Python, with `if`, with variables, with whatever you want. The reasoning is in
-[ADR 0002](adr/0002-motor-de-automacao-proprio-em-python.md): a YAML dialect
+[ADR 0002](adr/0002-our-own-automation-engine-in-python.md): a YAML dialect
 would mean writing an interpreter before the first rule could run.
 
 ## Your first rule, in three minutes
@@ -186,7 +186,7 @@ events = await ctx.calendar.hoje()    # today's
 Each event is a dict with `summary`, `start`, `end`, `all_day`, `calendar`.
 
 The calendar is **context, not a trigger**
-([ADR 0008](adr/0008-microfone-como-gatilho-de-reuniao.md)): the microphone says
+([ADR 0008](adr/0008-the-microphone-is-the-meeting-trigger.md)): the microphone says
 you are in a meeting, the calendar says *which*. An event on the calendar does
 not prove you joined it.
 
@@ -205,13 +205,13 @@ Copy, adjust the entity ids to your own, save in `~/.config/ta/rules/`.
 
 ### 1. Meeting (the one that ships as an example)
 
-The original case, in `examples/rules/reuniao.py`. Note the two things that are
+The original case, in `examples/rules/meeting.py`. Note the two things that are
 only possible because the app is the brain: the time condition, and consulting
 the calendar to treat a 1:1 differently.
 
 The clock does not decide **whether** the rule runs — it decides **what it does**,
 because what `16:00` really means is "it is dark now"
-([ADR 0011](adr/0011-a-hora-decide-o-que-a-regra-faz.md)):
+([ADR 0011](adr/0011-the-hour-decides-what-the-rule-does.md)):
 
 | Effect | Before 16:00 | After |
 |---|---|---|
@@ -369,7 +369,7 @@ journalctl --user -u ta -f
 
 **A file with a syntax error does not take the daemon down.** It removes that
 file and the others keep loading. That is the guarantee from
-[ADR 0002](adr/0002-motor-de-automacao-proprio-em-python.md), and it is why
+[ADR 0002](adr/0002-our-own-automation-engine-in-python.md), and it is why
 `load_rules` catches `BaseException` — even a stray `exit()` in a rule file is
 contained.
 
@@ -399,7 +399,7 @@ Worth knowing what does **not** exist, so you do not go looking:
 - **No day-of-week recurrence in the `at_time` signature.** Do it in `when=`,
   like recipe 3.
 - **No pushed state from Home Assistant.** It is 5-second polling
-  ([ADR 0001](adr/0001-home-assistant-como-camada-de-device.md)). If sub-second
+  ([ADR 0001](adr/0001-home-assistant-as-the-device-layer.md)). If sub-second
   latency is ever needed, a WebSocket goes into `actuators/home.py` without
   changing any caller.
 

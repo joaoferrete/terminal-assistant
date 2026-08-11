@@ -8,7 +8,7 @@ The design decision behind all of it: **Home Assistant is the only thing that
 knows about device protocols.** This project speaks REST to it and knows nothing
 about Zigbee, Tuya, Matter or anything else. Swapping a bulb for a different
 protocol is a pairing job in Home Assistant, not a code change here
-([ADR 0001](adr/0001-home-assistant-como-camada-de-device.md)).
+([ADR 0001](adr/0001-home-assistant-as-the-device-layer.md)).
 
 ## From zero
 
@@ -193,7 +193,7 @@ the fan is actually *drawing power*, as opposed to merely being "on".
 
 If you have Echo devices exposed through `alexa_media_player`, they are ordinary
 `media_player` entities and need **zero Alexa-specific code**
-([ADR 0009](adr/0009-alexa-entra-como-media-player-do-home-assistant.md)):
+([ADR 0009](adr/0009-alexa-arrives-as-a-home-assistant-media-player.md)):
 
 ```bash
 ta media play

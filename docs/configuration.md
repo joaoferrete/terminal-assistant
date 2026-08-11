@@ -26,7 +26,7 @@ Every one of these is optional.
 | `TA_PORT` | `7777` | Port |
 | `TA_TOKEN` | *(none)* | Shared secret required from any client that is not on this machine. See [`SECURITY.md`](../SECURITY.md) |
 | `TA_DB` | `~/.local/share/ta/ta.db` | Where the SQLite file lives. `make demo` uses this to stay away from your real notes |
-| `TA_LANG` | your locale | `pt` or `en`. Governs the capture parser, the interface and the model's output language ([ADR 0013](adr/0013-um-idioma-por-vez.md)) |
+| `TA_LANG` | your locale | `pt` or `en`. Governs the capture parser, the interface and the model's output language ([ADR 0013](adr/0013-one-language-at-a-time.md)) |
 
 `TA_HOST` and `TA_TOKEN` travel together on purpose. The daemon has no
 authentication of its own, and it serves every note you have written plus the
@@ -97,7 +97,7 @@ disproportionate; failing *silently* would be worse, because the symptom is
 | Backups before migrations | next to the database | Made automatically when a migration is pending |
 
 Nothing you own lives inside the repository
-([ADR 0014](adr/0014-config-e-regras-do-usuario-em-xdg.md)). If you used a very
+([ADR 0014](adr/0014-user-config-and-rules-in-xdg.md)). If you used a very
 early version and had rules in `<repo>/rules/`, they still load — `ta doctor`
 copies them to the new place without deleting the originals.
 

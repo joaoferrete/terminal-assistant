@@ -5,7 +5,7 @@ works: capture, the board, the trigger engine, reminders, `ta today`, export,
 the whole house integration. None of it calls a model.
 
 That is a design rule, not an accident
-([ADR 0003](adr/0003-llm-fora-do-caminho-critico.md)):
+([ADR 0003](adr/0003-the-llm-is-never-on-the-critical-path.md)):
 
 - **Capture never waits for a model.** The parser is a regex, offline, and the
   note is saved before anything else happens.
@@ -19,7 +19,7 @@ That is a design rule, not an accident
 The clock is the one exception to "nothing reorders itself" — the due-date band
 is computed at display time, so the board turns the day over at midnight. The
 clock is local, instant, free and deterministic, which is why it gets to do that
-and a model does not ([ADR 0010](adr/0010-o-relogio-ordena-o-quadro.md)).
+and a model does not ([ADR 0010](adr/0010-the-clock-orders-the-board.md)).
 
 ## Turning it on
 
@@ -107,7 +107,7 @@ calendar** named `Terminal Assistant` — one per account, a separate and
 disposable layer.
 
 Two guards are permanent, and they exist to protect **other people**
-([ADR 0007](adr/0007-propor-e-confirmar-antes-de-escrever-na-agenda.md)):
+([ADR 0007](adr/0007-propose-and-confirm-before-writing-to-the-calendar.md)):
 
 1. **Never with guests.** A guest means an email to a real person, and a wrong
    invitation cannot be undone by deleting the event.

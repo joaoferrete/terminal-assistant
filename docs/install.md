@@ -138,7 +138,7 @@ which meeting you are in.
 
 This reads your local Evolution Data Server through PyGObject. Nothing is fetched
 over the network by this project — GNOME already syncs it, and this just reads
-what is on disk ([ADR 0004](adr/0004-agenda-via-gnome-online-accounts.md)).
+what is on disk ([ADR 0004](adr/0004-calendar-through-gnome-online-accounts.md)).
 
 ```bash
 sudo apt install gir1.2-ecal-2.0 gir1.2-edataserver-1.2
@@ -154,7 +154,7 @@ it. If you created the venv another way, delete it and run `make install` again.
 Optionally, create a calendar named `Terminal Assistant` in your provider. It is
 where detected events get written — a separate, disposable layer, so a wrong
 guess is never mixed into your real calendar
-([ADR 0007](adr/0007-propor-e-confirmar-antes-de-escrever-na-agenda.md)).
+([ADR 0007](adr/0007-propose-and-confirm-before-writing-to-the-calendar.md)).
 
 ### Did it work?
 
@@ -219,7 +219,7 @@ and does nothing if it is absent.
 By default the daemon listens on `127.0.0.1` only. Opening it to your network
 takes **two** deliberate steps, because it exposes every note you have written
 and the token that controls your house
-([ADR 0012](adr/0012-loopback-por-padrao-e-token-para-sair-dele.md)):
+([ADR 0012](adr/0012-loopback-by-default-and-a-token-to-leave-it.md)):
 
 ```bash
 echo "TA_HOST=0.0.0.0" >> .env
@@ -254,7 +254,7 @@ systemctl --user restart ta
 The language is a property of the **installation**, not of each command:
 `TA_LANG=en ta note …` will not change how the note is parsed, because the daemon
 does the parsing. This is deliberate
-([ADR 0013](adr/0013-um-idioma-por-vez.md)) — if it varied per call, two notes
+([ADR 0013](adr/0013-one-language-at-a-time.md)) — if it varied per call, two notes
 captured on the same day would read `@03/04` as different dates.
 
 ## Updating

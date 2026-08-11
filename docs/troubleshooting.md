@@ -220,7 +220,7 @@ in Portuguese mode.
 Numeric dates follow the active language: `@03/04` is **3 April** in Portuguese
 and **4 March** in English. This is the whole reason only one language is active
 at a time; accepting both would make that token silently wrong for half the
-world ([ADR 0013](adr/0013-um-idioma-por-vez.md)).
+world ([ADR 0013](adr/0013-one-language-at-a-time.md)).
 
 Unrecognised marks are not errors: `@home` is not a date, so it stays in your
 text rather than failing the capture.
@@ -248,7 +248,7 @@ ta doctor          # AI (Gemini): —
 
 Set `GEMINI_API_KEY` in `.env` and restart. Or do not — capture, the board, the
 rule engine, reminders and export never touch a model
-([ADR 0003](adr/0003-llm-fora-do-caminho-critico.md)).
+([ADR 0003](adr/0003-the-llm-is-never-on-the-critical-path.md)).
 
 To keep the key but stop the automatic pass over each capture: `TA_AUTO_REVIEW=0`.
 
@@ -258,7 +258,7 @@ The general view uses the position you dragged things to; your hand always beats
 the model. Look at the **list** view to see the ordering.
 
 Also: `organize` refines order *within* a due-date band, never across bands. The
-clock owns the deadline ([ADR 0010](adr/0010-o-relogio-ordena-o-quadro.md)).
+clock owns the deadline ([ADR 0010](adr/0010-the-clock-orders-the-board.md)).
 
 ---
 
@@ -273,7 +273,7 @@ journalctl --user -u ta -f
 ```
 
 There is exactly one place to look, and that is a design decision
-([ADR 0002](adr/0002-motor-de-automacao-proprio-em-python.md)).
+([ADR 0002](adr/0002-our-own-automation-engine-in-python.md)).
 
 A rule file with a syntax error does not take the daemon down — the others still
 load, and the failure is logged with the filename.

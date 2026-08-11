@@ -68,13 +68,13 @@ Being explicit so you can disagree with us knowingly:
 
 - **Rules are arbitrary Python**, loaded from your rules directory and executed by
   the daemon with your privileges. That is the whole design
-  ([ADR 0002](docs/adr/0002-motor-de-automacao-proprio-em-python.md)) — it is
+  ([ADR 0002](docs/adr/0002-our-own-automation-engine-in-python.md)) — it is
   code you wrote, not a sandbox. Do not run a rule file you did not read.
 - **The local user is trusted.** Any process running as you can reach the daemon.
 - **Note text is sent to a model provider** when AI features are enabled — the
   second pass over a capture, `organize`, `prose`, and event detection. This is
   optional and off without an API key, and no feature that matters depends on it
-  ([ADR 0003](docs/adr/0003-llm-fora-do-caminho-critico.md)). Only the **domain**
+  ([ADR 0003](docs/adr/0003-the-llm-is-never-on-the-critical-path.md)). Only the **domain**
   of a calendar account is ever sent, never a full address.
 
 ## Reporting a vulnerability

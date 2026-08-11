@@ -70,7 +70,7 @@ of the project, and it is checked by tests rather than promised in prose.
 
 A **Rule** is a trigger, optional conditions, and actions. Note where the
 calendar sits: it is **context, not a trigger**
-([ADR 0008](docs/adr/0008-microfone-como-gatilho-de-reuniao.md)). The microphone
+([ADR 0008](docs/adr/0008-the-microphone-is-the-meeting-trigger.md)). The microphone
 says *you are in a call*; the calendar says *which call*, and only if something
 asks.
 
@@ -99,9 +99,9 @@ anything.
 ### What happens to a note between typing it and seeing it?
 
 This one diagram explains the two principles people trip on: the model is never
-on the critical path ([ADR 0003](docs/adr/0003-llm-fora-do-caminho-critico.md)),
+on the critical path ([ADR 0003](docs/adr/0003-the-llm-is-never-on-the-critical-path.md)),
 and the time band is computed from the clock at display time, never stored
-([ADR 0010](docs/adr/0010-o-relogio-ordena-o-quadro.md)).
+([ADR 0010](docs/adr/0010-the-clock-orders-the-board.md)).
 
 ```mermaid
 flowchart TB
@@ -158,7 +158,7 @@ another.
 `status`, `priority` — including the values (`high`, `todo`). Input still accepts
 both (`!alta` and `!high` both work, forever), because the language of what you
 type is not the language of what gets stored
-([ADR 0006](docs/adr/0006-uma-note-com-papeis.md#emenda-2026-08-11)).
+([ADR 0006](docs/adr/0006-one-note-entity-with-roles.md#emenda-2026-08-11)).
 
 ## The comments are the point
 

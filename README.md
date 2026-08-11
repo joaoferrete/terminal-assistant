@@ -52,7 +52,7 @@ general:
 
 The AI is genuinely optional, not nominally: **no feature you rely on depends on
 it**, nothing calls a model unless you ask, and opening the board never costs
-money ([ADR 0003](docs/adr/0003-llm-fora-do-caminho-critico.md)).
+money ([ADR 0003](docs/adr/0003-the-llm-is-never-on-the-critical-path.md)).
 
 ## What it looks like
 
@@ -118,7 +118,7 @@ requirement for the core.
 The optional integrations are Linux-desktop shaped: they were built on Ubuntu
 with GNOME, Wayland and PipeWire, and that is where they are exercised. The
 calendar in particular reads Evolution Data Server through PyGObject, so it wants
-the system Python — see [ADR 0005](docs/adr/0005-python-do-sistema-por-causa-do-pygobject.md),
+the system Python — see [ADR 0005](docs/adr/0005-the-system-python-because-of-pygobject.md),
 because a `python3 -m venv` typed from reflex produces an environment where
 `import gi` fails with no obvious explanation.
 

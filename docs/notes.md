@@ -14,7 +14,7 @@ Or type into the field at the top of the board. Or bind a global shortcut to
 
 Capture is **instant and offline, always**. The parser is a regex, it never
 touches the network, and the response comes back before anything else happens
-([ADR 0003](adr/0003-llm-fora-do-caminho-critico.md)).
+([ADR 0003](adr/0003-the-llm-is-never-on-the-critical-path.md)).
 
 ### The marks
 
@@ -29,7 +29,7 @@ Text with no marks is a perfectly valid note. Most notes are.
 
 `!alta`, `!media` and `!baixa` are accepted forever alongside the English words —
 what you type is not what gets stored
-([ADR 0006](adr/0006-uma-note-com-papeis.md)).
+([ADR 0006](adr/0006-one-note-entity-with-roles.md)).
 
 > **`@@`, not `!!`.** The reminder mark used to be `!!HH:MM`, and it does not
 > work in zsh: `!!` triggers history expansion as the line is read, and the
@@ -49,7 +49,7 @@ ta note "review the PR next friday"
 The parser recognises **one language at a time** — whichever `ta lang` reports.
 Numeric dates follow it: `@03/04` is 3 April in Portuguese and 4 March in
 English. That is the entire reason only one is active
-([ADR 0013](adr/0013-um-idioma-por-vez.md)).
+([ADR 0013](adr/0013-one-language-at-a-time.md)).
 
 A token it does not recognise is not an error. `@home` is not a date, so it stays
 in your text.
@@ -70,7 +70,7 @@ choose one at capture time.
 - A Note can be both. Or neither.
 
 Roles come from the presence of attributes, not from a choice
-([ADR 0006](adr/0006-uma-note-com-papeis.md)). This is why "turn this idea into a
+([ADR 0006](adr/0006-one-note-entity-with-roles.md)). This is why "turn this idea into a
 task" is just adding a date, and never a conversion.
 
 **Status** is a separate axis: `todo`, `doing`, `hold`, `done`, `cancelled`. A
@@ -103,7 +103,7 @@ a `!low` due in September.
 **The board turns the day over by itself.** The band is computed from the clock
 at display time and never written to the database, so at midnight a note that was
 due tomorrow becomes due today and moves up. Nothing is rewritten
-([ADR 0010](adr/0010-o-relogio-ordena-o-quadro.md)).
+([ADR 0010](adr/0010-the-clock-orders-the-board.md)).
 
 ## The board
 
