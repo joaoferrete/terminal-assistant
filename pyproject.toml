@@ -3,6 +3,24 @@ name = "terminal-assistant"
 version = "0.1.0"
 description = "Assistente pessoal de terminal: casa inteligente e notas, sob um motor de gatilhos"
 requires-python = ">=3.12,<3.13"
+readme = "README.md"
+
+# Forma clássica de propósito: a `license = "Apache-2.0"` do PEP 639 exige
+# setuptools >= 77, e a venv desta máquina está na 68. Trocar forçaria o pip a
+# buscar um setuptools novo no build isolado — mudança de rede num `make install`
+# que hoje funciona. Migrar quando a base subir.
+license = { text = "Apache-2.0" }
+authors = [{ name = "Joao Ferrete" }]
+keywords = ["automation", "home-assistant", "notes", "tasks", "cli", "gnome"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Home Automation",
+    "Topic :: Office/Business :: Scheduling",
+    "Operating System :: POSIX :: Linux",
+]
 
 # 3.12 é o Python do sistema, e o pin é intencional: PyGObject (`gi`) só existe
 # em /usr/bin/python3, e é ele quem fala com o Evolution Data Server.

@@ -365,13 +365,43 @@ const avisar = (msg) => {
   avisoEl.textContent = msg || "";
 };
 
+// ── Credencial ─────────────────────────────────────────────────────────────
+// Só existe quando o daemon foi aberto para fora do loopback (ADR 0012). Aberto
+// assim, o mural é alcançado por `http://<ip>:7777/board?token=…`: o token vem
+// UMA vez na URL, é guardado, e sai da barra de endereço no mesmo instante —
+// senão ele fica no histórico do navegador e em todo link compartilhado.
+//
+// Em uso local não há token nenhum e nada disto roda.
+const TOKEN_KEY = "ta.token";
+(() => {
+  const u = new URL(location.href);
+  const t = u.searchParams.get("token");
+  if (!t) return;
+  localStorage.setItem(TOKEN_KEY, t);
+  u.searchParams.delete("token");
+  history.replaceState(null, "", u.pathname + u.search + u.hash);
+})();
+
 const api = async (method, path, body) => {
+  const headers = body ? { "Content-Type": "application/json" } : {};
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
   const r = await fetch(path, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : {},
+    headers,
     body: body ? JSON.stringify(body) : null,
   });
   if (!r.ok) {
+    // 401: o token guardado não serve mais, ou nunca houve um. Apagar o valor
+    // velho evita o laço de tentar para sempre com a credencial errada.
+    if (r.status === 401) {
+      localStorage.removeItem(TOKEN_KEY);
+      throw new Error(
+        "Este mural está aberto para a rede e a credencial não confere.\n" +
+        "Abra pelo endereço com ?token=… que está no seu .env (TA_TOKEN)."
+      );
+    }
     // 404 numa rota que este HTML conhece quer dizer daemon velho. Aconteceu de
     // verdade — o botão de esvaziar apareceu antes de o endpoint existir, e
     // "falhou" não dizia nada.
@@ -906,7 +936,13 @@ capture.addEventListener("keydown", async (e) => {
 });
 
 showDone.addEventListener("change", load);
-load().catch(e => { boardEl.innerHTML = `<div class="empty">erro ao carregar: ${e.message}</div>`; });
+load().catch(e => {
+  // Pelo `#aviso`, e não por `innerHTML` no quadro: a mensagem pode vir do
+  // servidor (e `textContent` é o que impede injeção), e as de credencial e de
+  // daemon velho têm duas linhas — o `.erro` tem `white-space: pre-line`.
+  boardEl.innerHTML = `<div class="empty">não deu para carregar</div>`;
+  avisar(e.message);
+});
 </script>
 </body>
 </html>

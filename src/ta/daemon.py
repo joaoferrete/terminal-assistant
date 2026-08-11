@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hmac
 import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.routing import Route
@@ -23,7 +26,7 @@ from . import notes as notes_mod
 from .actuators.home import Home, HomeError, StateWatcher
 from .actuators.lighter import Lighter
 from .actuators.notify import Notifier
-from .config import Config, _comandavel, resolve_entity, resolve_targets
+from .config import LOOPBACK, Config, ConfigError, _comandavel, resolve_entity, resolve_targets
 from .db import connect
 from .llm import LLM, LLMUnavailable
 from .scheduler import Scheduler, atraso_de, texto_de_atraso
@@ -39,6 +42,57 @@ BRILHO_PADRAO = 100
 
 BOARD_HTML = Path(__file__).parent / "web" / "board.html"
 RULES_DIR = Path(__file__).resolve().parents[2] / "rules"
+
+# Um socket IPv6 aceitando IPv4 reporta o par como `::ffff:127.0.0.1`. Sem isto,
+# o CLI local passaria a precisar de token só por causa da família do socket.
+LOOPBACK_PEERS = (*LOOPBACK, "::ffff:127.0.0.1")
+
+
+def _peer_local(request: Request) -> bool:
+    return bool(request.client) and request.client.host in LOOPBACK_PEERS
+
+
+class TokenAuth(BaseHTTPMiddleware):
+    """Exige `TA_TOKEN` de quem chega de outra máquina.
+
+    Cliente em loopback passa sem credencial, de propósito: quem já está nesta
+    máquina tem o `.env`, e exigir token dele faria `ta note` carregar segredo sem
+    ganhar segurança nenhuma. O que este middleware cobre é a **rede** — o caso em
+    que o daemon foi aberto com `TA_HOST` e um vizinho de wifi alcança as rotas.
+
+    Só é instalado quando há token. Em loopback puro o daemon não tem middleware
+    nenhum, e o caminho local segue exatamente como era (ADR 0012).
+
+    O token também é aceito na query, e não só no header, porque o mural precisa
+    bootar de algum jeito: `http://<ip>:7777/board?token=…` carrega o HTML, e daí
+    o JS guarda o valor e passa a mandá-lo no header.
+    """
+
+    def __init__(self, app, token: str) -> None:
+        super().__init__(app)
+        self._token = token
+
+    def _apresentado(self, request: Request) -> str:
+        cabecalho = request.headers.get("authorization", "")
+        if cabecalho.lower().startswith("bearer "):
+            return cabecalho[7:].strip()
+        return request.query_params.get("token", "")
+
+    async def dispatch(self, request: Request, call_next):
+        if not _peer_local(request):
+            # `compare_digest` em vez de `==`: comparação de segredo com saída
+            # antecipada vaza o prefixo correto pelo tempo de resposta.
+            enviado = self._apresentado(request)
+            if not enviado or not hmac.compare_digest(enviado, self._token):
+                log.warning(
+                    "401 de %s em %s", request.client.host if request.client else "?",
+                    request.url.path,
+                )
+                return JSONResponse(
+                    {"error": "credencial ausente ou inválida (TA_TOKEN)"},
+                    status_code=401,
+                )
+        return await call_next(request)
 
 
 def _note_json(n: store.Note, *, today: date | None = None) -> dict:
@@ -971,6 +1025,10 @@ def create_app(
     aquecimento das fontes. Teste não deve tocar o ambiente do usuário.
     """
     cfg = config or Config.from_env()
+    # Antes de qualquer outra coisa: um bind que alcança a rede sem credencial não
+    # sobe. Fica aqui e não no `main()` para valer também para quem monta o app
+    # por conta própria.
+    cfg.check()
     rules_path = Path(rules_dir) if rules_dir else RULES_DIR
 
     @contextlib.asynccontextmanager
@@ -1040,6 +1098,8 @@ def create_app(
 
     return Starlette(
         lifespan=lifespan,
+        # Sem token não há middleware: o caminho local fica idêntico ao que era.
+        middleware=[Middleware(TokenAuth, token=cfg.token)] if cfg.token else [],
         routes=[
             Route("/", board),
             Route("/board", board),
@@ -1075,11 +1135,22 @@ def create_app(
 
 
 def main() -> None:
+    import sys
+
     import uvicorn
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = Config.from_env()
-    uvicorn.run(create_app(cfg), host=cfg.host, port=cfg.port, log_level="warning")
+    try:
+        app = create_app(cfg)
+    except ConfigError as e:
+        # A mensagem já traz o conserto; um traceback só a esconderia.
+        print(f"\n{e}\n", file=sys.stderr)
+        raise SystemExit(2) from None
+
+    if cfg.exposed:
+        log.warning("daemon aberto em %s — protegido por TA_TOKEN", cfg.host)
+    uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="warning")
 
 
 if __name__ == "__main__":

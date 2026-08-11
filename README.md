@@ -273,7 +273,7 @@ também funciona, e o que não casa com nenhuma marca fica no texto.
 português corrente:
 
 ```
-ta note "Revisar o PR do Thi hoje"                    -> tarefa, prazo hoje
+ta note "Revisar o PR do Ana hoje"                    -> tarefa, prazo hoje
 ta note "dentista amanhã"                             -> tarefa, prazo amanhã
 ta note "reunião com o cliente na terça às 14h"       -> prazo e lembrete
 ta note "ir na nutricionista 17 de setembro às 8:30"  -> vira EVENTO na agenda

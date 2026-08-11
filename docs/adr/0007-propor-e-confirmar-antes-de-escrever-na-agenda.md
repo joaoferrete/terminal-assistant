@@ -43,7 +43,7 @@ A confirmação continua obrigatória, e a proibição de convidados continua ab
 O usuário pediu que uma nota como "ir na nutricionista 17 de setembro às 8:30"
 virasse compromisso **sozinha**, e escolheu explicitamente a opção de o LLM criar
 o evento sem confirmação, depois de eu apresentar o risco: um evento fantasma na
-agenda de trabalho aparece como ocupado para colegas da Cobli.
+agenda de trabalho aparece como ocupado para os colegas de trabalho.
 
 **A confirmação cai. As outras duas guardas ficam**, porque protegem terceiros e
 não o usuário:

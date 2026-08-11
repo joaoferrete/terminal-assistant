@@ -105,7 +105,7 @@ async def test_o_aviso_nao_anuncia_ringlight_que_nao_ligou(hora, esperado):
 
 @pytest.mark.parametrize("hora", ["14:00", "17:00"])
 async def test_um_a_um_nao_aciona_nada(hora):
-    home, lighter, notify = await _rodar(reuniao.reuniao, hora=hora, titulo="1:1 com Thi")
+    home, lighter, notify = await _rodar(reuniao.reuniao, hora=hora, titulo="1:1 com Ana")
     assert home.brilhos == []
     assert lighter.acoes == []
     assert notify.enviadas == []
@@ -149,7 +149,7 @@ async def test_o_ringlight_e_desligado_mesmo_tendo_comecado_de_dia(hora):
 
 async def test_fim_de_um_a_um_nao_desfaz_o_que_nunca_foi_feito():
     home, lighter, _ = await _rodar(
-        reuniao.fim_da_reuniao, hora="14:00", titulo="1:1 com Thi", ativo=False
+        reuniao.fim_da_reuniao, hora="14:00", titulo="1:1 com Ana", ativo=False
     )
     assert home.brilhos == []
     assert lighter.acoes == []

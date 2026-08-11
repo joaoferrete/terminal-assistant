@@ -141,7 +141,7 @@ class LLMEspiao(LLM):
         )
 
 
-PERFIL = "## Trabalho\nbackend de telemetria de frotas (Kafka, Cassandra, Go)"
+PERFIL = "## Trabalho\nbackend de um sistema de pagamentos (Kafka, Postgres, Go)"
 
 
 def test_o_perfil_de_priorities_entra_no_prompt_da_revisao():
@@ -152,11 +152,11 @@ def test_o_perfil_de_priorities_entra_no_prompt_da_revisao():
             due=None,
             remind_at=None,
             priorities=PERFIL,
-            contas="pessoal: gmail.com, trabalho: cobli.co",
+            contas="pessoal: gmail.com, trabalho: empresa.com",
         )
     )
-    assert "telemetria de frotas" in espiao.prompt
-    assert "Kafka, Cassandra, Go" in espiao.prompt
+    assert "sistema de pagamentos" in espiao.prompt
+    assert "Kafka, Postgres, Go" in espiao.prompt
 
 
 def test_apenas_o_dominio_da_conta_vai_para_o_modelo():
@@ -165,11 +165,11 @@ def test_apenas_o_dominio_da_conta_vai_para_o_modelo():
     asyncio.run(
         espiao.review_capture(
             "x", due=None, remind_at=None,
-            contas="pessoal: gmail.com, trabalho: cobli.co",
+            contas="pessoal: gmail.com, trabalho: empresa.com",
         )
     )
-    assert "cobli.co" in espiao.prompt
-    assert "eu@cobli.co" not in espiao.prompt
+    assert "empresa.com" in espiao.prompt
+    assert "eu@empresa.com" not in espiao.prompt
 
 
 def test_sem_perfil_o_prompt_nao_ganha_secao_vazia():

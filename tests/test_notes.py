@@ -92,12 +92,12 @@ def test_nao_confunde_marca_colada_em_palavra():
 
 # ── Data e hora em português corrente (sem marca) ───────────────────────────
 def test_prazo_em_portugues_corrente():
-    """`Revisar o PR do Thi hoje` tem que virar tarefa de hoje, sem `@`."""
-    n = parse("Revisar o PR do Thi hoje", now=NOW)
+    """`Revisar o PR do Ana hoje` tem que virar tarefa de hoje, sem `@`."""
+    n = parse("Revisar o PR do Ana hoje", now=NOW)
     assert n.due == date(2026, 8, 10)
     assert n.is_task
     # O texto NÃO é mutilado: a palavra faz parte da frase.
-    assert n.text == "Revisar o PR do Thi hoje"
+    assert n.text == "Revisar o PR do Ana hoje"
 
 
 def test_dia_e_mes_com_hora_viram_prazo_e_lembrete():

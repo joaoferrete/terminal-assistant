@@ -11,7 +11,7 @@ sempre.
     @@22:00        disparo -> papel Reminder  (`!!` também, mas quebra no zsh)
 
 Além das marcas, o parser lê **data e hora escritas em português corrente**:
-"Revisar o PR do Thi hoje" ganha prazo de hoje, e "ir na nutricionista 17 de
+"Revisar o PR do Ana hoje" ganha prazo de hoje, e "ir na nutricionista 17 de
 setembro às 8:30" ganha prazo e lembrete. Isto é deliberadamente determinístico e
 não usa LLM: prazo é caminho crítico, e um prazo que depende de rede é um prazo
 que falha no avião.
@@ -21,7 +21,7 @@ Duas regras que evitam surpresa:
 1. **Marca explícita sempre vence.** A linguagem natural só preenche o que ficou
    vazio, então `@sexta` num texto que também diz "hoje" resolve para sexta.
 2. **O texto não é mutilado.** Diferente das marcas, que são extraídas, a
-   expressão em português fica onde está — "Revisar o PR do Thi hoje" continua
+   expressão em português fica onde está — "Revisar o PR do Ana hoje" continua
    lendo como uma frase.
 """
 

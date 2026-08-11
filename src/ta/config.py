@@ -13,8 +13,21 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-DEFAULT_HOST = "0.0.0.0"  # noqa: S104 — LAN de propósito: o mural abre no celular
+# Loopback por padrão. O mural no celular continua possível, mas passou a exigir
+# dois atos deliberados — `TA_HOST` e `TA_TOKEN` —, porque o daemon expõe as notas
+# inteiras, o comando da casa e a chave do modelo, tudo sem credencial (ADR 0012).
+# Quem lê SECURITY.md já se preocupa; quem segue o passo a passo é quem não sabe
+# que devia.
+DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 7777
+
+# Endereços em que não há rede alheia alcançando o daemon. Fora desta lista,
+# `TA_TOKEN` é obrigatório e o daemon recusa subir sem ele.
+LOOPBACK = ("127.0.0.1", "::1", "localhost")
+
+
+class ConfigError(RuntimeError):
+    """Configuração que não dá para corrigir em runtime. O daemon não sobe."""
 
 
 @dataclass(frozen=True)
@@ -24,6 +37,9 @@ class Config:
     ha_url: str = "http://localhost:8123"
     ha_token: str | None = None
     gemini_api_key: str | None = None
+    # Credencial do PRÓPRIO daemon, não de terceiro. Só é exigida quando o bind
+    # sai do loopback; em loopback fica None e nada muda no uso local.
+    token: str | None = None
     # Echo(s) para anúncio de voz. Vazio = ninguém para falar, e o Reminder
     # continua avisando na tela — o caminho confiável nunca depende disto.
     echo_entities: tuple[str, ...] = ()
@@ -41,6 +57,7 @@ class Config:
             ha_url=os.environ.get("HA_URL", "http://localhost:8123").rstrip("/"),
             ha_token=os.environ.get("HA_TOKEN") or None,
             gemini_api_key=os.environ.get("GEMINI_API_KEY") or None,
+            token=os.environ.get("TA_TOKEN") or None,
             auto_review=os.environ.get("TA_AUTO_REVIEW", "1") not in ("0", "false", "no"),
             echo_entities=tuple(
                 e.strip() for e in os.environ.get("TA_ECHOS", "").split(",") if e.strip()
@@ -52,6 +69,33 @@ class Config:
         """Endereço que o CLI usa para falar com o daemon."""
         host = "127.0.0.1" if self.host in ("0.0.0.0", "::") else self.host  # noqa: S104
         return f"http://{host}:{self.port}"
+
+    @property
+    def exposed(self) -> bool:
+        """Se o bind alcança outra máquina. `0.0.0.0` e um IP de LAN alcançam."""
+        return self.host not in LOOPBACK
+
+    def check(self) -> None:
+        """Recusa uma configuração que exporia o daemon sem credencial.
+
+        Falha alto e cedo, com o conserto na mensagem — mesmo espírito do
+        `make check-gi`. Um daemon que sobe e só depois se descobre aberto é pior
+        que um que não sobe: ninguém vai reler o log de boot.
+        """
+        if self.exposed and not self.token:
+            raise ConfigError(
+                f"TA_HOST={self.host} expõe o daemon na rede, e ele não tem\n"
+                "autenticação própria: qualquer um na mesma rede leria suas notas,\n"
+                "comandaria a casa e gastaria sua chave de modelo.\n"
+                "\n"
+                "Para abrir com credencial, gere um token e reinicie:\n"
+                "\n"
+                "    echo \"TA_TOKEN=$(python3 -c 'import secrets;"
+                " print(secrets.token_urlsafe(32))')\" >> .env\n"
+                "    systemctl --user restart ta\n"
+                "\n"
+                "Para voltar ao acesso só local, remova TA_HOST do .env."
+            )
 
 
 # Apelidos curtos para entity_id, para que a linha de comando não exija digitar
