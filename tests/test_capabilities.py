@@ -10,6 +10,8 @@ ambiente pobre onde ele é mais necessário).
 """
 from pathlib import Path
 
+import pytest
+
 from ta.capabilities import Capability, inspect, por_comando
 from ta.cli import GRUPOS_DE_AJUDA, build_parser
 from ta.config import Config
@@ -64,6 +66,12 @@ def test_a_agenda_degrada_sem_sessao_grafica(monkeypatch):
     onde eles precisam responder. Reproduzido com um erro que não é nenhum dos
     dois, que é o que a versão antiga deixava passar.
     """
+    # Este teste precisa do `gi` PRESENTE, porque o cenário que ele reproduz é
+    # "os typelibs existem e o barramento não". O job do núcleo do CI roda sem
+    # `gi` nenhum de propósito, e lá não há o que reproduzir — quem exercita este
+    # caminho é o job da agenda.
+    gi = pytest.importorskip("gi", reason="o cenário exige typelibs instalados")
+
     from ta.sensors.calendar import Calendar
 
     class GErroDoGLib(Exception):
@@ -75,8 +83,6 @@ def test_a_agenda_degrada_sem_sessao_grafica(monkeypatch):
         raise GErroDoGLib("Cannot autolaunch D-Bus without X11 $DISPLAY (0)")
 
     # `SourceRegistry.new_sync` é o ponto exato onde o GLib estoura.
-    import gi
-
     gi.require_version("EDataServer", "1.2")
     from gi.repository import EDataServer
 
