@@ -12,11 +12,27 @@ de acoplamento caro.
 """
 import pytest
 
+# O idioma da suíte é FIXADO, e não herdado da máquina.
+#
+# Sem isto, `i18n.lang()` cai no locale de quem roda: na máquina do autor
+# (`pt_BR.UTF-8`) o parser ficava em português e os 17 testes de `@sexta`,
+# `3 de fevereiro` e `hoje eu preciso` passavam; no runner do CI, que não define
+# `LANG`, o padrão vira `en` e todos falhavam.
+#
+# Foi o CI que pegou, na primeira execução — que é exatamente para isso que ele
+# serve. Um teste que depende do ambiente de quem o roda não está testando o
+# código, está testando a máquina.
+#
+# `pt` porque é o que a maioria dos testes de parser exercita. Quem precisa do
+# outro idioma o declara por teste, como `test_i18n` faz.
+IDIOMA_DA_SUITE = "pt"
+
 
 @pytest.fixture(autouse=True)
-def _caches_limpos():
+def _caches_limpos(monkeypatch):
     from ta import config, i18n
 
+    monkeypatch.setenv("TA_LANG", IDIOMA_DA_SUITE)
     i18n.reset_cache()
     config._user_config.cache_clear()
     yield

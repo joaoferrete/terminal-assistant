@@ -248,3 +248,20 @@ def test_hora_de_verdade_junto_da_data_ainda_conta(em):
     n = em("en")("dentist on October 17 at 8:30")
     assert n.due == date(2026, 10, 17)
     assert n.remind_at.hour == 8 and n.remind_at.minute == 30
+
+
+def test_a_suite_nao_depende_do_locale_da_maquina():
+    """Nenhum teste pode depender do idioma de quem o roda.
+
+    Os 17 testes de parser em português passavam na máquina do autor
+    (`pt_BR.UTF-8`) e falhavam no CI, que não define `LANG` — o padrão vira `en` e
+    `@sexta` deixa de ser data. Foi o CI que pegou, na primeira execução.
+
+    Este teste é a guarda: se o `conftest` parar de fixar o idioma, ele grita aqui
+    em vez de a suíte inteira falhar num ambiente e não no outro, apontando para o
+    lugar errado.
+    """
+    from conftest import IDIOMA_DA_SUITE
+
+    assert i18n.lang() == IDIOMA_DA_SUITE
+    assert i18n.lang_source() == "TA_LANG", "o idioma está sendo herdado, não fixado"
