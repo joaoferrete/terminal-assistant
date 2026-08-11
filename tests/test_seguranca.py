@@ -23,7 +23,8 @@ from ta.config import DEFAULT_HOST, Config, ConfigError
 from ta.daemon import create_app
 
 TOKEN = "token-de-teste-nao-e-segredo"
-MURAL = Path(__file__).resolve().parents[1] / "src" / "ta" / "web" / "board.html"
+REPO = Path(__file__).resolve().parents[1]
+MURAL = REPO / "src" / "ta" / "web" / "board.html"
 
 
 def montar(tmp_path, **kw):
@@ -145,3 +146,35 @@ def test_health_nunca_devolve_valor_de_segredo(tmp_path):
 
     for segredo in (TOKEN, "fake"):
         assert segredo not in corpo
+
+
+# ── Nada de segredo pode entrar no repositório ──────────────────────────────
+def test_o_gitignore_cobre_backups_do_env():
+    """`.env` estava coberto; `.env.bak-*` não estava.
+
+    Um backup do `.env` feito antes de editá-lo, mais um `git add -A`, levou
+    HA_TOKEN e GEMINI_API_KEY reais para o histórico. Foi pego pela varredura de
+    publicação e expurgado antes de qualquer push, mas o buraco era do
+    `.gitignore` e é lá que ele se fecha.
+
+    Cobrir só `.env` protege o arquivo e não protege as cópias dele, que é o que
+    alguém cria justamente quando vai mexer em segredo.
+    """
+    padroes = (REPO / ".gitignore").read_text()
+    assert ".env" in padroes
+    assert ".env.bak*" in padroes, "backup do .env não está coberto"
+
+
+def test_nenhum_arquivo_de_segredo_esta_rastreado():
+    """A checagem direta, para não depender de ninguém lembrar de varrer.
+
+    `.env.example` é a única exceção, e existe justamente para ser versionado:
+    ele tem os nomes das chaves e nenhum valor.
+    """
+    import subprocess
+
+    saida = subprocess.run(
+        ["git", "ls-files"], cwd=REPO, capture_output=True, text=True, check=True
+    ).stdout.split()
+    suspeitos = [f for f in saida if f.startswith(".env") and f != ".env.example"]
+    assert not suspeitos, f"arquivo de segredo rastreado: {suspeitos}"
