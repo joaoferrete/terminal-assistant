@@ -177,6 +177,16 @@ MESSAGES: dict[str, dict[str, str]] = {
         "pt": "{entity!r} não é um media_player. Veja `ta entities`.",
         "en": "{entity!r} is not a media_player. See `ta entities`.",
     },
+    "api.lighter_missing": {
+        "pt": "Lighter não está instalada", "en": "Lighter is not installed",
+    },
+    "api.confirm_required_event": {
+        "pt": "confirmação explícita é obrigatória (ADR 0007)",
+        "en": "explicit confirmation is required (ADR 0007)",
+    },
+    "api.event_failed": {
+        "pt": "não consegui criar o evento", "en": "could not create the event",
+    },
     "api.nothing_to_do": {"pt": "nada a fazer", "en": "nothing to do"},
     "review.note_reviewed": {"pt": "Nota revisada", "en": "Note reviewed"},
     "review.due_removed": {"pt": "prazo removido", "en": "deadline removed"},

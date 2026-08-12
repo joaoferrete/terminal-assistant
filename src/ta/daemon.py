@@ -701,8 +701,8 @@ async def board(request: Request) -> HTMLResponse:
 async def today(request: Request) -> JSONResponse:
     """The Digest: calendar events plus chaseable Notes.
 
-    Determinístico e instantâneo — o LLM nunca entra aqui (ADR 0003). A prosa
-    gerada é enfeite opcional, pedida à parte.
+    Deterministic and instant — the LLM never comes in here (ADR 0003). The
+    generated prose is optional decoration, asked for separately.
     """
     app = request.app
     param = request.query_params.get("date")
@@ -864,7 +864,7 @@ async def lighter_route(request: Request) -> JSONResponse:
     body = await request.json() if await request.body() else {}
     lg = request.app.state.lighter
     if not lg.available:
-        return JSONResponse({"error": "Lighter não está instalada"}, status_code=502)
+        return JSONResponse({"error": i18n.t("api.lighter_missing")}, status_code=502)
     if "profile" in body:
         ok = await lg.apply_profile(str(body["profile"]))
     elif body.get("toggle"):
@@ -877,12 +877,12 @@ async def lighter_route(request: Request) -> JSONResponse:
 async def organize(request: Request) -> JSONResponse:
     """Agrupa e ordena com o LLM, e GRAVA o resultado.
 
-    Abrir o mural depois nunca chama o modelo, e o que foi arrastado à mão não é
-    desfeito (ADR 0003).
+    Opening the board afterwards never calls the model, and what was dragged by
+    hand is not undone (ADR 0003).
 
-    Desde o ADR 0010 o prazo não é mais assunto do modelo: a faixa de horizonte é
-    derivada do relógio e vem na frente de tudo na exibição. O que o `organize`
-    grava em `sort_key` refina a ordem **dentro** da faixa.
+    Since ADR 0010 the deadline is no longer the model's business: the horizon
+    band is derived from the clock and comes ahead of everything at display time.
+    What `organize` writes to `sort_key` refines the order **within** the band.
     """
     app = request.app
     conn = app.state.conn
@@ -905,7 +905,7 @@ async def organize(request: Request) -> JSONResponse:
     for p in res.placements:
         n = conhecidos.get(p.id)
         if n is None or n.pinned_by_user:
-            continue   # a mão do usuário vence a do modelo
+            continue   # the user's hand beats the model's
         conn.execute(
             "UPDATE notes SET group_name = ?, sort_key = ? WHERE id = ?",
             (p.group, ordem.get(p.group, 99) * 1000 + p.rank, p.id),
@@ -959,7 +959,7 @@ async def create_event(request: Request) -> JSONResponse:
             return JSONResponse({"error": f"falta {campo}"}, status_code=400)
     if not body.get("confirmed"):
         return JSONResponse(
-            {"error": "confirmação explícita é obrigatória (ADR 0007)"}, status_code=400
+            {"error": i18n.t("api.confirm_required_event")}, status_code=400
         )
     uid = await asyncio.to_thread(
         app.state.calendar.create_event,
@@ -969,7 +969,7 @@ async def create_event(request: Request) -> JSONResponse:
         datetime.fromisoformat(body["end"]),
     )
     if uid is None:
-        return JSONResponse({"error": "não consegui criar o evento"}, status_code=502)
+        return JSONResponse({"error": i18n.t("api.event_failed")}, status_code=502)
     if body.get("note_id"):
         app.state.conn.execute(
             "INSERT OR REPLACE INTO calendar_links (note_id, uid, source_uid, created_at)"
@@ -1041,12 +1041,12 @@ async def rules_route(request: Request) -> JSONResponse:
     )
 
 
-# ── Reação aos gatilhos ─────────────────────────────────────────────────────
+# ── Reacting to triggers ────────────────────────────────────────────────────
 async def _fire_reminders(app: Starlette, agora: datetime) -> None:
     """Due Reminders: notify and mark. It closes the time → action loop.
 
-    A notificação de desktop é o caminho obrigatório; o anúncio no Echo é
-    adicional, e sua ausência ou falha nunca impede o aviso (ADR 0009).
+    The desktop notification is the mandatory path; the Echo announcement is
+    additional, and its absence or failure never blocks the alert (ADR 0009).
     """
     conn = app.state.conn
     for note in store.pending_reminders(conn, now=agora):
@@ -1100,9 +1100,9 @@ def create_app(
 ) -> Starlette:
     """Monta o app.
 
-    `calendar`, `lighter` e `background` existem para injeção: sem eles, cada teste que
-    sobe o app conectaria ao Evolution Data Server de verdade e pagaria o
-    aquecimento das fontes. Teste não deve tocar o ambiente do usuário.
+    `calendar`, `lighter` and `background` exist for injection: without them,
+    every test that boots the app would connect to a real Evolution Data Server
+    and pay for warming the sources. A test must not touch the user's environment.
     """
     cfg = config or Config.from_env()
     # Before anything else: a bind that reaches the network with no credential
@@ -1136,8 +1136,8 @@ def create_app(
 
         report = engine.load_rules(rules_path)
         app.state.rules, app.state.rule_errors = report.rules, report.errors
-        for arquivo, _ in report.errors:
-            log.error("regra %s não carregou; as outras seguem", arquivo)
+        for filename, _ in report.errors:
+            log.error("rule %s did not load; the others carry on", filename)
 
         _wire_engine(app)
         # Take autonomy from the extension while the daemon is in charge, so its
@@ -1164,7 +1164,7 @@ def create_app(
                 asyncio.create_task(app.state.state_watcher.run(), name="state"),
             ]
         log.info(
-            "daemon de pé em %s | %d regra(s), %d erro(s)",
+            "daemon up on %s | %d rule(s), %d error(s)",
             cfg.base_url, len(app.state.rules), len(app.state.rule_errors),
         )
         try:
