@@ -1,12 +1,12 @@
-"""Scheduler: os gatilhos de tempo.
+"""Scheduler: the time triggers.
 
-Dois papéis. Disparar Rules em horários (`at_time`), e disparar os Reminders
-vencidos — que é o caminho que fecha o primeiro loop completo do motor
-(tempo → notificar) e prova a tese de que os dois módulos compartilham um motor.
+Two roles. Firing Rules at given times (`at_time`), and firing the Reminders that
+have come due — which is the path that closes the engine's first complete loop
+(time → notify) and proves the thesis that both halves share one engine.
 
-Uma decisão explícita: **nada de enxurrada retroativa.** Se o daemon ficou parado
-por horas, subir não deve cuspir dezenas de notificações de horários que já
-passaram. Reminder vencido dispara uma vez, mas horário perdido é perdido.
+One explicit decision: **no retroactive flood.** If the daemon was down for
+hours, starting it must not spit out dozens of notifications for times that
+already passed. A due Reminder fires once, but a missed time is missed.
 """
 
 from __future__ import annotations
@@ -20,10 +20,10 @@ log = logging.getLogger("ta.scheduler")
 
 TICK_S = 20.0
 
-# Reminder mais atrasado que isto dispara com aviso de atraso em vez de fingir
-# que é agora. Sem isso, subir o daemon depois de um fim de semana avisaria
-# "tomar remédio" de sexta.
-ATRASO_MAX = timedelta(hours=12)
+# A Reminder later than this fires with a lateness note rather than pretending it
+# is now. Without it, starting the daemon after a weekend would announce Friday's
+# "take the pills".
+MAX_LATENESS = timedelta(hours=12)
 
 
 class Scheduler:
@@ -34,22 +34,22 @@ class Scheduler:
     ) -> None:
         self.on_time = on_time
         self.on_reminder = on_reminder
-        self._ultimo_minuto: str | None = None
+        self._last_minute: str | None = None
 
-    async def tick(self, agora: datetime) -> None:
-        """Um ciclo. Recebe `agora` para ser testável sem esperar o relógio."""
-        minuto = agora.strftime("%H:%M")
+    async def tick(self, now: datetime) -> None:
+        """One cycle. Takes `now` so it is testable without waiting on the clock."""
+        minute = now.strftime("%H:%M")
 
-        # Um gatilho de horário dispara uma vez por minuto, não uma por tick.
-        if minuto != self._ultimo_minuto:
-            primeiro = self._ultimo_minuto is None
-            self._ultimo_minuto = minuto
-            # No primeiro tick não dispara: subir o daemon às 16:00 não deve
-            # executar a regra das 16:00 como se o minuto tivesse acabado de virar.
-            if not primeiro:
-                await self.on_time(minuto, agora)
+        # A time trigger fires once per minute, not once per tick.
+        if minute != self._last_minute:
+            first = self._last_minute is None
+            self._last_minute = minute
+            # It does not fire on the first tick: starting the daemon at 16:00
+            # must not run the 16:00 rule as if the minute had just turned.
+            if not first:
+                await self.on_time(minute, now)
 
-        await self.on_reminder(agora)
+        await self.on_reminder(now)
 
     async def run(self) -> None:
         while True:
@@ -58,20 +58,22 @@ class Scheduler:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                log.exception("tick do scheduler falhou; o laço continua")
+                log.exception("scheduler tick failed; the loop carries on")
             await asyncio.sleep(TICK_S)
 
 
-def atraso_de(remind_at: str, agora: datetime) -> timedelta:
-    return agora - datetime.fromisoformat(remind_at)
+def lateness_of(remind_at: str, now: datetime) -> timedelta:
+    return now - datetime.fromisoformat(remind_at)
 
 
-def texto_de_atraso(atraso: timedelta) -> str:
-    """Rótulo honesto quando o Reminder dispara tarde."""
-    if atraso <= timedelta(minutes=2):
+def lateness_label(late: timedelta) -> str:
+    """An honest label when the Reminder fires late."""
+    from .i18n import t
+
+    if late <= timedelta(minutes=2):
         return ""
-    if atraso < timedelta(hours=1):
-        return f" (atrasado {int(atraso.total_seconds() // 60)} min)"
-    if atraso < ATRASO_MAX:
-        return f" (atrasado {int(atraso.total_seconds() // 3600)} h)"
-    return " (muito atrasado)"
+    if late < timedelta(hours=1):
+        return t("reminder.late_minutes", n=int(late.total_seconds() // 60))
+    if late < MAX_LATENESS:
+        return t("reminder.late_hours", n=int(late.total_seconds() // 3600))
+    return t("reminder.very_late")

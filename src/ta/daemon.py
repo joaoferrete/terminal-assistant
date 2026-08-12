@@ -38,7 +38,7 @@ from .config import (
 )
 from .db import connect
 from .llm import LLM, LLMUnavailable
-from .scheduler import Scheduler, atraso_de, texto_de_atraso
+from .scheduler import Scheduler, lateness_label, lateness_of
 from .sensors.calendar import Calendar
 from .sensors.mic import MicWatcher
 
@@ -971,7 +971,7 @@ async def priorities_route(request: Request) -> JSONResponse:
     conn = app.state.conn
     if request.method == "GET":
         return JSONResponse(
-            {"content": priorities.current(conn), "questions": priorities.PERGUNTAS}
+            {"content": priorities.current(conn), "questions": priorities.QUESTIONS}
         )
     body = await request.json()
     if "answers" in body:
@@ -1036,7 +1036,7 @@ async def _fire_reminders(app: Starlette, agora: datetime) -> None:
     """
     conn = app.state.conn
     for note in store.pending_reminders(conn, now=agora):
-        atraso = texto_de_atraso(atraso_de(note.remind_at, agora))
+        atraso = lateness_label(lateness_of(note.remind_at, agora))
         await app.state.notify.send("Lembrete", f"{note.text}{atraso}", urgency="critical")
 
         for echo in app.state.config.echo_entities:

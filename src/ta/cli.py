@@ -478,7 +478,7 @@ def cmd_doctor(cfg: Config, args) -> int:
     **Não fala com o daemon**, de propósito: quem mais precisa deste comando é
     quem não conseguiu subir o daemon.
     """
-    from .capabilities import ambiente, inspect
+    from .capabilities import environment, inspect
     from .config import load_env_file
 
     # Sem isto o diagnóstico mente: o CLI não recebe o `.env` (só o systemd
@@ -496,7 +496,7 @@ def cmd_doctor(cfg: Config, args) -> int:
     if feitos:
         print()
 
-    for chave, valor in ambiente(cfg):
+    for chave, valor in environment(cfg):
         print(f"  {chave:10} {valor}")
     print()
 
@@ -643,7 +643,7 @@ def cmd_capture_popup(cfg: Config, args) -> int:
 # Cada grupo traz os PRÓPRIOS comandos. A sondagem de capacidade só acrescenta a
 # marca de indisponível — nunca decide o que aparece. Sem essa separação, uma
 # sonda que falha faz o `--help` esconder metade dos comandos, que foi exatamente
-# o que aconteceu num ambiente sem D-Bus.
+# o que aconteceu num environment sem D-Bus.
 GRUPOS_DE_AJUDA = (
     ("notes", "Notas e tarefas", "note list done rm restore board export today"),
     ("home", "Casa", "on off luz light entities temp router media"),
@@ -678,7 +678,7 @@ def _epilogo() -> str:
     linhas = []
     for chave, titulo, comandos in GRUPOS_DE_AJUDA:
         cap = por_chave.get(chave) if chave else None
-        marca = f"  —  {cap.resumo}" if (cap and not cap.ok) else ""
+        marca = f"  —  {cap.summary}" if (cap and not cap.ok) else ""
         linhas.append(f"  {titulo}{marca}\n      {comandos}")
 
     return (
@@ -750,8 +750,8 @@ def build_parser() -> argparse.ArgumentParser:
     of.add_argument("entity", nargs="?")
     of.set_defaults(func=cmd_off)
 
-    on = sub.add_parser("on", help="liga entity, grupo (luz, tudo) ou ambiente (quarto)")
-    on.add_argument("entity", help="entity_id, apelido, grupo ou nome de ambiente")
+    on = sub.add_parser("on", help="liga entity, grupo (luz, tudo) ou environment (quarto)")
+    on.add_argument("entity", help="entity_id, apelido, grupo ou nome de environment")
     on.add_argument("brightness", nargs="?", type=int, help="0-100, só em light.")
     on.set_defaults(func=cmd_on)
 
@@ -830,7 +830,7 @@ def main(argv: list[str] | None = None) -> int:
     # configurado e funcionando, e um `TA_PORT` no arquivo valia para o daemon e
     # não para o CLI, que continuava batendo na porta padrão.
     #
-    # Não sobrescreve o que já está no ambiente, então `TA_LANG=en ta ...` segue
+    # Não sobrescreve o que já está no environment, então `TA_LANG=en ta ...` segue
     # valendo mais que a linha do arquivo.
     load_env_file()
 

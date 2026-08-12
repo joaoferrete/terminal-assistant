@@ -6,13 +6,13 @@ e chegava ao usuário só pelo `journalctl`, depois de o daemon subir.
 
 Estes testes cobrem as duas coisas que dão errado num diagnóstico: **mentir**
 (dizer que falta o que está configurado) e **morrer** (estourar justamente no
-ambiente pobre onde ele é mais necessário).
+environment pobre onde ele é mais necessário).
 """
 from pathlib import Path
 
 import pytest
 
-from ta.capabilities import Capability, inspect, por_comando
+from ta.capabilities import Capability, by_command, inspect
 from ta.cli import GRUPOS_DE_AJUDA, build_parser
 from ta.config import Config
 
@@ -46,17 +46,17 @@ def test_a_ia_se_declara_opcional():
     """Sem isso, uma linha vermelha na tabela se lê como instalação quebrada."""
     ai = next(c for c in inspect(Config()) if c.key == "ai")
     assert not ai.ok
-    assert "opcional" in ai.fix.lower()
+    assert "optional" in ai.fix.lower()
 
 
 def test_o_resumo_cabe_numa_linha():
     """O motivo da agenda traz o erro do GLib inteiro — certo no doctor, e errado
     na lista de comandos, onde empurra tudo para fora da tela."""
-    c = Capability(key="x", label="X", ok=False, reason="curto. E aqui vem o resto longo.")
-    assert c.resumo == "curto"
+    c = Capability(key="x", label="X", ok=False, reason="short. And here comes the long rest.")
+    assert c.summary == "short"
 
 
-# ── O ambiente pobre, que é onde o diagnóstico mais importa ─────────────────
+# ── O environment pobre, que é onde o diagnóstico mais importa ─────────────────
 def test_a_agenda_degrada_sem_sessao_grafica(monkeypatch):
     """`GLib.GError: Cannot autolaunch D-Bus without X11 $DISPLAY`.
 
@@ -97,14 +97,14 @@ def test_uma_sonda_quebrada_nao_derruba_as_outras(monkeypatch):
     """Diagnóstico que morre no primeiro problema é inútil na máquina com problema.
 
     Foi a agenda que provou isso: sem sessão gráfica ela levava junto o `ta doctor`
-    inteiro, e o comando existe justamente para ambientes assim.
+    inteiro, e o comando existe justamente para environments assim.
     """
     from ta import capabilities
 
-    def sonda_ruim(cfg):
+    def bad_probe(cfg):
         raise RuntimeError("hardware estranho")
 
-    monkeypatch.setattr(capabilities, "SONDAS", (capabilities._notes, sonda_ruim))
+    monkeypatch.setattr(capabilities, "PROBES", (capabilities._notes, bad_probe))
     caps = capabilities.inspect(Config())
 
     assert len(caps) == 2
@@ -156,8 +156,8 @@ def test_o_help_aponta_para_o_doctor():
 
 
 def test_cada_comando_do_grupo_tem_capacidade_conhecida():
-    """`por_comando` é o que ligaria um erro de runtime à sua capacidade."""
-    mapa = por_comando(inspect(Config()))
+    """`by_command` é o que ligaria um erro de runtime à sua capacidade."""
+    mapa = by_command(inspect(Config()))
     assert mapa["organize"].key == "ai"
     assert mapa["luz"].key == "home"
     assert mapa["note"].key == "notes"

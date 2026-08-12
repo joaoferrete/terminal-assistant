@@ -145,6 +145,9 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "The daemon is out of date — this board is newer than it is.\n"
               "Run: systemctl --user restart ta",
     },
+    "reminder.late_minutes": {"pt": " (atrasado {n} min)", "en": " ({n} min late)"},
+    "reminder.late_hours": {"pt": " (atrasado {n} h)", "en": " ({n} h late)"},
+    "reminder.very_late": {"pt": " (muito atrasado)", "en": " (very late)"},
     "config.exposed_without_token": {
         "pt": "TA_HOST={host} expõe o daemon na rede, e ele não tem\n"
               "autenticação própria: qualquer um na mesma rede leria suas notas,\n"

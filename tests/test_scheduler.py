@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from ta.scheduler import Scheduler, atraso_de, texto_de_atraso
+from ta.scheduler import Scheduler, lateness_label, lateness_of
 
 
 def make():
@@ -41,20 +41,20 @@ async def test_reminders_conferidos_a_cada_tick():
 
 # ── Atraso ──────────────────────────────────────────────────────────────────
 def test_atraso_pequeno_nao_ganha_rotulo():
-    assert texto_de_atraso(timedelta(seconds=30)) == ""
-    assert texto_de_atraso(timedelta(minutes=2)) == ""
+    assert lateness_label(timedelta(seconds=30)) == ""
+    assert lateness_label(timedelta(minutes=2)) == ""
 
 
 def test_rotulo_de_atraso_em_minutos_e_horas():
-    assert texto_de_atraso(timedelta(minutes=20)) == " (atrasado 20 min)"
-    assert texto_de_atraso(timedelta(hours=3)) == " (atrasado 3 h)"
+    assert lateness_label(timedelta(minutes=20)) == " (atrasado 20 min)"
+    assert lateness_label(timedelta(hours=3)) == " (atrasado 3 h)"
 
 
 def test_atraso_grande_nao_finge_que_e_agora():
     """Subir o daemon depois de um fim de semana não deve avisar como se fosse agora."""
-    assert texto_de_atraso(timedelta(days=2)) == " (muito atrasado)"
+    assert lateness_label(timedelta(days=2)) == " (muito atrasado)"
 
 
 def test_atraso_de_calcula_a_partir_do_iso():
     agora = datetime(2026, 8, 10, 16, 30)
-    assert atraso_de("2026-08-10T16:00:00", agora) == timedelta(minutes=30)
+    assert lateness_of("2026-08-10T16:00:00", agora) == timedelta(minutes=30)
