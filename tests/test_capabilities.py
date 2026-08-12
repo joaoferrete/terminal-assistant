@@ -25,7 +25,7 @@ def test_the_six_capabilities_exist():
     assert keys == ["notes", "calendar", "mic", "home", "lighter", "ai"]
 
 
-def test_so_as_notas_sao_essential():
+def test_only_notes_are_essential():
     """The whole positioning in one assertion: the core runs anywhere.
 
     If some day another integration gets marked essential, `ta doctor` starts
@@ -180,7 +180,7 @@ def test_every_parser_command_is_in_a_group():
     assert registered - grouped == set(), "command in no group at all"
 
 
-def test_os_comandos_grouped_existem_de_verdade():
+def test_the_grouped_commands_really_exist():
     """The reverse: a group citing a command that no longer exists."""
     registered = set(build_parser()._subparsers._group_actions[0].choices)
     grouped = {c for _, _, cmds in HELP_GROUPS for c in cmds.split()}

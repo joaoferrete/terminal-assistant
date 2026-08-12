@@ -473,26 +473,27 @@ def _migrate_layout(cfg: Config) -> list[str]:
     target.mkdir(parents=True, exist_ok=True)
 
     if not config_file().exists():
-        exemplo = EXAMPLE_RULES.parent / "config.toml"
-        if exemplo.exists():
-            shutil.copy2(exemplo, config_file())
-            done.append(f"criado {config_file()}")
+        example = EXAMPLE_RULES.parent / "config.toml"
+        if example.exists():
+            shutil.copy2(example, config_file())
+            done.append(t("doctor.created", path=config_file()))
 
     rules_dir = target / "rules"
-    legado = EXAMPLE_RULES.resolve().parents[1] / "rules"
+    legacy = EXAMPLE_RULES.resolve().parents[1] / "rules"
     if not rules_dir.exists():
         rules_dir.mkdir(parents=True)
         # The legacy is `<repo>/rules` for whoever already used it: their rules
         # are THEIRS, and losing them over a layout change would be unacceptable.
         # Whoever has no legacy starts empty — the examples are copied
         # deliberately.
-        origem = legado if legado.is_dir() else None
-        if origem:
-            for f in origem.glob("*.py"):
+        source = legacy if legacy.is_dir() else None
+        if source:
+            for f in source.glob("*.py"):
                 shutil.copy2(f, rules_dir / f.name)
-            done.append(f"copiadas {len(list(rules_dir.glob('*.py')))} regra(s) para {rules_dir}")
+            done.append(t("doctor.rules_copied",
+                           n=len(list(rules_dir.glob("*.py"))), path=rules_dir))
         else:
-            done.append(f"criado {rules_dir}")
+            done.append(t("doctor.created", path=rules_dir))
     return done
 
 

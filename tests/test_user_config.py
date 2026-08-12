@@ -59,7 +59,7 @@ def test_the_builtin_groups_exist_without_a_config():
 
 
 # ── With a file ─────────────────────────────────────────────────────────────
-def test_apelido_do_file_uivo_e_usado(tmp_path):
+def test_an_alias_from_the_file_is_used(tmp_path):
     write(tmp_path, '[aliases]\nquarto = "light.lampada"\n')
     assert resolve_entity("quarto") == "light.lampada"
 

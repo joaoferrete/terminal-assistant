@@ -458,6 +458,13 @@ MESSAGES: dict[str, dict[str, str]] = {
     "cli.rules_loaded": {
         "pt": "{n} regra(s), {bad} com erro.", "en": "{n} rule(s), {bad} with errors.",
     },
+    # O que o `ta doctor` relata ao migrar o layout do ADR 0014. Roda uma vez por
+    # máquina, e é justamente na primeira execução que a mensagem tem de ser clara.
+    "doctor.rules_copied": {
+        "pt": "copiadas {n} regra(s) para {path}",
+        "en": "copied {n} rule(s) to {path}",
+    },
+    "doctor.created": {"pt": "criado {path}", "en": "created {path}"},
     "cli.lang_set": {"pt": "idioma: {code}  ({path})", "en": "language: {code}  ({path})"},
     "cli.lang_after_restart": {
         "pt": "vale para a captura e para o mural depois de:",
