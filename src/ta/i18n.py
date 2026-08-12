@@ -131,6 +131,14 @@ MESSAGES: dict[str, dict[str, str]] = {
         "pt": "O Home Assistant não está configurado. Defina HA_TOKEN e HA_URL no .env.",
         "en": "Home Assistant is not configured. Set HA_TOKEN and HA_URL in your .env.",
     },
+    "home.unreachable": {
+        "pt": "Home Assistant não responde em {url}. `docker ps`?",
+        "en": "Home Assistant is not answering at {url}. `docker ps`?",
+    },
+    "home.timeout": {
+        "pt": "Home Assistant não respondeu em {s}s.",
+        "en": "Home Assistant did not answer in {s}s.",
+    },
     "home.token_rejected": {
         "pt": "O Home Assistant recusou o token (401). Ele foi revogado?",
         "en": "Home Assistant rejected the token (401). Was it revoked?",

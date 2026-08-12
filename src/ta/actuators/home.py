@@ -48,10 +48,7 @@ class Home:
     async def _http(self) -> httpx.AsyncClient:
         if self._client is None:
             if not self.token:
-                raise HomeError(
-                    "HA_TOKEN não está configurado. Confira o .env e "
-                    "`curl localhost:7777/health`."
-                )
+                raise HomeError(i18n.t("home.no_token"))
             self._client = httpx.AsyncClient(
                 base_url=self.url,
                 headers={"Authorization": f"Bearer {self.token}"},
@@ -69,9 +66,9 @@ class Home:
         try:
             r = await client.request(method, path, json=payload)
         except httpx.ConnectError as e:
-            raise HomeError(f"Home Assistant não responde em {self.url}. `docker ps`?") from e
+            raise HomeError(i18n.t("home.unreachable", url=self.url)) from e
         except httpx.TimeoutException as e:
-            raise HomeError(f"Home Assistant não respondeu em {TIMEOUT:.0f}s.") from e
+            raise HomeError(i18n.t("home.timeout", s=f"{TIMEOUT:.0f}")) from e
         if r.status_code == 401:
             raise HomeError(i18n.t("home.token_rejected"))
         if r.status_code >= 400:

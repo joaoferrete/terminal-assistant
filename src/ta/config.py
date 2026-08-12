@@ -203,13 +203,13 @@ def groups() -> dict[str, tuple[str, ...]]:
     return {**DEFAULT_GROUPS, **extras}
 
 
-# Quais `entity_id` alimentam `ta temp` e `ta router`. Estavam FIXOS em
-# `actuators/home.py` — oito ids de uma casa específica —, o que o ADR 0014 já
-# tinha proibido para os apelidos e não pegou aqui. Para qualquer outra pessoa,
-# os dois comandos devolviam tudo nulo, em silêncio.
+# Which `entity_id`s feed `ta temp` and `ta router`. They were HARDCODED in
+# `actuators/home.py` — eight ids from one specific house — which ADR 0014 had
+# already forbidden for the aliases and did not catch here. For anybody else, the
+# two commands returned nothing but nulls, silently.
 #
-# Vazio é o padrão e é um estado válido: sem isto configurado, `ta temp` diz que
-# não há sensor em vez de mentir com brancos.
+# Empty is the default and is a valid state: with this unset, `ta temp` says
+# there is no sensor rather than lying with blanks.
 SENSOR_ROLES = (
     "weather", "external_ip", "download", "upload",
     "outlet", "watts", "volts", "amps", "kwh_total",
@@ -217,7 +217,7 @@ SENSOR_ROLES = (
 
 
 def sensors() -> dict[str, str]:
-    """De papel de sensor para `entity_id`, do arquivo do usuário."""
+    """From sensor role to `entity_id`, from the user's file."""
     raw = _user_config().get("sensors", {})
     if not isinstance(raw, dict):
         return {}

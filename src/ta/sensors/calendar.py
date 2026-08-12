@@ -226,7 +226,7 @@ class Calendar:
                 self._client(src)
                 return True
             except Exception:
-                log.debug("não conectei em %s", src.get_display_name(), exc_info=True)
+                log.debug("could not connect to %s", src.get_display_name(), exc_info=True)
                 return False
 
         with ThreadPoolExecutor(max_workers=len(fontes)) as pool:
@@ -303,7 +303,7 @@ class Calendar:
 
         src = reg.ref_source(source_uid)
         if src is None:
-            log.error("agenda %s não existe", source_uid)
+            log.error("calendar %s does not exist", source_uid)
             return None
 
         client = self._client(src)
@@ -315,7 +315,7 @@ class Calendar:
         return uid if ok else None
 
 
-# ── Conversões ──────────────────────────────────────────────────────────────
+# ── Conversions ─────────────────────────────────────────────────────────────
 def _ical(dt: datetime) -> str:
     return dt.strftime("%Y%m%dT%H%M%SZ")
 
@@ -331,12 +331,12 @@ def _ical_time(dt: datetime):
 
 
 def _instancia(icomp, inst_start, inst_end, src) -> Event | None:
-    """Uma ocorrência concreta. Os horários vêm da instância, não do mestre."""
+    """A concrete occurrence. The times come from the instance, not the master."""
     try:
         dtstart = icomp.get_dtstart()
         return Event(
             uid=icomp.get_uid() or "",
-            summary=icomp.get_summary() or "(sem título)",
+            summary=icomp.get_summary() or "(untitled)",
             start=_from_ical(inst_start),
             end=_from_ical(inst_end) if inst_end is not None else _from_ical(inst_start),
             all_day=bool(dtstart is not None and dtstart.is_date()),
@@ -344,7 +344,7 @@ def _instancia(icomp, inst_start, inst_end, src) -> Event | None:
             source_uid=src.get_uid(),
         )
     except Exception:
-        log.debug("componente de agenda ilegível", exc_info=True)
+        log.debug("unreadable calendar component", exc_info=True)
         return None
 
 

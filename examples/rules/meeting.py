@@ -1,30 +1,32 @@
-"""A regra que motivou o projeto.
+"""The rule that motivated the project.
 
-"Entrei numa reunião do Meet e são mais de 16h, então acende a luz no máximo — e
-seria PERFEITO se eu pudesse combinar isso com abrir o ringlight."
+"I joined a Meet call and it is past 16:00, so turn the light up to full — and it
+would be PERFECT if I could combine that with the ringlight coming on."
 
-É o caso que nenhum motor pronto resolve: o gatilho nasce no PC (microfone), a
-condição é de hora, e as ações caem metade na casa e metade no PC. Por isso o app
-é o cérebro e o Home Assistant é atuador burro (ADR 0002).
+It is the case no off-the-shelf engine solves: the trigger is born on the
+computer (the microphone), the condition is about the clock, and the actions land
+half in the house and half on the PC. That is why the app is the brain and Home
+Assistant is a dumb actuator (ADR 0002).
 
-O pedido original amarrava a hora à **entrada** na chamada. Hoje a hora não decide
-*se* a regra roda — ela decide **o que a regra faz**, porque o que `16:00` quer
-dizer de verdade é "já escureceu":
+The original request tied the hour to *entering* the call. Today the hour does not
+decide *whether* the rule runs — it decides **what it does**, because what `16:00`
+really means is "it is dark now":
 
-- A **luz** acende no máximo em qualquer horário: numa call ela ajuda sempre.
-- O **ringlight** só entra depois que escurece. De dia a luz natural já dá conta,
-  e a borda acesa é produção que ninguém pediu.
-- No **fim**, a luz volta ao nível de estar só se ainda for cedo. Depois disso ela
-  fica onde está, porque devolvê-la ao nível de estar seria devolver o quarto ao
-  escuro.
+- The **light** goes to full at any hour: on a call it always helps.
+- The **ringlight** only comes in after dark. During the day natural light does
+  the job, and a lit edge is production nobody asked for.
+- At the **end**, the light goes back to a living level only if it is still early.
+  After that it stays where it is, because lowering it would return the room to
+  darkness.
 
-Este arquivo é versionado de propósito. Editar e salvar; `ta rules check` valida
-sem subir o daemon, e o daemon recarrega no restart.
+This file is versioned as documentation and is NOT loaded — it targets one
+specific house's inventory. Copy it to `~/.config/ta/rules/`, adjust the entity
+ids, and `ta rules check` validates it without booting the daemon.
 """
 
 from ta.engine import after, mic_active, mic_inactive, rule
 
-# Apelido do inventário real da casa, conferido via API do HA.
+# An id from a real house inventory. Replace it with one of yours.
 LIGHT = "light.bedroom_lamp"
 RINGLIGHT_PROFILE = "Meet"
 
@@ -33,41 +35,41 @@ LIVING_LEVEL = 40
 
 
 def _is_dark(ctx) -> bool:
-    """Se `HORA_DE_ESCURECER` já passou.
+    """Whether `DARK_AFTER` has already passed.
 
-    Um lugar só decide o que "16:00" quer dizer, e os dois usos leem daqui: ligar
-    o ringlight na entrada, e segurar a luz na saída. É a mesma primitiva que uma
-    `when=` usaria, então os três não podem divergir.
+    One place decides what "16:00" means, and both uses read from here: turning
+    the ringlight on at entry, and holding the light at exit. It is the same
+    primitive a `when=` would use, so the three cannot disagree.
 
-    A hora é lida no instante do disparo, não no início da chamada — uma reunião
-    que atravessa as 16h conta como tarde na saída. Quem decide é a janela, não a
-    agenda.
+    The hour is read at the moment of firing, not at the start of the call — a
+    meeting crossing 16:00 counts as dark on the way out. What decides is the
+    window, not the calendar.
     """
     return after(DARK_AFTER)(ctx)
 
 
 async def _current_title(ctx) -> str:
-    """O título do compromisso em curso, ou vazio.
+    """The title of the appointment in progress, or empty.
 
-    A agenda entra como contexto, não como gatilho (ADR 0008): ela diz QUAL
-    reunião é, e permite decidir diferente por tipo de compromisso.
+    The calendar comes in as context, not as a trigger (ADR 0008): it says WHICH
+    meeting it is, and allows deciding differently per kind of appointment.
     """
     evento = await ctx.calendar.agora() if ctx.calendar else None
     return (evento or {}).get("summary", "")
 
 
 def _no_production(title: str) -> bool:
-    """1:1 não precisa de produção.
+    """A 1:1 needs no production.
 
-    Exemplo de condição que só existe porque o app tem acesso à agenda além do
-    sinal do microfone.
+    An example of a condition that only exists because the app has the calendar
+    on top of the microphone signal.
     """
     return bool(title) and "1:1" in title
 
 
 @rule(on=mic_active(), name="meeting")
 async def meeting(ctx):
-    """Chamada com microfone ativo: luz sempre, ringlight só depois de escurecer."""
+    """A call with the mic on: light always, ringlight only after dark."""
     title = await _current_title(ctx)
     if _no_production(title):
         return
@@ -79,28 +81,29 @@ async def meeting(ctx):
         await ctx.lighter.apply_profile(RINGLIGHT_PROFILE)
 
     if title:
-        # A notificação diz o que de fato aconteceu. Anunciar ringlight de manhã
-        # seria mentira barata, e é assim que se deixa de confiar no aviso.
+        # The notification says what actually happened. Announcing a ringlight in
+        # the morning would be a cheap lie, and that is how people stop trusting
+        # the alert.
         what = "light and ringlight on" if dark else "light on"
         await ctx.notify.send("Meeting", f"{title} — {what}", urgency="low")
 
 
 @rule(on=mic_inactive(), name="meeting_end")
 async def meeting_end(ctx):
-    """Saiu da chamada: o ringlight sai sempre, a luz só cai se ainda for cedo.
+    """Left the call: the ringlight always goes off, the light only drops if early.
 
-    Apagar por completo seria hostil — a pessoa continua no quarto.
+    Turning it off entirely would be hostile — the person is still in the room.
 
-    O `enable(False)` é incondicional de propósito, mesmo que de manhã o ringlight
-    nunca tenha sido aceso: desligar o que já está desligado não custa nada, e a
-    alternativa — repetir aqui a condição da entrada — deixaria a borda acesa numa
-    reunião que começou às 15h50 e terminou às 16h10.
+    The `enable(False)` is unconditional on purpose, even though in the morning
+    the ringlight was never turned on: switching off something already off costs
+    nothing, and the alternative — repeating the entry condition here — would
+    leave the edge lit after a meeting that started at 15:50 and ended at 16:10.
 
-    O 1:1 é conferido aqui também, e não só na entrada: se nada foi aceso, nada
-    deve ser desfeito. A checagem depende de o compromisso ainda estar em curso
-    (`calendar.now()` só devolve evento entre `start` e `end`), então quem sai
-    **depois** da hora marcada cai no caminho comum e tem a luz ajustada. Errar
-    para o lado de ajustar é o lado barato.
+    The 1:1 is checked here too, not only at entry: if nothing was turned on,
+    nothing should be undone. That check depends on the appointment still being in
+    progress (`calendar.now()` only returns an event between `start` and `end`),
+    so somebody leaving **after** the scheduled time falls through to the common
+    path and has the light adjusted. Erring towards adjusting is the cheap side.
     """
     if _no_production(await _current_title(ctx)):
         return
