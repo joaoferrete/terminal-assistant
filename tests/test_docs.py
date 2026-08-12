@@ -152,7 +152,7 @@ def test_o_perfil_de_priorities_entra_no_prompt_da_revisao():
             due=None,
             remind_at=None,
             priorities=PERFIL,
-            contas="pessoal: gmail.com, trabalho: empresa.com",
+            accounts="pessoal: gmail.com, trabalho: empresa.com",
         )
     )
     assert "sistema de pagamentos" in espiao.prompt
@@ -165,7 +165,7 @@ def test_apenas_o_dominio_da_conta_vai_para_o_modelo():
     asyncio.run(
         espiao.review_capture(
             "x", due=None, remind_at=None,
-            contas="pessoal: gmail.com, trabalho: empresa.com",
+            accounts="pessoal: gmail.com, trabalho: empresa.com",
         )
     )
     assert "empresa.com" in espiao.prompt

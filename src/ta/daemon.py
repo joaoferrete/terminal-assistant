@@ -347,7 +347,7 @@ async def _revisar_uma(app: Starlette, note_id: int) -> None:
             # Só o domínio, não o endereço: é o que decide o roteamento, e
             # mandar o e-mail inteiro para fora seria dado a mais pelo mesmo
             # resultado.
-            contas=", ".join(
+            accounts=", ".join(
                 f"{'pessoal' if a.personal else 'trabalho'}: "
                 f"{a.account.rsplit('@', 1)[-1] if '@' in a.account else '?'}"
                 for a in alvos

@@ -365,8 +365,8 @@ class LLMDeMentira:
         self.review = review
         self.chamadas = []
 
-    async def review_capture(self, text, *, due, remind_at, priorities="", contas=""):
-        self.chamadas.append((text, due, remind_at, priorities, contas))
+    async def review_capture(self, text, *, due, remind_at, priorities="", accounts=""):
+        self.chamadas.append((text, due, remind_at, priorities, accounts))
         return self.review
 
 
