@@ -106,6 +106,45 @@ def test_the_documented_ctx_fields_exist():
     assert {"now", "trigger", "home", "lighter", "notify", "calendar", "note", "extra"} <= fields
 
 
+# ── The licence, and why it must stay verbatim ──────────────────────────────
+def test_the_licence_text_is_unmodified():
+    """GitHub reads `LICENSE` to classify the project, and it reads it literally.
+
+    The file was once edited to put the real copyright in place of the
+    `[yyyy] [name of copyright owner]` placeholder, which also removed
+    `END OF TERMS AND CONDITIONS` and the appendix. The intent was right and the
+    result was that GitHub reported the licence as **"Other"**: no badge in the
+    sidebar, and every dependency scanner classifying the project as
+    unknown-licence, which in a company is the same as forbidden.
+
+    Apache's own convention is the opposite of the instinct: `LICENSE` stays
+    verbatim, and the copyright goes in `NOTICE` — see section 4(d) of the licence
+    itself, and the appendix this test insists on keeping.
+    """
+    body = (REPO / "LICENSE").read_text()
+
+    assert "Apache License" in body and "Version 2.0" in body
+    assert "END OF TERMS AND CONDITIONS" in body, (
+        "the licence text was truncated — GitHub will stop recognising it"
+    )
+    assert "APPENDIX: How to apply the Apache License to your work." in body
+    assert "Copyright [yyyy] [name of copyright owner]" in body, (
+        "the placeholder was filled in. The real copyright belongs in NOTICE."
+    )
+
+
+def test_the_copyright_is_declared_in_notice():
+    """Which is the half that makes keeping LICENSE verbatim safe.
+
+    Without a real copyright line somewhere, "keep the placeholder" would be
+    advice to publish an unattributed project.
+    """
+    notice = (REPO / "NOTICE").read_text()
+    assert re.search(r"Copyright \d{4} \S+", notice), (
+        "NOTICE carries no copyright line, so nothing claims authorship"
+    )
+
+
 # ── Calendar account identity ───────────────────────────────────────────────
 from ta.sensors.calendar import CalendarSource  # noqa: E402
 
