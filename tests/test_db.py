@@ -110,7 +110,7 @@ def test_o_banco_e_copiado_antes_de_migrar(tmp_path):
     _banco_na_v5(path)
     db.connect(path).close()
 
-    copias = list(tmp_path.glob("t.db.v5-antes-da-v*"))
+    copias = list(tmp_path.glob("t.db.v5-before-v*"))
     assert len(copias) == 1, f"esperava uma cópia, achei {copias}"
 
     # A cópia é o banco ANTIGO, não outro nome para o novo.
@@ -124,4 +124,4 @@ def test_o_banco_e_copiado_antes_de_migrar(tmp_path):
 def test_banco_novo_nao_gera_copia(tmp_path):
     """Copiar num banco recém-criado só geraria lixo em todo teste e todo boot."""
     db.connect(tmp_path / "novo.db").close()
-    assert list(tmp_path.glob("*antes-da*")) == []
+    assert list(tmp_path.glob("*before-v*")) == []

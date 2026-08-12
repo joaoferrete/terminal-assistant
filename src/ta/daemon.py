@@ -391,7 +391,7 @@ async def _revisar_uma(app: Starlette, note_id: int) -> None:
     # Prioridade e tags só entram se **você** não as escreveu. `by_user` é o que
     # separa "digitei `!alta`" de "a revisão pôs alta na passada anterior": o
     # primeiro é intocável, o segundo é revisável.
-    tipo = r.intent if r.intent in notes_mod.TIPOS else "anotacao"
+    tipo = r.intent if r.intent in notes_mod.KINDS else "anotacao"
 
     if not note.priority_by_user:
         # Anotação não tem prioridade, por definição: registro e ideia solta não
@@ -426,7 +426,7 @@ async def _revisar_uma(app: Starlette, note_id: int) -> None:
         novas = list(dict.fromkeys([*note.tags, *eixos]))
     else:
         temas = [
-            x for x in dict.fromkeys(r.tags) if x in notes_mod.TAGS_SUGERIDAS and x not in eixos
+            x for x in dict.fromkeys(r.tags) if x in notes_mod.SUGGESTED_TAGS and x not in eixos
         ][:2]
         novas = [*eixos, *temas]
 

@@ -21,7 +21,7 @@ from datetime import date
 from pydantic import BaseModel, Field
 
 from . import i18n
-from .notes import TAGS_SUGERIDAS
+from .notes import SUGGESTED_TAGS
 
 log = logging.getLogger("ta.llm")
 
@@ -289,7 +289,7 @@ class LLM:
                 "prioridade nenhuma; 'tarefa' para o que tem de ser feito; "
                 "'compromisso' para hora marcada.\n"
                 f"Classifique também: escolha 1 ou 2 tags EXCLUSIVAMENTE desta lista "
-                f"({', '.join(TAGS_SUGERIDAS)}) e uma prioridade, usando o que o "
+                f"({', '.join(SUGGESTED_TAGS)}) e uma prioridade, usando o que o "
                 "contexto diz sobre o que não pode cair e o que costuma ser adiado. "
                 "Se não der para dizer a prioridade, deixe vazia em vez de chutar."
             ),
