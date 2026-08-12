@@ -84,7 +84,7 @@ def _fmt_note(n: dict) -> str:
 def cmd_note(cfg: Config, args) -> int:
     text = " ".join(args.text).strip()
     if not text:
-        raise Problem('nada para capturar. Exemplo: ta note "ligar dentista @sexta #saude !alta"')
+        raise Problem(t("cli.nothing_to_capture"))
     note = _request(cfg, "POST", "/notes", {"text": text}).json()
     print(_fmt_note(note))
     return 0
@@ -122,7 +122,7 @@ def cmd_board(cfg: Config, args) -> int:
     return 0
 
 
-def cmd_luz(cfg: Config, args) -> int:
+def cmd_light(cfg: Config, args) -> int:
     payload = {"entity": args.entity}
     if args.brightness is not None:
         payload["brightness"] = args.brightness
@@ -137,7 +137,7 @@ def cmd_luz(cfg: Config, args) -> int:
 
 def cmd_on(cfg: Config, args) -> int:
     """Turn on any Entity. `ta luz` is the same command, kept for familiarity."""
-    return cmd_luz(cfg, args)
+    return cmd_light(cfg, args)
 
 
 def _fmt_num(v, casas=1):
@@ -164,10 +164,10 @@ def cmd_temp(cfg: Config, args) -> int:
     # The plug measures current: it can tell whether the fan is actually drawing
     # power, which is different from the switch being on.
     if o["state"] is not None:
-        puxando = (float(o["watts"] or 0) > 0.5)
+        pulling = (float(o["watts"] or 0) > 0.5)
         print(
             f"  ventilador: {o['state']}"
-            f"{' (puxando ' + _fmt_num(o['watts']) + ' W)' if puxando else ' (sem consumo)'}"
+            f"{' (pulling ' + _fmt_num(o['watts']) + ' W)' if pulling else ' (sem consumo)'}"
         )
     return 0
 
@@ -210,14 +210,14 @@ def cmd_media(cfg: Config, args) -> int:
     `entity="pause"` and Home Assistant returned an unexplained 400. Here the
     action is recognised by value, and whatever is not an action is the target.
     """
-    alvo, acao = "", None
+    target, action = "", None
     for termo in args.alvos:
         if termo in MEDIA_ACTIONS:
-            acao = termo
+            action = termo
         else:
-            alvo = termo
+            target = termo
 
-    payload: dict = {"entity": alvo}
+    payload: dict = {"entity": target}
     if args.volume is not None:
         payload["volume"] = args.volume
     elif args.play:
@@ -225,7 +225,7 @@ def cmd_media(cfg: Config, args) -> int:
     elif args.announce:
         payload["announce"] = " ".join(args.announce)
     else:
-        payload["action"] = acao or "play"
+        payload["action"] = action or "play"
     _request(cfg, "POST", "/media", payload)
     print("ok")
     return 0
@@ -233,32 +233,38 @@ def cmd_media(cfg: Config, args) -> int:
 
 # A fixed-width label, so the lines align without a table. Formatting only: the
 # order arrives ready from the daemon, and the CLI has no rank table of its own.
-PRIO_LABEL = {"high": "!ALTA", "medium": "!med ", "low": "!bax "}
+def _prio_label(priority: str | None) -> str:
+    """The fixed-width priority label, from the catalogue.
+
+    It was a dict of Portuguese literals, so `ta list` printed `!ALTA` under
+    `TA_LANG=en`. The width is load-bearing — see the note on the keys.
+    """
+    return t(f"priority.short.{priority}") if priority else " " * 5
 
 
 def cmd_revise(cfg: Config, args) -> int:
     """The same as the board's "review all" button.
 
-    It puts every open Note back in the queue and follows it until it drains. Done and
-    canceladas ficam de fora: revisar prazo de coisa encerrada gasta chamada de
-    modelo por nada.
+    It puts every open Note back in the queue and follows it until it drains. Done
+    and cancelled ones stay out: reviewing the deadline of something already
+    finished spends a model call for nothing.
     """
     r = _request(cfg, "POST", "/review-all", timeout=TIMEOUT_LLM).json()
     total = r["queued"]
     if not total:
-        print("nada aberto para revisar.")
+        print(t("cli.nothing_to_review"))
         return 0
-    print(f"{total} nota(s) na fila. Revisando…")
+    print(t("cli.queued_reviewing", n=total))
 
     import time
 
-    ultimo = total
+    last = total
     for _ in range(240):                       # teto de ~8 min
         time.sleep(2)
         s = _request(cfg, "GET", "/review-status").json()
-        if s["pending"] != ultimo:
+        if s["pending"] != last:
             print(f"  faltam {s['pending']}")
-            ultimo = s["pending"]
+            last = s["pending"]
         if not s["pending"] and not s["running"]:
             break
     print("pronto. `ta list` para ver o resultado.")
@@ -272,14 +278,14 @@ def cmd_rm(cfg: Config, args) -> int:
     if args.list:
         notes = _request(cfg, "GET", "/notes?deleted=1").json()["notes"]
         if not notes:
-            print("lixeira vazia.")
+            print(t("cli.trash_empty"))
             return 0
         for n in notes:
-            print(f"[x] #{n['id']} {n['text']}  (apagada {n['deleted_at']})")
+            print(f"[x] #{n['id']} {n['text']}  ({t('cli.deleted')} {n['deleted_at']})")
         print("\n`ta restore <id>` traz de volta.")
         return 0
     if args.note_id is None:
-        raise Problem("diga qual nota apagar, ou use `ta rm --list`.")
+        raise Problem(t("cli.which_note"))
     n = _request(cfg, "DELETE", f"/notes/{args.note_id}").json()
     print(f"{t('cli.deleted')}: #{n['id']} {n['text']}  (`ta restore {n['id']}` {t('cli.undoes')})")
     return 0
@@ -289,36 +295,37 @@ def _purge(cfg: Config, args) -> int:
     """Delete permanently. It only reaches what is already in the trash.
 
     It asks first, by default. This is the only operation with no way back, and a
-    confirmation is cheap compared to losing a note you thought was
-    guardada. `--yes` existe para script; `ta` interativo sempre pergunta.
+    confirmation is cheap compared to losing a note you thought was safe. `--yes`
+    exists for scripts; interactive `ta` always asks.
     """
     if args.note_id is not None:
         r = _request(cfg, "DELETE", f"/notes/{args.note_id}/purge")
-        print(f"apagada em definitivo: #{args.note_id}")
+        print(t("cli.purged_one", id=args.note_id))
         return 0
 
     notes = _request(cfg, "GET", "/notes?deleted=1").json()["notes"]
     if not notes:
-        print("lixeira vazia.")
+        print(t("cli.trash_empty"))
         return 0
 
-    print(f"{len(notes)} nota(s) na lixeira:")
+    print(t("cli.trash_count", n=len(notes)))
     for n in notes:
         print(f"  #{n['id']} {n['text'][:60]}")
 
     if not args.yes:
-        print("\nIsto NÃO tem volta.", end=" ")
+        print("\n" + t("cli.no_way_back"), end=" ")
+        word = t("cli.purge_word")
         try:
-            resposta = input("Digite 'apagar' para confirmar: ").strip()
+            answer = input(t("cli.purge_prompt", word=word)).strip()
         except (EOFError, KeyboardInterrupt):
-            print("\ncancelado.")
+            print("\n" + t("cli.cancelled"))
             return 1
-        if resposta != "apagar":
-            print("cancelado.")
+        if answer != word:
+            print(t("cli.cancelled"))
             return 1
 
     r = _request(cfg, "DELETE", "/trash", {"confirmed": True}).json()
-    print(f"{r['purged']} nota(s) apagada(s) em definitivo.")
+    print(t("cli.purged", n=r["purged"]))
     return 0
 
 
@@ -344,12 +351,12 @@ def cmd_today(cfg: Config, args) -> int:
     if not d["calendar_available"]:
         print(f"  {d['calendar_error']}")
     elif not d["events"]:
-        print("  agenda: nada marcado.")
+        print("  " + t("cli.calendar_empty"))
     else:
         print("  agenda:")
         for e in d["events"]:
-            quando = "dia inteiro" if e["all_day"] else f"{e['start'][11:]}–{e['end'][11:]}"
-            print(f"    {quando:14} {e['summary']}")
+            when = t("cli.all_day") if e["all_day"] else f"{e['start'][11:]}-{e['end'][11:]}"
+            print(f"    {when:14} {e['summary']}")
 
     if not d["tasks"]:
         print(f"  {t('cli.tasks')}: {t('cli.nothing_due')}")
@@ -366,9 +373,9 @@ def cmd_today(cfg: Config, args) -> int:
         # priority within the band (ADR 0010). The label stays at the front
         # because at the end of the line it was easy to miss.
         for n in d["tasks"]:
-            atraso = f"  {t('cli.overdue')}" if n.get("horizon") == "overdue" else ""
-            prio = PRIO_LABEL.get(n["priority"], "     ")   # 5 chars, sempre
-            print(f"    {prio} #{n['id']} {n['text']}{atraso}")
+            late = f"  {t('cli.overdue')}" if n.get("horizon") == "overdue" else ""
+            prio = _prio_label(n["priority"])
+            print(f"    {prio} #{n['id']} {n['text']}{late}")
     return 0
 
 
@@ -384,18 +391,18 @@ def cmd_rules(cfg: Config, args) -> int:
         rules_dir = Path(args.dir) if args.dir else Path.cwd() / "rules"
         rep = load_rules(rules_dir)
         for r in rep.rules:
-            print(f"  ok   {r.name}  ({', '.join(str(t) for t in r.on)})")
-        for arquivo, tb in rep.errors:
-            print(f"  ERRO {arquivo}", file=sys.stderr)
+            print(f"  ok   {r.name}  ({', '.join(str(trig) for trig in r.on)})")
+        for path, tb in rep.errors:
+            print(f"  ERROR {path}", file=sys.stderr)
             print("       " + tb.strip().splitlines()[-1], file=sys.stderr)
-        print(f"\n{len(rep.rules)} regra(s), {len(rep.errors)} com erro.")
+        print("\n" + t("cli.rules_loaded", n=len(rep.rules), bad=len(rep.errors)))
         return 0 if rep.ok else 1
 
     d = _request(cfg, "GET", "/rules").json()
     for r in d["rules"]:
         print(f"  {r['name']}  ({', '.join(r['on'])})")
     for e in d["errors"]:
-        print(f"  ERRO {e['file']}", file=sys.stderr)
+        print(f"  ERROR {e['file']}", file=sys.stderr)
     return 0
 
 
@@ -416,26 +423,26 @@ def cmd_prose(cfg: Config, args) -> int:
 
 def cmd_init(cfg: Config, args) -> int:
     """The first-run interview. Without it, "priority" is a guess."""
-    atual = _request(cfg, "GET", "/priorities").json()
-    if atual.get("content") and not args.force:
-        print(atual["content"])
+    current = _request(cfg, "GET", "/priorities").json()
+    if current.get("content") and not args.force:
+        print(current["content"])
         print("\n" + t("cli.priorities_exist"))
         return 0
-    respostas = {}
-    print("Quatro perguntas. Responder vazio deixa em branco.\n")
-    for chave, pergunta in atual["questions"]:
+    answers = {}
+    print(t("cli.interview_intro") + "\n")
+    for key, question in current["questions"]:
         try:
-            respostas[chave] = input(f"{pergunta}\n> ").strip()
+            answers[key] = input(f"{question}\n> ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\ncancelado.")
+            print("\n" + t("cli.cancelled"))
             return 1
         print()
-    r = _request(cfg, "POST", "/priorities", {"answers": respostas}).json()
+    r = _request(cfg, "POST", "/priorities", {"answers": answers}).json()
     print(r["content"])
     return 0
 
 
-def _migrar_layout(cfg: Config) -> list[str]:
+def _migrate_layout(cfg: Config) -> list[str]:
     """Move the configuration to `~/.config/ta/`, losing nothing. Idempotent.
 
     **It copies, never moves**, and never overwrites what is already there.
@@ -445,20 +452,20 @@ def _migrar_layout(cfg: Config) -> list[str]:
     from .config import config_dir, config_file
     from .daemon import EXAMPLE_RULES
 
-    feitos = []
-    destino = config_dir()
-    destino.mkdir(parents=True, exist_ok=True)
+    done = []
+    target = config_dir()
+    target.mkdir(parents=True, exist_ok=True)
 
     if not config_file().exists():
         exemplo = EXAMPLE_RULES.parent / "config.toml"
         if exemplo.exists():
             shutil.copy2(exemplo, config_file())
-            feitos.append(f"criado {config_file()}")
+            done.append(f"criado {config_file()}")
 
-    regras = destino / "rules"
+    rules_dir = target / "rules"
     legado = EXAMPLE_RULES.resolve().parents[1] / "rules"
-    if not regras.exists():
-        regras.mkdir(parents=True)
+    if not rules_dir.exists():
+        rules_dir.mkdir(parents=True)
         # The legacy is `<repo>/rules` for whoever already used it: their rules
         # are THEIRS, and losing them over a layout change would be unacceptable.
         # Whoever has no legacy starts empty — the examples are copied
@@ -466,11 +473,11 @@ def _migrar_layout(cfg: Config) -> list[str]:
         origem = legado if legado.is_dir() else None
         if origem:
             for f in origem.glob("*.py"):
-                shutil.copy2(f, regras / f.name)
-            feitos.append(f"copiadas {len(list(regras.glob('*.py')))} regra(s) para {regras}")
+                shutil.copy2(f, rules_dir / f.name)
+            done.append(f"copiadas {len(list(rules_dir.glob('*.py')))} regra(s) para {rules_dir}")
         else:
-            feitos.append(f"criado {regras}")
-    return feitos
+            done.append(f"criado {rules_dir}")
+    return done
 
 
 def cmd_doctor(cfg: Config, args) -> int:
@@ -491,22 +498,22 @@ def cmd_doctor(cfg: Config, args) -> int:
         cfg = Config.from_env()
         print(f"  · read {env_path}\n")
 
-    feitos = _migrar_layout(cfg)
-    for f in feitos:
+    done = _migrate_layout(cfg)
+    for f in done:
         print(f"  · {f}")
-    if feitos:
+    if done:
         print()
 
-    for chave, valor in environment(cfg):
-        print(f"  {chave:10} {valor}")
+    for key, value in environment(cfg):
+        print(f"  {key:10} {value}")
     print()
 
     caps = inspect(cfg)
     largura = max(len(c.label) for c in caps)
     quebrado = False
     for c in caps:
-        marca = "ok  " if c.ok else ("FALHA" if c.essential else "—   ")
-        print(f"  {marca} {c.label:{largura}}  {c.reason}")
+        mark = "ok  " if c.ok else ("FALHA" if c.essential else "—   ")
+        print(f"  {mark} {c.label:{largura}}  {c.reason}")
         if not c.ok and c.fix:
             print(f"       {' ' * largura}  → {c.fix}")
         quebrado = quebrado or (c.essential and not c.ok)
@@ -541,26 +548,26 @@ def cmd_lang(cfg: Config, args) -> int:
         print(f"{lang()}  (de: {lang_source()})")
         return 0
 
-    caminho = config_file()
-    caminho.parent.mkdir(parents=True, exist_ok=True)
-    linhas = caminho.read_text().splitlines() if caminho.exists() else []
+    path = config_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = path.read_text().splitlines() if path.exists() else []
     # Rewriting the key where it already is preserves comments and order; a
     # round-trip `tomllib` does not exist in the standard library, and bringing a
     # TOML writer in just for this would be a new dependency for one line.
-    for i, linha in enumerate(linhas):
-        if linha.strip().startswith("lang"):
-            linhas[i] = f'lang = "{args.code}"'
+    for i, line in enumerate(lines):
+        if line.strip().startswith("lang"):
+            lines[i] = f'lang = "{args.code}"'
             break
     else:
-        linhas.insert(0, f'lang = "{args.code}"')
-    caminho.write_text("\n".join(linhas) + "\n")
+        lines.insert(0, f'lang = "{args.code}"')
+    path.write_text("\n".join(lines) + "\n")
 
     reset_cache()
     from .config import _user_config
 
     _user_config.cache_clear()
-    print(f"idioma: {args.code}  ({caminho})")
-    print("vale para a captura e para o mural depois de:")
+    print(t("cli.lang_set", code=args.code, path=path))
+    print(t("cli.lang_after_restart"))
     print("  systemctl --user restart ta")
     return 0
 
@@ -582,7 +589,7 @@ def cmd_event(cfg: Config, args) -> int:
     """Propose an event from a note, and only store it with your yes (ADR 0007)."""
     payload = {"note_id": args.note_id} if args.note_id else {"text": " ".join(args.text or [])}
     r = _request(cfg, "POST", "/detect-event", payload, timeout=TIMEOUT_LLM).json()
-    c, alvos = r["candidate"], r["targets"]
+    c, targets = r["candidate"], r["targets"]
 
     if not c["is_event"]:
         print(t("cli.not_an_event"))
@@ -590,24 +597,27 @@ def cmd_event(cfg: Config, args) -> int:
 
     print("▶ evento detectado:")
     print(f"    {t('cli.event_title')}: {c['title']}")
-    print(f"    quando: {c['start'].replace('T', ' ')} – {c['end'][11:]}")
+    print(f"    {t('cli.event_when')}: {c['start'].replace('T', ' ')} - {c['end'][11:]}")
     print(f"    agenda: Terminal Assistant ({c['account']})")
     print(f"    {t('cli.event_confidence')}: {c['confidence']:.0%}")
-    if c["account"] not in alvos:
+    if c["account"] not in targets:
         raise Problem(t("cli.no_dedicated_calendar", account=c["account"]))
 
     try:
         resp = input("\n" + t("cli.event_prompt")).strip().lower()
     except (EOFError, KeyboardInterrupt):
-        print("\ncancelado.")
+        print("\n" + t("cli.cancelled"))
         return 1
-    if resp != "s":
-        print("nada foi criado.")
+    # The accepted key comes from the catalogue, like the prompt. It was hardcoded
+    # to `"s"`, so the English prompt said `[y] create` and typing `y` refused the
+    # event without a word.
+    if resp != t("cli.confirm_key"):
+        print(t("cli.nothing_created"))
         return 0
 
     out = _request(cfg, "POST", "/calendar/event", {
         "confirmed": True,
-        "source_uid": alvos[c["account"]],
+        "source_uid": targets[c["account"]],
         "title": c["title"], "start": c["start"], "end": c["end"],
         "note_id": args.note_id,
     }).json()
@@ -634,18 +644,18 @@ def cmd_capture_popup(cfg: Config, args) -> int:
         [zenity, "--entry", "--title=Nota", "--text=Nova nota:", "--width=460"],
         capture_output=True, text=True, check=False,
     )
-    texto = proc.stdout.strip()
-    if not texto:
+    text = proc.stdout.strip()
+    if not text:
         return 0
-    note = _request(cfg, "POST", "/notes", {"text": texto}).json()
+    note = _request(cfg, "POST", "/notes", {"text": text}).json()
     subprocess.run(["notify-send", "Nota salva", _fmt_note(note)], check=False)
     return 0
 
 
 # Each group carries its OWN commands. The capability probe only adds the
 # unavailable marker — it never decides what appears. Without that separation, a
-# sonda que falha faz o `--help` esconder metade dos comandos, que foi exatamente
-# o que aconteceu num environment sem D-Bus.
+# probe that fails would make `--help` hide half the commands, which is exactly
+# what happened in an environment with no D-Bus.
 HELP_GROUPS = (
     ("notes", "Notes and tasks", "note list done rm restore board export today"),
     ("home", "House", "on off luz light entities temp router media"),
@@ -674,7 +684,7 @@ def _epilogue() -> str:
 
     try:
         by_key = {c.key: c for c in inspect()}
-    except Exception:  # noqa: BLE001 — help nunca pode morrer por causa de sonda
+    except Exception:  # noqa: BLE001 — help must never die because of a probe
         by_key = {}
 
     lines = []
@@ -715,7 +725,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     rv = sub.add_parser("rm", help="delete a note (reversible)")
     rv.add_argument("note_id", nargs="?", type=int)
-    rv.add_argument("--list", action="store_true", help="mostra a lixeira")
+    rv.add_argument("--list", action="store_true", help="show the trash")
     rv.add_argument(
         "--purge",
         action="store_true",
@@ -742,18 +752,18 @@ def build_parser() -> argparse.ArgumentParser:
     # `luz` stays, and `light` joins it: it was the only Portuguese command of the
     # 23, and renaming it would cost the muscle memory of whoever already uses it
     # without buying anything the alias does not.
-    for nome in ("luz", "light"):
-        lz = sub.add_parser(nome, help="turn a light on, or set its brightness")
+    for name in ("luz", "light"):
+        lz = sub.add_parser(name, help="turn a light on, or set its brightness")
         lz.add_argument("entity", help="an alias (bedroom) or an entity_id")
         lz.add_argument("brightness", nargs="?", type=int, help="0-100")
-        lz.set_defaults(func=cmd_luz)
+        lz.set_defaults(func=cmd_light)
 
     of = sub.add_parser("off", help="turn everything off, or one entity")
     of.add_argument("entity", nargs="?")
     of.set_defaults(func=cmd_off)
 
-    on = sub.add_parser("on", help="liga entity, grupo (luz, tudo) ou environment (quarto)")
-    on.add_argument("entity", help="entity_id, apelido, grupo ou nome de environment")
+    on = sub.add_parser("on", help="turn on an entity, a group (luz, tudo) or a room")
+    on.add_argument("entity", help="entity_id, apelido, grupo ou name de environment")
     on.add_argument("brightness", nargs="?", type=int, help="0-100, only on light.")
     on.set_defaults(func=cmd_on)
 
@@ -767,7 +777,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     lg = sub.add_parser("lighter", help="control the light ring")
     lg.add_argument("action", nargs="?", choices=["on", "off", "toggle"], default="toggle")
-    lg.add_argument("--profile", help="aplica um profile por nome")
+    lg.add_argument("--profile", help="aplica um profile por name")
     lg.set_defaults(func=cmd_lighter)
 
     md = sub.add_parser("media", help="media on an Echo (a Home Assistant media_player)")
@@ -822,8 +832,8 @@ def build_parser() -> argparse.ArgumentParser:
     # already shows grouped, without saying which work here. `_choices_actions` is
     # private API, and the `getattr` is what guarantees the worst consequence of
     # it being renamed is a redundant help — never a crash.
-    if (entradas := getattr(sub, "_choices_actions", None)) is not None:
-        entradas.clear()
+    if (entries := getattr(sub, "_choices_actions", None)) is not None:
+        entries.clear()
     return p
 
 

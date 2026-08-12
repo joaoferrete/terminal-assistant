@@ -84,10 +84,10 @@ class Home:
 
     async def entities(self, *prefixes: str) -> list[dict]:
         """Entities filtered by domain, for `ta entities`."""
-        todos = await self.states()
+        everything = await self.states()
         if not prefixes:
-            return todos
-        return [e for e in todos if e["entity_id"].startswith(prefixes)]
+            return everything
+        return [e for e in everything if e["entity_id"].startswith(prefixes)]
 
     # ── Commands ────────────────────────────────────────────────────────────
     async def call(self, domain: str, service: str, entity_id: str, **data: Any) -> Any:

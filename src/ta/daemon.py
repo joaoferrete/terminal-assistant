@@ -193,13 +193,24 @@ class CalendarAdapter:
     def __init__(self, cal: Calendar) -> None:
         self._cal = cal
 
-    async def agora(self) -> dict | None:
+    async def now(self) -> dict | None:
         ev = await asyncio.to_thread(self._cal.now)
         return _event_json(ev) if ev else None
 
-    async def hoje(self) -> list[dict]:
+    async def today(self) -> list[dict]:
         evs = await asyncio.to_thread(self._cal.today)
         return [_event_json(e) for e in evs]
+
+    # The Portuguese names, kept for good. This is the API that Rules on disk
+    # call, and a Rule lives in `~/.config/ta/rules/` — outside the repository,
+    # where no rename of ours can reach it. Dropping these would break somebody's
+    # working automation on an upgrade, with a traceback in the daemon log and no
+    # clue as to why, which is the worst way for it to happen.
+    #
+    # Same category as `!alta` and `@sexta`: input that somebody already typed
+    # (ADR 0014). New Rules should use `now()` and `today()`.
+    agora = now
+    hoje = today
 
 
 def _make_context(app: Starlette, trigger: engine.Trigger, **extra) -> engine.Context:
@@ -570,9 +581,9 @@ async def notes_list(request: Request) -> JSONResponse:
     # Display order comes from here, not from the client: the board's three
     # views, `ta list` and any other consumer get the same order without each
     # reimplementing it (ADR 0010).
-    hoje = date.today()
-    notes = store.by_urgency(notes, today=hoje)
-    return JSONResponse({"notes": [_note_json(n, today=hoje) for n in notes]})
+    reference_day = date.today()
+    notes = store.by_urgency(notes, today=reference_day)
+    return JSONResponse({"notes": [_note_json(n, today=reference_day) for n in notes]})
 
 
 async def notes_delete(request: Request) -> JSONResponse:
@@ -706,38 +717,38 @@ async def today(request: Request) -> JSONResponse:
     """
     app = request.app
     param = request.query_params.get("date")
-    dia = date.fromisoformat(param) if param else None
+    day = date.fromisoformat(param) if param else None
     # Warming takes ~30s at boot, and reading the calendar before it finishes
     # blocks for the same time. Waiting here and SAYING that it waited is better
     # than the CLI blowing its timeout and the user thinking the daemon died.
-    aquecendo = False
+    warming = False
     warm = getattr(app.state, "warm_task", None)
     if warm is not None and not warm.done():
-        aquecendo = True
+        warming = True
         with contextlib.suppress(Exception):
             await warm
 
-    eventos = await asyncio.to_thread(app.state.calendar.today, dia)
+    events = await asyncio.to_thread(app.state.calendar.today, day)
     # `day` rather than `date.today()`: with `--date`, the band has to be counted
     # against the requested day, otherwise everything it returns becomes
     # `overdue`. Only `overdue` and `today` appear here, because `due_today`
     # filters `due <= day`.
-    hoje = dia or date.today()
-    tarefas = store.by_urgency(store.due_today(app.state.conn, today=dia), today=hoje)
+    reference_day = day or date.today()
+    tasks = store.by_urgency(store.due_today(app.state.conn, today=day), today=reference_day)
     # The weather goes into the Digest because it was asked for, and degrades to
     # None silently: the Digest must not fail because Home Assistant is down.
-    clima = None
+    weather = None
     with contextlib.suppress(HomeError):
-        clima = (await app.state.home.sensors())["weather"]
+        weather = (await app.state.home.sensors())["weather"]
     return JSONResponse(
         {
-            "date": hoje.isoformat(),
-            "weather": clima,
+            "date": reference_day.isoformat(),
+            "weather": weather,
             "calendar_available": app.state.calendar.available,
             "calendar_error": app.state.calendar.error,
-            "calendar_warming": aquecendo,
-            "events": [_event_json(e) for e in eventos],
-            "tasks": [_note_json(n, today=hoje) for n in tarefas],
+            "calendar_warming": warming,
+            "events": [_event_json(e) for e in events],
+            "tasks": [_note_json(n, today=reference_day) for n in tasks],
         }
     )
 
@@ -750,8 +761,8 @@ async def home_light(request: Request) -> JSONResponse:
         return JSONResponse({"error": i18n.t("api.missing_entity")}, status_code=400)
     home = request.app.state.home
     try:
-        alvos = resolve_targets(termo, await home.entities("light.", "switch."))
-        if not alvos:
+        targets = resolve_targets(termo, await home.entities("light.", "switch."))
+        if not targets:
             return JSONResponse(
                 {"error": i18n.t("api.no_match", termo=termo)}, status_code=404
             )
@@ -762,7 +773,7 @@ async def home_light(request: Request) -> JSONResponse:
         # 0 turns off; any other value (or none) turns on.
         esperado = "off" if brilho == 0 else "on"
         resultados = []
-        for entity in alvos:
+        for entity in targets:
             await home.switch_on(entity, brilho)
             estado, confirmado = await home.confirm(entity, esperado)
             resultados.append(
@@ -775,25 +786,25 @@ async def home_light(request: Request) -> JSONResponse:
 
 async def home_off(request: Request) -> JSONResponse:
     body = await request.json() if await request.body() else {}
-    alvo = body.get("entity")
+    target = body.get("entity")
     home = request.app.state.home
     try:
-        if alvo:
-            entidades = resolve_targets(alvo, await home.entities("light.", "switch."))
-            if not entidades:
+        if target:
+            entities = resolve_targets(target, await home.entities("light.", "switch."))
+            if not entities:
                 return JSONResponse(
-                    {"error": i18n.t("api.no_match", termo=alvo)}, status_code=404
+                    {"error": i18n.t("api.no_match", termo=target)}, status_code=404
                 )
         else:
             # With no target, turn off everything that is on. Never a hardcoded
             # list: the inventory belongs to Home Assistant (ADR 0001).
-            entidades = [
+            entities = [
                 e["entity_id"]
                 for e in await home.entities("light.", "switch.")
                 if e["state"] == "on" and _commandable(e)
             ]
         resultados = []
-        for entity in entidades:
+        for entity in entities:
             await home.turn_off(entity)
             estado, confirmado = await home.confirm(entity, "off")
             resultados.append({"entity_id": entity, "state": estado, "confirmed": confirmado})
@@ -891,15 +902,15 @@ async def organize(request: Request) -> JSONResponse:
     notes = store.list_notes(conn)
     if not notes:
         return JSONResponse({"placed": 0, "groups": []})
-    hoje = date.today()
+    reference_day = date.today()
     try:
         res = await app.state.llm.organize(
-            [_note_json(n, today=hoje) for n in notes], priorities.current(conn) or ""
+            [_note_json(n, today=reference_day) for n in notes], priorities.current(conn) or ""
         )
     except LLMUnavailable as e:
         return JSONResponse({"error": str(e)}, status_code=503)
 
-    ordem = {g: i for i, g in enumerate(res.groups_in_order)}
+    order = {g: i for i, g in enumerate(res.groups_in_order)}
     conhecidos = {n.id: n for n in notes}
     aplicados = 0
     for p in res.placements:
@@ -908,7 +919,7 @@ async def organize(request: Request) -> JSONResponse:
             continue   # the user's hand beats the model's
         conn.execute(
             "UPDATE notes SET group_name = ?, sort_key = ? WHERE id = ?",
-            (p.group, ordem.get(p.group, 99) * 1000 + p.rank, p.id),
+            (p.group, order.get(p.group, 99) * 1000 + p.rank, p.id),
         )
         aplicados += 1
     return JSONResponse(
@@ -926,37 +937,37 @@ async def detect_event(request: Request) -> JSONResponse:
     app = request.app
     body = await request.json()
     note_id = body.get("note_id")
-    texto = body.get("text")
+    text = body.get("text")
     if note_id is not None:
-        texto = store.get_note(app.state.conn, int(note_id)).text
-    if not texto:
+        text = store.get_note(app.state.conn, int(note_id)).text
+    if not text:
         return JSONResponse({"error": "falta text ou note_id"}, status_code=400)
     try:
-        cand = await app.state.llm.detect_event(texto)
+        cand = await app.state.llm.detect_event(text)
     except LLMUnavailable as e:
         return JSONResponse({"error": str(e)}, status_code=503)
 
-    alvos = {
+    targets = {
         ("trabalho" if s.parent.startswith("b1d1") else "pessoal"): s.uid
         for s in app.state.calendar.write_targets()
     }
     return JSONResponse(
         {
             "candidate": cand.model_dump(),
-            "targets": alvos,
-            # Nada foi criado. O cliente confirma via POST /calendar/event.
+            "targets": targets,
+            # Nothing was created. The client confirms via POST /calendar/event.
             "created": False,
         }
     )
 
 
 async def create_event(request: Request) -> JSONResponse:
-    """Grava o evento confirmado. Nunca com convidados (ADR 0007)."""
+    """Write the confirmed event. Never with guests (ADR 0007)."""
     app = request.app
     body = await request.json()
-    for campo in ("source_uid", "title", "start", "end"):
-        if not body.get(campo):
-            return JSONResponse({"error": f"falta {campo}"}, status_code=400)
+    for field in ("source_uid", "title", "start", "end"):
+        if not body.get(field):
+            return JSONResponse({"error": f"falta {field}"}, status_code=400)
     if not body.get("confirmed"):
         return JSONResponse(
             {"error": i18n.t("api.confirm_required_event")}, status_code=400
@@ -1007,16 +1018,16 @@ async def priorities_route(request: Request) -> JSONResponse:
 async def digest_prose(request: Request) -> JSONResponse:
     """The day in prose. Optional decoration — the listing is the default (ADR 0003)."""
     app = request.app
-    eventos = await asyncio.to_thread(app.state.calendar.today)
-    hoje = date.today()
-    tarefas = store.by_urgency(store.due_today(app.state.conn), today=hoje)
+    events = await asyncio.to_thread(app.state.calendar.today)
+    reference_day = date.today()
+    tasks = store.by_urgency(store.due_today(app.state.conn), today=reference_day)
     try:
-        texto = await app.state.llm.digest_prose(
-            [_event_json(e) for e in eventos], [_note_json(n, today=hoje) for n in tarefas]
+        text = await app.state.llm.digest_prose(
+            [_event_json(e) for e in events], [_note_json(n, today=reference_day) for n in tasks]
         )
     except LLMUnavailable as e:
         return JSONResponse({"error": str(e)}, status_code=503)
-    return JSONResponse({"text": texto})
+    return JSONResponse({"text": text})
 
 
 async def models_route(request: Request) -> JSONResponse:
@@ -1042,23 +1053,23 @@ async def rules_route(request: Request) -> JSONResponse:
 
 
 # ── Reacting to triggers ────────────────────────────────────────────────────
-async def _fire_reminders(app: Starlette, agora: datetime) -> None:
+async def _fire_reminders(app: Starlette, now: datetime) -> None:
     """Due Reminders: notify and mark. It closes the time → action loop.
 
     The desktop notification is the mandatory path; the Echo announcement is
     additional, and its absence or failure never blocks the alert (ADR 0009).
     """
     conn = app.state.conn
-    for note in store.pending_reminders(conn, now=agora):
-        atraso = lateness_label(lateness_of(note.remind_at, agora))
-        await app.state.notify.send("Lembrete", f"{note.text}{atraso}", urgency="critical")
+    for note in store.pending_reminders(conn, now=now):
+        late = lateness_label(lateness_of(note.remind_at, now))
+        await app.state.notify.send("Lembrete", f"{note.text}{late}", urgency="critical")
 
         for echo in app.state.config.echo_entities:
             with contextlib.suppress(HomeError):
                 await app.state.home.announce(echo, f"Lembrete: {note.text}")
 
-        store.mark_fired(conn, note.id, now=agora)
-        log.info("reminder #%s disparado%s", note.id, atraso)
+        store.mark_fired(conn, note.id, now=now)
+        log.info("reminder #%s disparado%s", note.id, late)
         await engine.dispatch(
             app.state.rules,
             _make_context(app, engine.Trigger("reminder", note.id), note=_note_json(note)),
@@ -1072,19 +1083,19 @@ def _wire_engine(app: Starlette) -> None:
             _make_context(app, engine.Trigger("mic", ativo), extra={"apps": apps}),
         )
 
-    async def on_time(minuto: str, agora: datetime) -> None:
+    async def on_time(minuto: str, now: datetime) -> None:
         await engine.dispatch(app.state.rules, _make_context(app, engine.Trigger("time", minuto)))
 
-    async def on_state(entity_id: str, velho: str, novo: str) -> None:
+    async def on_state(entity_id: str, old: str, new: str) -> None:
         await engine.dispatch(
             app.state.rules,
             _make_context(
-                app, engine.Trigger("state", entity_id), extra={"from": velho, "to": novo}
+                app, engine.Trigger("state", entity_id), extra={"from": old, "to": new}
             ),
         )
 
     app.state.mic = MicWatcher(on_mic)
-    app.state.scheduler = Scheduler(on_time, lambda agora: _fire_reminders(app, agora))
+    app.state.scheduler = Scheduler(on_time, lambda now: _fire_reminders(app, now))
     app.state.state_watcher = StateWatcher(app.state.home, on_state)
 
 
@@ -1144,7 +1155,7 @@ def create_app(
         # WindowWatcher does not overwrite what a Rule just did.
         await app.state.lighter.take_over()
 
-        tarefas = []
+        tasks = []
         if background:
             # Warm the calendar in the background: a freshly created source pays
             # up to 10s to connect, and the client cache makes that a one-off
@@ -1153,12 +1164,12 @@ def create_app(
             app.state.warm_task = asyncio.create_task(
                 asyncio.to_thread(app.state.calendar.warm), name="warm-calendar"
             )
-            tarefas.append(app.state.warm_task)
-            # Os watchers ficam sob a mesma chave porque o de microfone roda
-            # `pw-dump` em subprocesso a cada segundo. Num teste isso deixava um
+            tasks.append(app.state.warm_task)
+            # The watchers live under the same key because the microphone one runs
+            # `pw-dump` in a subprocess every second. In a test that left a
             # half-destroyed `BaseSubprocessTransport` when the loop closed, and
             # the suite hung on exit in roughly 1 run in 3.
-            tarefas += [
+            tasks += [
                 asyncio.create_task(app.state.scheduler.run(), name="scheduler"),
                 asyncio.create_task(app.state.mic.run(), name="mic"),
                 asyncio.create_task(app.state.state_watcher.run(), name="state"),
@@ -1170,9 +1181,9 @@ def create_app(
         try:
             yield
         finally:
-            for t in tarefas:
+            for t in tasks:
                 t.cancel()
-            await asyncio.gather(*tarefas, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)
             await app.state.lighter.hand_back()
             await app.state.home.close()
             app.state.conn.close()

@@ -79,12 +79,26 @@ def test_toda_regra_real_aparece_no_guia():
         (Home, ("switch_on", "turn_off", "state", "entities", "sensors", "light")),
         (Lighter, ("apply_profile", "enable", "toggle", "profiles")),
         (Notifier, ("send",)),
-        (CalendarAdapter, ("agora", "hoje")),
+        # Os dois nomes ingleses E os dois apelidos em portugues: uma regra no
+        # disco de alguem chama `agora()`, e ela vive fora deste repositorio.
+        (CalendarAdapter, ("now", "today", "agora", "hoje")),
     ],
 )
 def test_a_api_documentada_existe(classe, metodos):
     for m in metodos:
         assert callable(getattr(classe, m, None)), f"{classe.__name__}.{m} não existe"
+
+
+def test_os_apelidos_em_portugues_da_agenda_apontam_para_o_mesmo():
+    """`agora`/`hoje` nao podem virar copias que envelhecem separado.
+
+    Uma regra no `~/.config/ta/rules/` de alguem chama `ctx.calendar.agora()`, e
+    esse arquivo esta fora deste repositorio: nenhum rename daqui alcanca ele. O
+    par tem de ser o MESMO objeto, senao um conserto no ingles nao chega no
+    portugues e a regra antiga passa a se comportar diferente da nova.
+    """
+    assert CalendarAdapter.agora is CalendarAdapter.now
+    assert CalendarAdapter.hoje is CalendarAdapter.today
 
 
 def test_os_campos_de_ctx_documentados_existem():
@@ -229,7 +243,7 @@ def test_o_mural_avisa_quando_o_daemon_esta_velho():
     from ta.i18n import LANGS, MESSAGES
 
     corpo = MURAL.read_text()
-    assert '"horizon" in todas[0]' in corpo, "o mural perdeu a guarda de versão"
+    assert '"horizon" in allNotes[0]' in corpo, "o mural perdeu a guarda de versão"
     assert 'tr("daemon.outdated")' in corpo, "a guarda perdeu a mensagem"
 
     # A mensagem migrou para o catálogo, então é lá que o comando do conserto tem
@@ -247,4 +261,4 @@ def test_o_aviso_fica_fora_do_quadro():
     quadro para baixo em vez de ser coberto.
     """
     corpo = MURAL.read_text()
-    assert corpo.index('id="aviso"') < corpo.index('id="board"')
+    assert corpo.index('id="notice"') < corpo.index('id="board"')

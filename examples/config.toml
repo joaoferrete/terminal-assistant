@@ -1,36 +1,51 @@
-# Terminal Assistant — exemplo de configuração do usuário.
+# Terminal Assistant — an example user configuration.
 #
-# Copie para `~/.config/ta/config.toml` (ou `$XDG_CONFIG_HOME/ta/config.toml`).
-# `ta doctor` faz isso para você.
+# Copy it to `~/.config/ta/config.toml` (or `$XDG_CONFIG_HOME/ta/config.toml`).
+# `ta doctor` does that for you.
 #
-# Tudo aqui é opcional. Sem este arquivo o projeto funciona: `ta on light.o_que_for`
-# continua exato, e `ta on quarto` casa por trecho do nome que vem do próprio Home
-# Assistant. Os apelidos são conveniência de digitação, não modelo de domínio.
+# Everything here is optional. The project works with no such file at all:
+# `ta on light.whatever` is still exact, and `ta on bedroom` matches by a slice of
+# the name that comes from Home Assistant itself. The aliases are a typing
+# convenience, not a domain model.
 #
-# Segredos NÃO moram aqui — eles vêm do ambiente, via `.env`. Veja `.env.example`.
+# Secrets do NOT live here — they come from the environment, via `.env`. See
+# `.env.example`.
 
-# ── Apelidos ────────────────────────────────────────────────────────────────
-# `ta on quarto` em vez de `ta on light.lampada_do_quarto`.
-# Para descobrir os `entity_id` da sua casa: `ta entities`.
+# ── Language ────────────────────────────────────────────────────────────────
+# `pt` or `en`. It governs the capture parser, the CLI, the board and the
+# language the model writes in — all at once (ADR 0013).
+#
+# Leave it out and the tool reads your system locale, so on a `pt_BR` machine it
+# is Portuguese without you configuring anything. `TA_LANG` in the environment
+# beats this file; `ta lang en` writes it here for you.
+# lang = "en"
+
+# ── Aliases ─────────────────────────────────────────────────────────────────
+# `ta on bedroom` instead of `ta on light.bedroom_lamp`.
+# To discover your own house's `entity_id`s: `ta entities`.
 [aliases]
-# quarto = "light.lampada_do_quarto"
-# ventilador = "switch.ventilador_socket_1"
+# bedroom = "light.bedroom_lamp"
+# fan = "switch.fan_socket_1"
 
-# ── Grupos ──────────────────────────────────────────────────────────────────
-# Acrescentados aos embutidos, que já existem e não precisam ser declarados:
+# ── Groups ──────────────────────────────────────────────────────────────────
+# Added to the built-in ones, which already exist and need no declaring:
 #
 #     luz, luzes  -> light.
 #     tomada(s)   -> switch.
-#     tudo        -> light. e switch.
+#     tudo        -> light. and switch.
 #
-# O valor é uma lista de prefixos de domínio. Um nome repetido substitui o embutido.
+# Those names stay Portuguese on purpose: they are what you type, the same
+# category as `!alta` and `@sexta`, and renaming them would break a command
+# somebody already has in their fingers. `light` works as an alias for `luz`.
+#
+# The value is a list of domain prefixes. A repeated name replaces the built-in.
 [groups]
-# escritorio = ["light.", "switch."]
+# office = ["light.", "switch."]
 
-# ── Sensores ────────────────────────────────────────────────────────────────
-# Quais entity_id alimentam `ta temp` e `ta router`. Sem isto os dois comandos
-# não têm o que mostrar, e dizem isso em vez de imprimir brancos.
-# Use `ta entities` para descobrir os seus.
+# ── Sensors ─────────────────────────────────────────────────────────────────
+# Which entity_ids feed `ta temp` and `ta router`. Without this the two commands
+# have nothing to show, and they say so instead of printing blanks.
+# Use `ta entities` to find yours.
 [sensors]
 # weather = "weather.forecast_home"
 # external_ip = "sensor.router_external_ip"

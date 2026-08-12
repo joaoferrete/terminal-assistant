@@ -215,13 +215,13 @@ class Calendar:
 
         from gi.repository import EDataServer
 
-        fontes = [
+        sources = [
             s for s in reg.list_sources(EDataServer.SOURCE_EXTENSION_CALENDAR) if s.get_enabled()
         ]
-        if not fontes:
+        if not sources:
             return 0
 
-        def conectar(src) -> bool:
+        def connect_one(src) -> bool:
             try:
                 self._client(src)
                 return True
@@ -229,9 +229,9 @@ class Calendar:
                 log.debug("could not connect to %s", src.get_display_name(), exc_info=True)
                 return False
 
-        with ThreadPoolExecutor(max_workers=len(fontes)) as pool:
-            n = sum(pool.map(conectar, fontes))
-        log.info("agenda aquecida: %d de %d fonte(s)", n, len(fontes))
+        with ThreadPoolExecutor(max_workers=len(sources)) as pool:
+            n = sum(pool.map(connect_one, sources))
+        log.info("calendar warmed: %d of %d source(s)", n, len(sources))
         return n
 
     # ── Reading ─────────────────────────────────────────────────────────────
@@ -250,33 +250,33 @@ class Calendar:
             return []
         from gi.repository import EDataServer
 
-        eventos: list[Event] = []
+        events: list[Event] = []
         for src in reg.list_sources(EDataServer.SOURCE_EXTENSION_CALENDAR):
             if not src.get_enabled():
                 continue
             try:
                 client = self._client(src)
 
-                def coletar(icomp, inst_start, inst_end, _data, _cancellable, src=src):
-                    ev = _instancia(icomp, inst_start, inst_end, src)
+                def collect(icomp, inst_start, inst_end, _data, _cancellable, src=src):
+                    ev = _instance(icomp, inst_start, inst_end, src)
                     if ev is not None:
-                        eventos.append(ev)
-                    return True   # True = continuar gerando
+                        events.append(ev)
+                    return True   # True = keep generating
 
                 client.generate_instances_sync(
-                    int(start_at.timestamp()), int(end_at.timestamp()), None, coletar, None
+                    int(start_at.timestamp()), int(end_at.timestamp()), None, collect, None
                 )
             except Exception:
                 # One failing calendar must not hide the others.
-                log.debug("falha ao ler a agenda %s", src.get_display_name(), exc_info=True)
+                log.debug("could not read calendar %s", src.get_display_name(), exc_info=True)
 
-        eventos.sort(key=lambda e: (e.start, e.summary))
-        return eventos
+        events.sort(key=lambda e: (e.start, e.summary))
+        return events
 
-    def today(self, dia: date | None = None) -> list[Event]:
-        dia = dia or date.today()
+    def today(self, day: date | None = None) -> list[Event]:
+        day = day or date.today()
         return self.events_between(
-            datetime.combine(dia, time.min), datetime.combine(dia, time.max)
+            datetime.combine(day, time.min), datetime.combine(day, time.max)
         )
 
     def now(self, at: datetime | None = None) -> Event | None:
@@ -330,7 +330,7 @@ def _ical_time(dt: datetime):
     return t
 
 
-def _instancia(icomp, inst_start, inst_end, src) -> Event | None:
+def _instance(icomp, inst_start, inst_end, src) -> Event | None:
     """A concrete occurrence. The times come from the instance, not the master."""
     try:
         dtstart = icomp.get_dtstart()

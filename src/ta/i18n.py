@@ -273,7 +273,13 @@ MESSAGES: dict[str, dict[str, str]] = {
     # ── Mural ───────────────────────────────────────────────────────────────
     "board.title": {"pt": "Mural", "en": "Board"},
     "board.loading": {"pt": "carregando…", "en": "loading…"},
-    "board.empty": {"pt": "nenhuma nota ainda", "en": "no notes yet"},
+    # `{cmd}` recebe marcação (`<code>ta note</code>`) montada pelo mural. É o
+    # único texto do catálogo com um buraco para HTML, e os dois lados são
+    # nossos — nada de entrada do usuário passa por aqui.
+    "board.empty": {
+        "pt": "nada aqui. Escreva algo acima, ou use {cmd}.",
+        "en": "nothing here. Write something above, or use {cmd}.",
+    },
     "board.load_failed": {"pt": "não deu para carregar", "en": "could not load"},
     "board.out_of_queue": {"pt": "fora da fila", "en": "out of the queue"},
     "board.done": {"pt": "concluídas", "en": "done"},
@@ -305,6 +311,22 @@ MESSAGES: dict[str, dict[str, str]] = {
     },
     "board.clear_filters": {"pt": "limpar filtros", "en": "clear filters"},
     "board.title_filter_area": {"pt": "filtrar por área", "en": "filter by area"},
+    "board.title_filter_type": {"pt": "filtrar por tipo", "en": "filter by type"},
+    "board.title_filter_tag": {"pt": "filtrar por tag", "en": "filter by tag"},
+    "board.title_review": {
+        "pt": "pede à LLM para reetiquetar todas as notas abertas",
+        "en": "asks the LLM to re-tag every open note",
+    },
+    "board.title_status": {"pt": "estado", "en": "status"},
+    "board.title_delete_again": {
+        "pt": "clique de novo para apagar", "en": "click again to delete",
+    },
+    "board.queueing": {"pt": "enfileirando…", "en": "queueing…"},
+    "board.queued": {"pt": "{n} na fila…", "en": "{n} queued…"},
+    "board.purge_confirm": {
+        "pt": "apagar {n} para sempre?", "en": "delete {n} forever?",
+    },
+    "board.purged": {"pt": "{n} apagada(s)", "en": "{n} deleted"},
     "board.title_empty_trash": {
         "pt": "apaga em definitivo tudo que está na lixeira",
         "en": "permanently deletes everything in the trash",
@@ -356,6 +378,68 @@ MESSAGES: dict[str, dict[str, str]] = {
     "cli.event_prompt": {
         "pt": "[s] criar  [n] só nota  > ", "en": "[y] create  [n] note only  > ",
     },
+    # A tecla que o prompt acima manda apertar. Estava fixa em `"s"` no código,
+    # então em inglês o prompt dizia `[y] create` e quem digitava `y` tinha o
+    # evento recusado em silêncio — o prompt mentia.
+    "cli.confirm_key": {"pt": "s", "en": "y"},
+    # A palavra inteira, para a única ação sem volta: uma letra é fácil de apertar
+    # por engano.
+    "cli.purge_word": {"pt": "apagar", "en": "delete"},
+    "cli.purge_prompt": {
+        "pt": "Digite '{word}' para confirmar: ",
+        "en": "Type '{word}' to confirm: ",
+    },
+    "cli.no_way_back": {"pt": "Isto NÃO tem volta.", "en": "This CANNOT be undone."},
+    "cli.cancelled": {"pt": "cancelado.", "en": "cancelled."},
+    "cli.nothing_created": {"pt": "nada foi criado.", "en": "nothing was created."},
+    "cli.nothing_to_capture": {
+        "pt": 'nada para capturar. Exemplo: ta note "ligar dentista @sexta #saude !alta"',
+        "en": 'nothing to capture. For example: ta note "call dentist @friday #health !high"',
+    },
+    "cli.nothing_to_review": {
+        "pt": "nada aberto para revisar.", "en": "nothing open to review.",
+    },
+    "cli.queued_reviewing": {
+        "pt": "{n} nota(s) na fila. Revisando…", "en": "{n} note(s) queued. Reviewing…",
+    },
+    "cli.trash_empty": {"pt": "lixeira vazia.", "en": "the trash is empty."},
+    "cli.trash_count": {
+        "pt": "{n} nota(s) na lixeira:", "en": "{n} note(s) in the trash:",
+    },
+    "cli.purged_one": {
+        "pt": "apagada em definitivo: #{id}", "en": "permanently deleted: #{id}",
+    },
+    "cli.purged": {
+        "pt": "{n} nota(s) apagada(s) em definitivo.",
+        "en": "{n} note(s) permanently deleted.",
+    },
+    "cli.which_note": {
+        "pt": "diga qual nota apagar, ou use `ta rm --list`.",
+        "en": "say which note to delete, or use `ta rm --list`.",
+    },
+    "cli.calendar_empty": {
+        "pt": "agenda: nada marcado.", "en": "calendar: nothing scheduled.",
+    },
+    "cli.all_day": {"pt": "dia inteiro", "en": "all day"},
+    "cli.event_when": {"pt": "quando", "en": "when"},
+    "cli.interview_intro": {
+        "pt": "Quatro perguntas. Responder vazio deixa em branco.",
+        "en": "Four questions. Answering with nothing leaves it blank.",
+    },
+    "cli.rules_loaded": {
+        "pt": "{n} regra(s), {bad} com erro.", "en": "{n} rule(s), {bad} with errors.",
+    },
+    "cli.lang_set": {"pt": "idioma: {code}  ({path})", "en": "language: {code}  ({path})"},
+    "cli.lang_after_restart": {
+        "pt": "vale para a captura e para o mural depois de:",
+        "en": "applies to capture and to the board after:",
+    },
+    # O rótulo curto de prioridade que o `ta list` alinha em coluna. Os três TÊM
+    # que ter a mesma largura nos dois idiomas: a coluna não é uma tabela, é
+    # espaçamento fixo, e um rótulo de 4 letras desalinha a lista inteira.
+    "priority.short.high": {"pt": "!ALTA", "en": "!HIGH"},
+    "priority.short.medium": {"pt": "!med ", "en": "!med "},
+    "priority.short.low": {"pt": "!bax ", "en": "!low "},
     "cli.install_zenity": {
         "pt": "zenity não encontrado. `sudo apt install zenity`.",
         "en": "zenity not found. `sudo apt install zenity`.",
