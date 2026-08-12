@@ -164,6 +164,19 @@ def test_a_placeholder_is_not_a_finding(text):
     assert scan_secrets.findings(text, "x") == [], text
 
 
+def test_every_allowed_secret_path_exists():
+    """An allowlist entry for a file that does not exist is a silent hole.
+
+    This one was real on the first run: the list named `tests/test_scan_secrets.py`
+    while the fixtures live in `test_guards.py`, so the scan flagged its own test
+    data and the intended exemption covered nothing. The same guard already existed
+    for the language scan's allowlist and was missing here — which is its own
+    lesson about writing one check and not its twin.
+    """
+    for rel in scan_secrets.ALLOWED_PATHS:
+        assert (REPO / rel).exists(), f"{rel} is allowlisted and does not exist"
+
+
 def test_the_tree_has_no_credential():
     """The check itself, against the repository as it is.
 

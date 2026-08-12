@@ -106,6 +106,7 @@ Every fact has exactly one home. Start wherever your question is.
 | [`CONTEXT.md`](CONTEXT.md) | The glossary. Worth reading before naming anything |
 | [`docs/adr/`](docs/adr/) | The hard decisions, including the rejected options |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Architecture diagrams, and how to send a change |
+| [`AGENTS.md`](AGENTS.md) | The same, condensed for coding agents — what they get wrong here |
 | [`SECURITY.md`](SECURITY.md) | What it exposes, and what it deliberately does not |
 
 Não fala inglês? Há um [resumo em português](README.pt-BR.md).

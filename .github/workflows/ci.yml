@@ -41,12 +41,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: instalar
+        # `.[dev]` e não `pip install ruff` solto: o pin do ruff está no pyproject,
+        # e um lint com versão diferente da local discorda do desenvolvedor sem
+        # dizer por quê. Vale os quinze segundos.
+        run: pip install -e ".[dev]"
+
       - name: lint
         # Os mesmos caminhos do `make lint`, e um teste prova que os dois não
         # divergem — `scripts/` nasceu fora das duas listas.
-        run: |
-          pip install ruff
-          ruff check src examples tests scripts
+        run: ruff check src examples tests scripts
 
       - name: nenhuma credencial na árvore nem no histórico
         # Um segredo apagado num commit posterior continua no pack, em todo clone, e

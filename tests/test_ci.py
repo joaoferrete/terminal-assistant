@@ -164,3 +164,52 @@ def test_the_pr_template_still_asks_for_the_screen():
     """
     pr = (REPO / ".github" / "pull_request_template.md").read_text()
     assert "looked at the screen" in pr or "look at the screen" in pr
+
+
+# ── The rules for agents ────────────────────────────────────────────────────
+def test_the_agent_rules_exist_and_have_one_owner():
+    """`AGENTS.md` is the file; `CLAUDE.md` points at it.
+
+    One file, because Claude Code, Copilot and Cursor reading three copies of the
+    same rules means three copies that drift — and the one that drifts is always the
+    one the next agent happens to read.
+    """
+    agents = REPO / "AGENTS.md"
+    claude = (REPO / "CLAUDE.md").read_text()
+
+    assert agents.exists()
+    assert "AGENTS.md" in claude, "CLAUDE.md does not point at AGENTS.md"
+    assert len(claude.splitlines()) < 15, (
+        "CLAUDE.md is growing rules of its own — they belong in AGENTS.md"
+    )
+
+
+def test_the_agent_rules_link_rather_than_duplicate():
+    """Same single-owner rule the documentation follows.
+
+    The type table, the scope list and the reasoning live in CONTRIBUTING. If they
+    were copied here, the copy would be the one an agent reads after the original
+    changed.
+    """
+    agents = (REPO / "AGENTS.md").read_text()
+    assert "CONTRIBUTING.md" in agents, "AGENTS.md does not link to its owner"
+
+    duplicated = [t for t in ("| `feat` |", "| `fix` |", "| `refactor` |") if t in agents]
+    assert not duplicated, f"the type table is duplicated in AGENTS.md: {duplicated}"
+
+
+def test_every_command_the_agent_rules_prescribe_exists():
+    """An agent that runs what this file says must not hit `No such file`.
+
+    The three scripts and the two make targets are named as things to run before
+    finishing. A stale name here produces an agent that reports the check as run.
+    """
+    agents = (REPO / "AGENTS.md").read_text()
+
+    for script in re.findall(r"scripts/(\w+\.py)", agents):
+        assert (REPO / "scripts" / script).exists(), f"AGENTS.md names a missing {script}"
+
+    for target in re.findall(r"make (\w+)", agents):
+        assert re.search(rf"^{target}:", MAKEFILE, re.M), (
+            f"AGENTS.md tells agents to run `make {target}`, which the Makefile lacks"
+        )

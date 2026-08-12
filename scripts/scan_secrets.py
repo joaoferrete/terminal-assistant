@@ -66,10 +66,15 @@ PLACEHOLDERS = (
 )
 
 # Files whose whole point is to show the SHAPE of a credential.
+#
+# An entry that names a file which does not exist is a silent hole: the scan passes,
+# the real file goes unscanned, and nothing says so. That happened here on the first
+# run — this listed `tests/test_scan_secrets.py` while the tests live in
+# `test_guards.py` — so a test now asserts that every entry resolves.
 ALLOWED_PATHS = {
     ".env.example",
-    "scripts/scan_secrets.py",       # the patterns themselves live here
-    "tests/test_scan_secrets.py",    # and the fixtures that prove them
+    "scripts/scan_secrets.py",   # the patterns themselves live here
+    "tests/test_guards.py",      # and the synthetic fixtures that prove they fire
 }
 
 # Text only. A binary blob with a matching byte run is noise, and a screenshot is
