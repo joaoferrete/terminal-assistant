@@ -24,6 +24,59 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # As guardas primeiro, e num job próprio: elas levam segundos, não precisam de
+  # matriz, e um erro nelas tem de aparecer com o nome do que falhou em vez de
+  # escondido no meio de 337 testes.
+  guards:
+    name: guardas (lint, credenciais, idioma)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A varredura de credenciais anda o banco de objetos inteiro, e um clone
+          # raso não tem histórico para andar. Sem isto o passo passa por vacuidade.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: lint
+        # Os mesmos caminhos do `make lint`, e um teste prova que os dois não
+        # divergem — `scripts/` nasceu fora das duas listas.
+        run: |
+          pip install ruff
+          ruff check src examples tests scripts
+
+      - name: nenhuma credencial na árvore nem no histórico
+        # Um segredo apagado num commit posterior continua no pack, em todo clone, e
+        # válido até alguém rotacionar. Foi exatamente o que aconteceu aqui uma vez,
+        # e foi pego por alguém ter olhado — não por uma checagem.
+        run: python scripts/scan_secrets.py --history
+
+      - name: o código está em inglês
+        # Por palavra funcional, não por acento: `canceladas ficam de fora` não tem
+        # um acento e sobreviveu a três revisões manuais.
+        run: python scripts/scan_language.py
+
+  # Só em pull request: num push para `main` não existe título para checar, e um job
+  # que falha em todo push é um job que as pessoas aprendem a ignorar.
+  pr-title:
+    name: título do PR
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: o título segue a convenção
+        # Pelo `env`, e não interpolado no `run`: um título com `"` ou `$` viraria
+        # injeção de shell, e título de PR é texto de quem abriu.
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: python scripts/pr_title.py "$TITLE"
+
   core:
     name: núcleo (sem GNOME)
     runs-on: ubuntu-latest
@@ -47,10 +100,17 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: lint
-        run: ruff check src examples tests
+        run: ruff check src examples tests scripts
 
       - name: testes
-        run: pytest -q
+        # `--strict-markers` e `--strict-config`: um marcador com typo vira
+        # `@pytest.mark.skpi` que não pula nada e não avisa, e uma chave errada no
+        # pyproject é ignorada em silêncio. Os dois já são erro aqui.
+        #
+        # `-rs` lista o motivo de cada skip na saída: um teste que passa a pular por
+        # acidente é indistinguível de um que passa, e este job pula exatamente um
+        # (o cenário sem D-Bus, que exige os typelibs).
+        run: pytest -q -rs --strict-markers --strict-config
 
       - name: o núcleo funciona sem nada instalado
         # Não é redundante com os testes: aqui o binário é exercitado como um
@@ -93,8 +153,24 @@ jobs:
           .venv/bin/python -c "import gi; gi.require_version('ECal','2.0'); \
             from gi.repository import ECal; print('ECal OK')"
 
-      - name: a suíte também passa com gi presente
+      - name: a suíte também passa com gi presente, e sem pular nada
         # O caminho oposto do job `core`: lá o `gi` está ausente, aqui está
         # presente. Os dois têm de dar verde, e é a diferença entre "degrada" e
         # "não foi exercitado".
-        run: .venv/bin/pytest -q
+        #
+        # ZERO skips é a asserção que importa. Com os typelibs instalados, o
+        # `importorskip("gi")` do teste do cenário sem D-Bus tem de rodar de
+        # verdade — se ele pular aqui também, este job inteiro está provando nada e
+        # continua verde. Foi assim que o caminho da agenda ficou sem cobertura
+        # antes de existirem dois jobs.
+        run: |
+          .venv/bin/pytest -q -rs --strict-markers --strict-config \
+            --junit-xml=report.xml
+          .venv/bin/python - <<'EOF'
+          import sys, xml.etree.ElementTree as ET
+          suite = ET.parse("report.xml").getroot().find("testsuite")
+          skipped = int(suite.get("skipped", 0))
+          print(f'{suite.get("tests")} testes, {skipped} pulado(s)')
+          if skipped:
+              sys.exit("com os typelibs presentes nada deveria pular")
+          EOF
