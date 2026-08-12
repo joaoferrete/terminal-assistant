@@ -90,7 +90,13 @@ def test_a_agenda_degrada_sem_sessao_grafica(monkeypatch):
 
     assert cal.available is False, "a agenda deveria degradar, não estourar"
     assert "D-Bus" in cal.error
-    assert "funciona sem ela" in cal.error, "o motivo não tranquiliza quem lê"
+
+    # Contra o CATÁLOGO, não contra um literal: a suíte roda em `pt`, e fixar a
+    # frase em inglês aqui faria o teste falhar por causa do idioma em vez de por
+    # causa do comportamento. O que importa é que a mensagem tranquiliza quem lê.
+    from ta.i18n import t
+
+    assert t("calendar.no_bus", erro="").rstrip(". ") .split(". ", 1)[-1] in cal.error
 
 
 def test_uma_sonda_quebrada_nao_derruba_as_outras(monkeypatch):

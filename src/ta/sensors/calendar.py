@@ -1,15 +1,15 @@
-"""Agenda pelo Evolution Data Server, sobre DBus.
+"""The calendar, through Evolution Data Server over DBus.
 
-O GNOME faz o OAuth com um client já verificado e renova o token sozinho; o app
-apenas lê o que o EDS já sincronizou (ADR 0004). Leitura local e instantânea, o
-que é o que viabiliza usar agenda como condição de Rule sem pagar latência de
-rede.
+GNOME does the OAuth with an already-verified client and renews the token
+itself; the app only reads what Evolution has already synced (ADR 0004). Local
+and instant reads, which is what makes it viable to use the calendar as a Rule
+condition without paying network latency.
 
-Exige `gi`, que só existe no Python do sistema (ADR 0005), e os typelibs
-`gir1.2-ecal-2.0` e `gir1.2-edataserver-1.2`.
+Requires `gi`, which only exists in the system Python (ADR 0005), plus the
+`gir1.2-ecal-2.0` and `gir1.2-edataserver-1.2` typelibs.
 
-**UIDs de agenda nunca são fixados no código.** O EDS os regenera se a agenda for
-recriada; a resolução é por nome de exibição + conta pai.
+**Calendar UIDs are never hardcoded.** Evolution regenerates them if a calendar
+is recreated; resolution is by display name plus parent account.
 """
 
 from __future__ import annotations
@@ -21,23 +21,24 @@ from datetime import date, datetime, time, timedelta
 
 log = logging.getLogger("ta.calendar")
 
-# Agendas locais do EDS, que NÃO sincronizam com o Google. `system-calendar` se
-# chama "Pessoal" e é a armadilha: gravar ali não aparece no celular.
-LOCAIS = ("system-calendar", "birthdays")
+# Evolution's local calendars, which do NOT sync with a provider.
+# `system-calendar` is called "Personal" and is the trap: writing there never
+# shows up on your phone.
+LOCAL_ONLY = ("system-calendar", "birthdays")
 
-ESCRITA = "Terminal Assistant"
+WRITE_CALENDAR = "Terminal Assistant"
 
-# Provedores de e-mail pessoal. Uma conta em domínio próprio é tratada como
-# trabalho, o que é a heurística certa aqui: quem tem domínio próprio no
-# Calendar o tem por causa da empresa.
-PROVEDORES_PESSOAIS = frozenset(
+# Consumer email providers. An account on its own domain is treated as work,
+# which is the right heuristic here: somebody with their own domain in Calendar
+# has it because of a company.
+CONSUMER_PROVIDERS = frozenset(
     {"gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com",
      "icloud.com", "me.com", "yahoo.com", "proton.me", "protonmail.com"}
 )
 RE_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-# Quanto esperar pelo backend ficar online, por fonte. Pago uma vez por fonte,
-# graças ao cache de clientes.
+# How long to wait for a backend to come online, per source. Paid once per
+# source, thanks to the client cache.
 CONNECT_WAIT_S = 10
 
 
@@ -62,39 +63,40 @@ class CalendarSource:
     name: str
     parent: str
     local: bool
-    # E-mail da conta a que esta agenda pertence, quando dá para saber.
+    # The email of the account this calendar belongs to, when it can be known.
     #
-    # Necessário porque `parent` é um **hash opaco** do GOA
-    # ('d2c8054404442a86eb...'), não um nome legível: rotear por ele é
-    # impossível. O sinal utilizável é que o Google sempre cria, na mesma conta,
-    # uma agenda batizada com o e-mail dela — então o irmão que parece e-mail
-    # identifica a conta inteira.
+    # Necessary because `parent` is an **opaque hash** from Online Accounts
+    # ('d2c8054404442a86eb...'), not a readable name: routing by it is
+    # impossible. The usable signal is that the provider always creates, in each
+    # account, a calendar named after its email — so the sibling that looks like
+    # an email identifies the whole account.
     account: str = ""
 
     @property
     def personal(self) -> bool:
-        """Conta pessoal, pelo provedor do e-mail. Domínio próprio é trabalho."""
-        dominio = self.account.rsplit("@", 1)[-1].lower() if "@" in self.account else ""
-        return dominio in PROVEDORES_PESSOAIS
+        """A consumer account, by email provider. Your own domain means work."""
+        domain = self.account.rsplit("@", 1)[-1].lower() if "@" in self.account else ""
+        return domain in CONSUMER_PROVIDERS
 
 
 class Calendar:
-    """Leitura e escrita nas agendas do EDS.
+    """Reading from and writing to Evolution's calendars.
 
-    Importa `gi` de forma tardia para que o resto do app funcione numa máquina
-    sem os typelibs — a captura de notas não depende de agenda.
+    It imports `gi` lazily so the rest of the app works on a machine with no
+    typelibs — note capture does not depend on the calendar.
     """
 
     def __init__(self) -> None:
         self._registry = None
-        self._erro: str | None = None
-        # Conectar a uma fonte custa até CONNECT_WAIT_S, e uma agenda recém-criada
-        # paga o timeout inteiro porque o EDS ainda não tem cache dela — medido:
-        # 10s por agenda nova, 0,01s nas antigas. Sem cache, `ta today` levava 20s.
+        self._error: str | None = None
+        # Connecting to a source costs up to CONNECT_WAIT_S, and a freshly
+        # created calendar pays the whole timeout because Evolution has no cache
+        # for it yet — measured: 10s for a new calendar, 0.01s for old ones.
+        # Without the cache, `ta today` took 20s.
         self._clients: dict[str, object] = {}
 
     def _load(self):
-        if self._registry is not None or self._erro is not None:
+        if self._registry is not None or self._error is not None:
             return self._registry
         try:
             import gi
@@ -106,28 +108,26 @@ class Calendar:
 
             self._registry = EDataServer.SourceRegistry.new_sync(None)
         except (ImportError, ValueError) as e:
-            # Falta a biblioteca ou o typelib: o conserto é `apt`.
-            self._erro = (
-                f"agenda indisponível: {e}. "
-                "Rode `make check-gi` — provavelmente faltam os typelibs do apt."
-            )
-            log.warning("%s", self._erro)
+            # The library or the typelib is missing: the fix is `apt`.
+            from ..i18n import t
+
+            self._error = t("calendar.no_typelibs", erro=e)
+            log.warning("%s", self._error)
         except Exception as e:  # noqa: BLE001
-            # Os typelibs existem, mas não há barramento para falar com o
-            # Evolution: `GLib.GError: Cannot autolaunch D-Bus without X11
-            # $DISPLAY`. Acontece em servidor, container, SSH sem sessão gráfica
-            # e no CI — e antes disto **estourava**, derrubando `ta doctor` e
-            # `ta --help` justamente onde eles mais precisam responder.
+            # The typelibs exist, but there is no bus to talk to Evolution:
+            # `GLib.GError: Cannot autolaunch D-Bus without X11 $DISPLAY`. It
+            # happens on a server, in a container, over SSH with no graphical
+            # session, and in CI — and before this it **raised**, taking down
+            # `ta doctor` and `ta --help` exactly where they most need to answer.
             #
-            # `Exception` largo de propósito: qualquer falha em alcançar o EDS
-            # significa a mesma coisa para quem usa, que é "não tem agenda aqui",
-            # e a alternativa é enumerar tipos de erro de uma pilha C.
-            self._erro = (
-                f"agenda indisponível: {e}. "
-                "É esperado sem sessão gráfica — a agenda precisa do barramento "
-                "do usuário. O resto do Terminal Assistant funciona sem ela."
-            )
-            log.warning("%s", self._erro)
+            # A broad `Exception` on purpose: any failure to reach Evolution
+            # means the same thing to the user, which is "there is no calendar
+            # here", and the alternative is enumerating error types from a C
+            # stack.
+            from ..i18n import t
+
+            self._error = t("calendar.no_bus", erro=e)
+            log.warning("%s", self._error)
         return self._registry
 
     @property
@@ -137,27 +137,27 @@ class Calendar:
     @property
     def error(self) -> str | None:
         self._load()
-        return self._erro
+        return self._error
 
-    # ── Fontes ──────────────────────────────────────────────────────────────
+    # ── Sources ─────────────────────────────────────────────────────────────
     def sources(self) -> list[CalendarSource]:
         reg = self._load()
         if reg is None:
             return []
         from gi.repository import EDataServer
 
-        habilitadas = [
+        enabled = [
             s for s in reg.list_sources(EDataServer.SOURCE_EXTENSION_CALENDAR) if s.get_enabled()
         ]
-        # Primeiro descobre o e-mail de cada conta, pelo irmão batizado com ele.
-        contas: dict[str, str] = {}
-        for s in habilitadas:
-            nome = s.get_display_name() or ""
-            if RE_EMAIL.match(nome):
-                contas[s.get_parent() or ""] = nome
+        # First find each account's email, through the sibling named after it.
+        accounts: dict[str, str] = {}
+        for s in enabled:
+            name = s.get_display_name() or ""
+            if RE_EMAIL.match(name):
+                accounts[s.get_parent() or ""] = name
 
         out = []
-        for s in habilitadas:
+        for s in enabled:
             uid = s.get_uid()
             parent = s.get_parent() or ""
             out.append(
@@ -165,22 +165,22 @@ class Calendar:
                     uid=uid,
                     name=s.get_display_name(),
                     parent=parent,
-                    local=uid in LOCAIS or parent.endswith("-stub"),
-                    account=contas.get(parent, ""),
+                    local=uid in LOCAL_ONLY or parent.endswith("-stub"),
+                    account=accounts.get(parent, ""),
                 )
             )
         return out
 
     def write_targets(self) -> list[CalendarSource]:
-        """As agendas dedicadas de escrita — uma por conta (emenda do ADR 0007)."""
-        return [s for s in self.sources() if s.name == ESCRITA and not s.local]
+        """The dedicated write calendars — one per account (amendment to ADR 0007)."""
+        return [s for s in self.sources() if s.name == WRITE_CALENDAR and not s.local]
 
-    # ── Clientes ────────────────────────────────────────────────────────────
+    # ── Clients ─────────────────────────────────────────────────────────────
     def _client(self, src):
-        """Cliente conectado para uma fonte, memoizado.
+        """A connected client for a source, memoised.
 
-        Sem isto, cada leitura reconecta a todas as fontes e paga o timeout das
-        que ainda não estão em cache no EDS.
+        Without this, every read reconnects to every source and pays the timeout
+        of the ones Evolution has not cached yet.
         """
         uid = src.get_uid()
         cached = self._clients.get(uid)
@@ -195,18 +195,18 @@ class Calendar:
         return client
 
     def warm(self) -> int:
-        """Conecta a todas as fontes, para as leituras seguintes serem instantâneas.
+        """Connect to every source, so the reads that follow are instant.
 
-        **Em paralelo, e a razão é medida.** `connect_sync` recebe um
-        `wait_for_connected_seconds` que, para fonte de nuvem, é consumido por
-        inteiro: cada uma das 6 agendas do Google gastava exatos 10s e *então*
-        conectava com sucesso. Em série isso dava 60s de boot, e o primeiro
-        `ta today` depois de um restart estourava o timeout do CLI. Concorrente,
-        o custo passa a ser o da fonte mais lenta, não a soma.
+        **In parallel, and the reason is measured.** `connect_sync` takes a
+        `wait_for_connected_seconds` which, for a cloud source, is consumed in
+        full: each of the six cloud calendars spent exactly 10s and *then*
+        connected successfully. In series that was 60s of boot, and the first
+        `ta today` after a restart blew the CLI's timeout. Concurrently, the cost
+        becomes the slowest single source rather than the sum.
 
-        O `dict` de clientes é escrito por várias threads, o que é seguro aqui:
-        atribuição em `dict` é atômica, e duas threads que resolvam a mesma fonte
-        gravariam clientes equivalentes.
+        The client `dict` is written by several threads, which is safe here:
+        assignment into a `dict` is atomic, and two threads resolving the same
+        source would store equivalent clients.
         """
         reg = self._load()
         if reg is None:
@@ -234,15 +234,16 @@ class Calendar:
         log.info("agenda aquecida: %d de %d fonte(s)", n, len(fontes))
         return n
 
-    # ── Leitura ─────────────────────────────────────────────────────────────
-    def events_between(self, inicio: datetime, fim: datetime) -> list[Event]:
-        """Eventos no intervalo, com recorrências **expandidas**.
+    # ── Reading ─────────────────────────────────────────────────────────────
+    def events_between(self, start_at: datetime, end_at: datetime) -> list[Event]:
+        """Events in the interval, with recurrences **expanded**.
 
-        Usa `generate_instances_sync`, não `get_object_list_as_comps_sync`: a
-        segunda devolve o componente *mestre* de um evento recorrente, cujo
-        DTSTART é o início da série. Uma "Daily" criada meses atrás apareceria
-        com a data de criação, e várias ocorrências colapsariam numa. Foi
-        exatamente o que apareceu no primeiro teste contra a agenda real.
+        It uses `generate_instances_sync`, not `get_object_list_as_comps_sync`:
+        the latter returns the *master* component of a recurring event, whose
+        DTSTART is the start of the series. A "Daily" created months ago would
+        show up with its creation date, and several occurrences would collapse
+        into one. That is exactly what turned up in the first test against a real
+        calendar.
         """
         reg = self._load()
         if reg is None:
@@ -263,10 +264,10 @@ class Calendar:
                     return True   # True = continuar gerando
 
                 client.generate_instances_sync(
-                    int(inicio.timestamp()), int(fim.timestamp()), None, coletar, None
+                    int(start_at.timestamp()), int(end_at.timestamp()), None, coletar, None
                 )
             except Exception:
-                # Uma agenda que falha não deve esconder as outras.
+                # One failing calendar must not hide the others.
                 log.debug("falha ao ler a agenda %s", src.get_display_name(), exc_info=True)
 
         eventos.sort(key=lambda e: (e.start, e.summary))
@@ -278,22 +279,22 @@ class Calendar:
             datetime.combine(dia, time.min), datetime.combine(dia, time.max)
         )
 
-    def now(self, momento: datetime | None = None) -> Event | None:
-        """O compromisso em curso, se houver. É o enriquecimento do ADR 0008."""
-        momento = momento or datetime.now()
-        for e in self.today(momento.date()):
-            if not e.all_day and e.start <= momento <= e.end:
+    def now(self, at: datetime | None = None) -> Event | None:
+        """The appointment in progress, if any. It is ADR 0008's enrichment."""
+        at = at or datetime.now()
+        for e in self.today(at.date()):
+            if not e.all_day and e.start <= at <= e.end:
                 return e
         return None
 
-    # ── Escrita ─────────────────────────────────────────────────────────────
+    # ── Writing ─────────────────────────────────────────────────────────────
     def create_event(
         self, source_uid: str, summary: str, start: datetime, end: datetime
     ) -> str | None:
-        """Cria um evento na agenda dada.
+        """Create an event in the given calendar.
 
-        Invariante do ADR 0007: **nunca adiciona convidados.** Não há parâmetro
-        para isso, e não deve ganhar um.
+        ADR 0007's invariant: **it never adds guests.** There is no parameter for
+        it, and it must not gain one.
         """
         reg = self._load()
         if reg is None:

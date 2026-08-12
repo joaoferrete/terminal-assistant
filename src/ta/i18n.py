@@ -148,6 +148,20 @@ MESSAGES: dict[str, dict[str, str]] = {
     "reminder.late_minutes": {"pt": " (atrasado {n} min)", "en": " ({n} min late)"},
     "reminder.late_hours": {"pt": " (atrasado {n} h)", "en": " ({n} h late)"},
     "reminder.very_late": {"pt": " (muito atrasado)", "en": " (very late)"},
+    "calendar.no_typelibs": {
+        "pt": "agenda indisponível: {erro}. "
+              "Rode `make check-gi` — provavelmente faltam os typelibs do apt.",
+        "en": "calendar unavailable: {erro}. "
+              "Run `make check-gi` — the apt typelibs are probably missing.",
+    },
+    "calendar.no_bus": {
+        "pt": "agenda indisponível: {erro}. É esperado sem sessão gráfica — a agenda "
+              "precisa do barramento do usuário. O resto do Terminal Assistant "
+              "funciona sem ela.",
+        "en": "calendar unavailable: {erro}. This is expected with no graphical "
+              "session — the calendar needs the user bus. The rest of Terminal "
+              "Assistant works without it.",
+    },
     "config.exposed_without_token": {
         "pt": "TA_HOST={host} expõe o daemon na rede, e ele não tem\n"
               "autenticação própria: qualquer um na mesma rede leria suas notas,\n"
