@@ -261,7 +261,7 @@ def test_a_suite_nao_depende_do_locale_da_maquina():
     em vez de a suíte inteira falhar num ambiente e não no outro, apontando para o
     lugar errado.
     """
-    from conftest import IDIOMA_DA_SUITE
+    from conftest import SUITE_LANGUAGE
 
-    assert i18n.lang() == IDIOMA_DA_SUITE
+    assert i18n.lang() == SUITE_LANGUAGE
     assert i18n.lang_source() == "TA_LANG", "o idioma está sendo herdado, não fixado"

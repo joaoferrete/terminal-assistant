@@ -54,8 +54,8 @@ async def _current_title(ctx) -> str:
     The calendar comes in as context, not as a trigger (ADR 0008): it says WHICH
     meeting it is, and allows deciding differently per kind of appointment.
     """
-    evento = await ctx.calendar.agora() if ctx.calendar else None
-    return (evento or {}).get("summary", "")
+    event = await ctx.calendar.now() if ctx.calendar else None
+    return (event or {}).get("summary", "")
 
 
 def _no_production(title: str) -> bool:

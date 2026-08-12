@@ -179,9 +179,12 @@ its own interface. Writing the key from outside changed nothing on screen.
 ### `ctx.calendar` — the calendar
 
 ```python
-event = await ctx.calendar.agora()    # the event happening now, or None
-events = await ctx.calendar.hoje()    # today's
+event = await ctx.calendar.now()      # the event happening now, or None
+events = await ctx.calendar.today()   # today's
 ```
+
+`agora()` and `hoje()` are the same methods under their original names, kept so
+that rules written before the project switched to English keep running.
 
 Each event is a dict with `summary`, `start`, `end`, `all_day`, `calendar`.
 
@@ -233,7 +236,7 @@ def _is_dark(ctx) -> bool:
 
 @rule(on=mic_active())
 async def meeting(ctx):
-    event = await ctx.calendar.agora() if ctx.calendar else None
+    event = await ctx.calendar.now() if ctx.calendar else None
     title = (event or {}).get("summary", "")
 
     if title and "1:1" in title:        # a 1:1 needs no production
