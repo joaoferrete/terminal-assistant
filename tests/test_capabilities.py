@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from ta.capabilities import Capability, by_command, inspect
-from ta.cli import GRUPOS_DE_AJUDA, build_parser
+from ta.cli import HELP_GROUPS, build_parser
 from ta.config import Config
 
 REPO = Path(__file__).resolve().parents[1]
@@ -128,7 +128,7 @@ def test_o_help_sobrevive_a_uma_sonda_quebrada(monkeypatch):
     )
     epilogo = build_parser().epilog
     # Todos os grupos continuam listados, só sem a marca de disponibilidade.
-    for _, titulo, comandos in GRUPOS_DE_AJUDA:
+    for _, titulo, comandos in HELP_GROUPS:
         assert titulo in epilogo
         assert comandos.split()[0] in epilogo
 
@@ -141,14 +141,14 @@ def test_todo_comando_do_parser_esta_num_grupo():
     ÚNICA listagem — e o que não estiver nele não existe para quem lê.
     """
     registrados = set(build_parser()._subparsers._group_actions[0].choices)
-    agrupados = {c for _, _, cmds in GRUPOS_DE_AJUDA for c in cmds.split()}
+    agrupados = {c for _, _, cmds in HELP_GROUPS for c in cmds.split()}
     assert registrados - agrupados == set(), "comando fora de todo grupo"
 
 
 def test_os_comandos_agrupados_existem_de_verdade():
     """O inverso: grupo citando comando que não existe mais."""
     registrados = set(build_parser()._subparsers._group_actions[0].choices)
-    agrupados = {c for _, _, cmds in GRUPOS_DE_AJUDA for c in cmds.split()}
+    agrupados = {c for _, _, cmds in HELP_GROUPS for c in cmds.split()}
     assert agrupados - registrados == set(), "grupo cita comando inexistente"
 
 

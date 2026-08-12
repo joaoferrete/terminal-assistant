@@ -311,6 +311,58 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "in the trash — `↩` restores; go back to the board to write",
     },
     # ── CLI ─────────────────────────────────────────────────────────────────
+    "cli.sent_unconfirmed": {
+        "pt": "enviado, estado não confirmado", "en": "sent, state not confirmed",
+    },
+    "cli.unconfirmed": {"pt": "não confirmado", "en": "not confirmed"},
+    "cli.turned_off": {"pt": "apagado", "en": "turned off"},
+    "cli.nothing_was_on": {"pt": "nada estava aceso.", "en": "nothing was on."},
+    "cli.skipped_pinned": {
+        "pt": "{n} respeitada(s): você as arrastou à mão.",
+        "en": "{n} left alone: you dragged them by hand.",
+    },
+    "cli.priorities_exist": {
+        "pt": "já existe. Use --force para responder de novo, ou "
+              "`ta priorities \"instrução\"` para ajustar por prompt.",
+        "en": "it already exists. Use --force to answer again, or "
+              "`ta priorities \"instruction\"` to adjust it by prompt.",
+    },
+    "cli.priorities_unset": {
+        "pt": "(ainda não definido — rode `ta init`)",
+        "en": "(not set yet — run `ta init`)",
+    },
+    "cli.doctor_summary": {
+        "pt": "{live}/{total} disponíveis. O que está marcado com — é opcional.",
+        "en": "{live}/{total} available. Anything marked with — is optional.",
+    },
+    "cli.not_an_event": {
+        "pt": "não parece um compromisso com data e hora.",
+        "en": "this does not look like an appointment with a date and time.",
+    },
+    "cli.event_title": {"pt": "título", "en": "title"},
+    "cli.event_confidence": {"pt": "confiança", "en": "confidence"},
+    "cli.no_dedicated_calendar": {
+        "pt": "não achei a agenda dedicada da conta {account}.",
+        "en": "could not find the dedicated calendar for the {account} account.",
+    },
+    "cli.event_prompt": {
+        "pt": "[s] criar  [n] só nota  > ", "en": "[y] create  [n] note only  > ",
+    },
+    "cli.install_zenity": {
+        "pt": "zenity não encontrado. `sudo apt install zenity`.",
+        "en": "zenity not found. `sudo apt install zenity`.",
+    },
+    "cli.timeout": {
+        "pt": "daemon não respondeu em {s}s ({url}).",
+        "en": "the daemon did not answer in {s}s ({url}).",
+    },
+    "cli.refused": {
+        "pt": "daemon recusou ({code}): {detail}", "en": "daemon refused ({code}): {detail}",
+    },
+    "cli.calendar_warming": {
+        "pt": "a agenda estava aquecendo; as próximas chamadas são instantâneas",
+        "en": "the calendar was warming up; the next calls are instant",
+    },
     "cli.nothing_due": {
         "pt": "nada cobrável hoje.",
         "en": "nothing due today.",
