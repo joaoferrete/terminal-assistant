@@ -19,3 +19,6 @@ docs/ROADMAP.md
 # um `git add -A` levou credenciais reais para o histórico uma vez.
 .env.bak*
 .env.*.bak
+
+# Gerado pelo job da agenda no CI (contabilidade de skip).
+report.xml

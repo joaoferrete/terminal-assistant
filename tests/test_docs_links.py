@@ -9,17 +9,36 @@ It guards the other end too: a new command nobody documented disappears from the
 only listing there is, because the flat argparse list was removed on purpose.
 """
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 
-# Every markdown file in the project, except what is local and unversioned.
-DOCS = sorted(
-    p for p in REPO.rglob("*.md")
-    if ".venv" not in p.parts and p.name != "ROADMAP.md"
-)
+
+def _tracked_docs() -> list[Path]:
+    """The project's markdown, straight from git.
+
+    From `git ls-files` rather than from `rglob`, because "our documentation" is
+    exactly "what is published" and git already knows that. The glob version walked
+    into `.pytest_cache/` and parametrised a test over **pytest's own** README, which
+    is not ours to lint — and it also meant the suite collected 400 tests on a
+    machine that had run pytest before and 399 on a fresh CI runner. A test count
+    that depends on whether a cache directory exists is a suite that is not the same
+    everywhere it runs.
+
+    It drops `docs/ROADMAP.md` for free: it is gitignored, being a live local
+    document, so it is not tracked and needs no special case.
+    """
+    out = subprocess.run(
+        ["git", "ls-files", "-z", "*.md"],
+        cwd=REPO, capture_output=True, text=True, check=True,
+    ).stdout
+    return sorted(REPO / rel for rel in out.split("\0") if rel)
+
+
+DOCS = _tracked_docs()
 
 # `[text](target)`, ignoring images and link references.
 LINK = re.compile(r"(?<!\!)\[[^\]]*\]\(([^)]+)\)")

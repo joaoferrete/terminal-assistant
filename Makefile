@@ -43,7 +43,7 @@ check-gi:
 		{ echo "FALHOU: typelib ausente. Rode: sudo apt install gir1.2-ecal-2.0"; exit 1; }
 
 lint: venv
-	$(VENV)/bin/ruff check src examples tests
+	$(VENV)/bin/ruff check src examples tests scripts
 
 test: venv
 	$(VENV)/bin/pytest -q

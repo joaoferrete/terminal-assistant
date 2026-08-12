@@ -65,12 +65,12 @@ def test_due_today_includes_overdue(conn):
 def test_pending_reminders_respects_fired_at(conn):
     n = store.add_note(conn, "tomar remedio !!08:00", now=NOW)  # 08:00 < 09:00 -> amanha
     assert n.remind_at == "2026-08-11T08:00:00"
-    # Nada pendente agora.
+    # Nothing pending right now.
     assert store.pending_reminders(conn, now=NOW) == []
-    # Depois da hora, pendente.
+    # Past the hour, pending.
     later = datetime(2026, 8, 11, 8, 1)
     assert [x.id for x in store.pending_reminders(conn, now=later)] == [n.id]
-    # Disparado, sai da fila — o scheduler não repete.
+    # Once fired it leaves the queue — the scheduler does not repeat.
     store.mark_fired(conn, n.id, now=later)
     assert store.pending_reminders(conn, now=later) == []
 

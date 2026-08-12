@@ -143,29 +143,29 @@ def test_help_survives_a_broken_probe(monkeypatch):
 
 
 def test_the_doctor_screen_is_all_in_one_language():
-    """Metade traduzida e metade nao le como software quebrado.
+    """Half translated and half not reads as broken software.
 
-    O `ta doctor` mostrava `language`/`config`/`daemon` e `Notes`/`Calendar` fixos
-    em ingles, e o resumo pelo catalogo. Em `TA_LANG=pt` a MESMA tabela saia nos
-    dois idiomas ao mesmo tempo.
+    `ta doctor` printed `language`/`config`/`daemon` and `Notes`/`Calendar`
+    hardcoded in English, with the summary coming from the catalogue. Under
+    `TA_LANG=pt` the SAME table came out in both languages at once.
 
-    Nome de produto e a excecao declarada: `Home Assistant`, `Lighter` e `Gemini`
-    sao iguais nos dois, porque traduzir nome proprio atrapalha quem vai procurar
-    por ele.
+    Product names are the declared exception: `Home Assistant`, `Lighter` and
+    `Gemini` are identical in both, because translating a proper noun gets in the
+    way of whoever goes looking for it.
     """
     from ta.capabilities import environment
     from ta.i18n import LANGS, MESSAGES
 
     for c in inspect(Config()):
-        chave = f"cap.{c.key}"
-        assert chave in MESSAGES, f"o rotulo de {c.key!r} nao passa pelo catalogo"
-        assert set(MESSAGES[chave]) == set(LANGS)
-        assert c.label == MESSAGES[chave][lang()]
+        key = f"cap.{c.key}"
+        assert key in MESSAGES, f"the label for {c.key!r} bypasses the catalogue"
+        assert set(MESSAGES[key]) == set(LANGS)
+        assert c.label == MESSAGES[key][lang()]
 
-    rotulos = [k for k, _ in environment(Config())]
-    for r in rotulos:
-        assert r in {MESSAGES[k][lang()] for k in
-                     ("doctor.language", "doctor.config", "doctor.daemon")}, r
+    expected = {MESSAGES[k][lang()] for k in
+                ("doctor.language", "doctor.config", "doctor.daemon")}
+    for label, _ in environment(Config()):
+        assert label in expected, label
 
 
 # ── The grouped --help ──────────────────────────────────────────────────────

@@ -208,14 +208,58 @@ Someone — probably you, in four months — will want to "simplify" it.
 
 One PR, one thing. A branch name that says what it does.
 
-### Commit messages
+### The subject line, for both commits and PR titles
 
-This repository writes commits as **problem → decision → what we found on the
-way**. `git log` here is meant to be readable, and it is the main reason the
-project is understandable at all:
+The first line is `type(scope): subject`. The prefix is not bureaucracy: it is the
+one word that tells a reader whether to keep reading, and it makes
+`git log --oneline | grep fix` a reliable question rather than a guess.
 
 ```
-Short line saying what changed, in the imperative
+fix(board): o checkbox de concluídas voltou a aparecer em todas as visões
+feat(cli): ta doctor lista as seis capacidades com motivo e conserto
+refactor(daemon): renomeia os identificadores para inglês
+adr: a hora decide o fim da reunião, não a entrada
+fix(i18n)!: HORIZONS passa a gravar valores em inglês
+```
+
+**The type**, one of:
+
+| | |
+|---|---|
+| `feat` | new behaviour somebody can use |
+| `fix` | a defect — say the **symptom** in the body, not just the file |
+| `docs` | documentation only |
+| `test` | tests only, no behaviour change |
+| `refactor` | same behaviour, different shape — a rename lives here |
+| `perf` | measurably faster or lighter, **with the measurement** in the body |
+| `build` | packaging, dependencies, the Makefile |
+| `ci` | the workflows, and the guards that run in them |
+| `chore` | the leftovers. Use it when nothing else fits, not as a default |
+| `adr` | an architecture decision record |
+
+`adr` is not in the Conventional Commits list and is here because this project
+treats a decision record as a deliverable: an ADR is neither `docs` (it is not
+describing the code, it is deciding) nor `feat` (nothing shipped).
+
+**The scope** is optional, and when present comes from this list so that grepping
+it is reliable: `notes`, `board`, `cli`, `daemon`, `db`, `store`, `home`,
+`calendar`, `mic`, `lighter`, `ai`, `i18n`, `docs`, `ci`, `security`, `rules`.
+If none fits, leave it out rather than inventing one.
+
+**`!` before the colon** means a user has to do something — rotate a token, edit
+their `config.toml`, accept that a stored value changed shape.
+
+**The subject** continues the line that `type: ` started, so it does not begin with
+a capital and does not end in a full stop. Write it in either language; write it so
+that somebody scanning a hundred lines finds theirs.
+
+### The body: problem → decision → what you found on the way
+
+The subject line says *what*. The body is where this repository earns its `git log`,
+and it is the main reason the project is understandable at all:
+
+```
+fix(board): o checkbox de concluídas voltou a aparecer em todas as visões
 
 What was wrong, and how it showed up. The symptom matters more than the
 code — "the board drew the wrong order with the right look" says more than
@@ -225,6 +269,22 @@ What was decided, and why that over the alternative you rejected.
 
 Achado no caminho / Found on the way: the thing the plan did not predict.
 This section is where half the value lives.
+```
+
+### What is checked, and what is not
+
+**PR titles are validated in CI.** **Commit subjects are not.**
+
+That asymmetry is deliberate. A commit is a private draft until it is pushed, and a
+hook that rejects `wip` while you are still thinking costs more than it buys — you
+can always reword before opening. A PR title is different: it survives the squash
+into `git log`, into the release notes, and into the list somebody scans looking for
+the change that broke their machine. That one is worth a gate.
+
+Check yours before opening, and get the same answer CI will:
+
+```bash
+python scripts/pr_title.py "fix(board): o checkbox de concluídas voltou a aparecer"
 ```
 
 ### Checklist
