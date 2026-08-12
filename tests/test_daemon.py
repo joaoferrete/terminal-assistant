@@ -157,7 +157,7 @@ def test_notes_vem_ordenado_por_urgencia(client):
         "atrasada", "hoje", "esta semana", "distante", "sem prazo",
     ]
     assert [n["horizon"] for n in notes] == [
-        "vencida", "hoje", "semana", "depois", "depois",
+        "overdue", "today", "week", "later", "later",
     ]
 
 
@@ -166,7 +166,7 @@ def test_today_vem_com_vencidas_primeiro(client):
     client.post("/notes", json={"text": f"atrasada !baixa @{_daqui(-5)}"})
     tasks = client.get("/today").json()["tasks"]
     assert [t["text"] for t in tasks] == ["atrasada", "hoje"]
-    assert [t["horizon"] for t in tasks] == ["vencida", "hoje"]
+    assert [t["horizon"] for t in tasks] == ["overdue", "today"]
 
 
 def test_organize_grava_a_ordem_e_respeita_o_arrastado(client):

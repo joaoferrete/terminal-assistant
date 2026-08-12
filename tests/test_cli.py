@@ -40,7 +40,7 @@ def test_today_sem_horizon_avisa_em_vez_de_estourar(monkeypatch, capsys):
 
 
 def test_today_com_horizon_nao_avisa_e_marca_atrasada(monkeypatch, capsys):
-    _rodar(monkeypatch, [{**TASK_VELHA, "horizon": "vencida"}])
+    _rodar(monkeypatch, [{**TASK_VELHA, "horizon": "overdue"}])
     saida = capsys.readouterr().out
     assert "desatualizado" not in saida
     assert "ATRASADA" in saida

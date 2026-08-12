@@ -1,7 +1,7 @@
-"""Operações sobre Notes. A camada entre o parser e o SQLite.
+"""Operations on Notes. The layer between the parser and SQLite.
 
-Não sabe nada de HTTP nem de LLM. Isso é de propósito: é o que permite testar a
-captura inteira sem subir o daemon.
+It knows nothing about HTTP or the LLM. That is on purpose: it is what allows
+testing the whole capture path without booting the daemon.
 """
 
 from __future__ import annotations
@@ -13,21 +13,26 @@ from datetime import date, datetime, timedelta
 from .db import STATUSES, TERMINAL_STATUSES, transaction
 from .notes import ParsedNote, parse
 
-# Desempate DENTRO de uma faixa de horizonte — não é mais o primeiro critério de
-# exibição (ver `by_urgency`). Sem prioridade vem depois de baixa: não declarar
-# não é o mesmo que declarar baixa.
+# A tiebreak WITHIN a horizon band — no longer the first display criterion (see
+# `by_urgency`). No priority comes after low: not declaring one is not the same
+# as declaring it low.
 PRIORITY_RANK = {"high": 0, "medium": 1, "low": 2, None: 3}
 
-# O Horizon de uma Task: a faixa de tempo em que o prazo dela cai, medida contra
-# hoje. É **derivado do relógio, nunca gravado** — a mesma nota muda de faixa à
-# meia-noite sem ninguém escrever nada, e é justamente por isso que não pode
-# morar em `sort_key` (ADR 0010).
-HORIZONS = ("vencida", "hoje", "semana", "depois")
+# A Task's Horizon: the band of time its deadline falls into, measured against
+# today. It is **derived from the clock, never stored** — the same note changes
+# band at midnight with nobody writing anything, and that is exactly why it
+# cannot live in `sort_key` (ADR 0010).
+#
+# The values are English because they are internal wire values, not stored data:
+# they travel in the JSON payload and are catalogue keys, and the user only ever
+# sees the translated label. Contrast with tags and priority aliases, which are
+# stored and therefore never change for cosmetic reasons.
+HORIZONS = ("overdue", "today", "week", "later")
 HORIZON_RANK = {h: i for i, h in enumerate(HORIZONS)}
 
-# Janela **rolante**, não semana do calendário: numa sexta a semana do calendário
-# está quase vazia e a tarefa de segunda cairia em `depois`.
-DIAS_DE_SEMANA = 7
+# A **rolling** window, not the calendar week: on a Friday the calendar week is
+# nearly empty and Monday's task would land in `later`.
+WEEK_DAYS = 7
 
 
 @dataclass
@@ -48,8 +53,8 @@ class Note:
     pinned_by_user: bool
     status: str
     tags: list[str]
-    # Quem decidiu prioridade e tags. `!alta`/`#tag` digitados travam o campo; o
-    # que a revisão pôs ela mesma pode rever depois.
+    # Who decided priority and tags. A typed `!high`/`#tag` locks the field; what
+    # review put there itself, review may revisit later.
     priority_by_user: bool = False
     tags_by_user: bool = False
     deleted_at: str | None = None
@@ -72,7 +77,7 @@ class Note:
 
     @property
     def is_terminal(self) -> bool:
-        """Saiu da fila — feita ou cancelada. Caminhos diferentes, fila igual."""
+        """Left the queue — done or cancelled. Different doors, same queue."""
         return self.status in TERMINAL_STATUSES
 
 
@@ -101,11 +106,12 @@ def _row_to_note(row: sqlite3.Row, tags: list[str]) -> Note:
 
 
 def add_note(conn: sqlite3.Connection, raw: str, *, now: datetime | None = None) -> Note:
-    """Captura uma Note. Determinístico, sem rede (ADR 0003)."""
+    """Capture a Note. Deterministic, no network (ADR 0003)."""
     now = now or datetime.now()
     p: ParsedNote = parse(raw, now=now)
 
-    # sort_key nasce no fim da fila; `organize` e o arrastar reescrevem depois.
+    # sort_key is born at the end of the queue; `organize` and dragging rewrite
+    # it later.
     with transaction(conn):
         next_key = conn.execute("SELECT COALESCE(MAX(sort_key), 0) + 1 FROM notes").fetchone()[0]
         cur = conn.execute(
@@ -121,8 +127,8 @@ def add_note(conn: sqlite3.Connection, raw: str, *, now: datetime | None = None)
                 p.remind_at.isoformat(timespec="seconds") if p.remind_at else None,
                 p.priority,
                 next_key,
-                # Escreveu `!alta` ou `#tag`? Então o campo é seu, e a revisão
-                # não o toca nunca — nem numa reetiquetagem futura.
+                # Did you write `!high` or `#tag`? Then the field is yours, and
+                # review never touches it — not even in a future re-tagging.
                 1 if p.priority else 0,
                 1 if p.tags else 0,
             ),
@@ -139,7 +145,7 @@ def add_note(conn: sqlite3.Connection, raw: str, *, now: datetime | None = None)
 def get_note(conn: sqlite3.Connection, note_id: int) -> Note:
     row = conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
     if row is None:
-        raise KeyError(f"nota {note_id} não existe")
+        raise KeyError(f"note {note_id} does not exist")
     tags = [r["tag"] for r in conn.execute("SELECT tag FROM tags WHERE note_id = ?", (note_id,))]
     return _row_to_note(row, sorted(tags))
 
@@ -147,22 +153,22 @@ def get_note(conn: sqlite3.Connection, note_id: int) -> Note:
 def list_notes(
     conn: sqlite3.Connection, *, include_done: bool = False, deleted: bool = False
 ) -> list[Note]:
-    """Lista as Notes. Por padrão esconde as terminais e as apagadas.
+    """List the Notes. By default hides the terminal and the deleted ones.
 
-    `deleted=True` inverte o filtro e devolve **só** as apagadas — é a lixeira,
-    não um "inclui também".
+    `deleted=True` inverts the filter and returns **only** the deleted ones — it
+    is the trash, not an "also include".
     """
-    onde = ["deleted_at IS NOT NULL"] if deleted else ["deleted_at IS NULL"]
+    where = ["deleted_at IS NOT NULL"] if deleted else ["deleted_at IS NULL"]
     params: list = []
     if not include_done and not deleted:
-        onde.append(f"status NOT IN ({','.join('?' * len(TERMINAL_STATUSES))})")
+        where.append(f"status NOT IN ({','.join('?' * len(TERMINAL_STATUSES))})")
         params += list(TERMINAL_STATUSES)
-    sql = f"SELECT * FROM notes WHERE {' AND '.join(onde)} ORDER BY sort_key"
+    sql = f"SELECT * FROM notes WHERE {' AND '.join(where)} ORDER BY sort_key"
     rows = list(conn.execute(sql, params))
     if not rows:
         return []
 
-    # Uma query para todas as tags, em vez de N+1.
+    # One query for all the tags, instead of N+1.
     ids = [r["id"] for r in rows]
     placeholders = ",".join("?" * len(ids))
     tag_map: dict[int, list[str]] = {i: [] for i in ids}
@@ -173,7 +179,7 @@ def list_notes(
 
 
 def due_today(conn: sqlite3.Connection, *, today: date | None = None) -> list[Note]:
-    """Tasks cobráveis hoje ou já vencidas. Base do Digest."""
+    """Tasks chaseable today or already overdue. The basis of the Digest."""
     today = today or date.today()
     placeholders = ",".join("?" * len(TERMINAL_STATUSES))
     rows = list(
@@ -188,7 +194,7 @@ def due_today(conn: sqlite3.Connection, *, today: date | None = None) -> list[No
 
 
 def pending_reminders(conn: sqlite3.Connection, *, now: datetime | None = None) -> list[Note]:
-    """Reminders com hora vencida e ainda não disparados."""
+    """Reminders whose time has passed and that have not fired yet."""
     now = now or datetime.now()
     rows = list(
         conn.execute(
@@ -216,14 +222,14 @@ def set_schedule(
     due: date | None,
     remind_at: datetime | None,
 ) -> None:
-    """Reescreve prazo e lembrete — inclusive para **nenhum**.
+    """Rewrite deadline and reminder — including to **nothing**.
 
-    Existe para a segunda passada do LLM poder desfazer o que o regex marcou.
-    Diferente de `move_note`, aqui `None` significa "apaga", não "não mexe": a
-    correção mais importante que essa função faz é justamente tirar o prazo de
-    uma frase retrospectiva.
+    It exists so the LLM's second pass can undo what the regex marked. Unlike
+    `move_note`, here `None` means "erase", not "leave alone": the most important
+    correction this function makes is precisely removing the deadline from a
+    retrospective sentence.
 
-    Não marca `pinned_by_user` — isto é decisão de máquina, não da sua mão.
+    It does not set `pinned_by_user` — this is a machine decision, not your hand.
     """
     conn.execute(
         "UPDATE notes SET due = ?, remind_at = ? WHERE id = ?",
@@ -236,7 +242,7 @@ def set_schedule(
 
 
 def set_tags(conn: sqlite3.Connection, note_id: int, tags: list[str]) -> None:
-    """Reescreve as tags. Usado pela revisão quando você não escreveu nenhuma."""
+    """Rewrite the tags. Used by review when you wrote none yourself."""
     conn.execute("DELETE FROM tags WHERE note_id = ?", (note_id,))
     conn.executemany(
         "INSERT INTO tags (note_id, tag) VALUES (?, ?)",
@@ -249,7 +255,7 @@ def set_priority(conn: sqlite3.Connection, note_id: int, priority: str | None) -
 
 
 def mark_reviewed(conn: sqlite3.Connection, note_id: int, *, now: datetime | None = None) -> None:
-    """Sai da fila de revisão."""
+    """Leaves the review queue."""
     now = now or datetime.now()
     conn.execute(
         "UPDATE notes SET reviewed_at = ? WHERE id = ?",
@@ -258,7 +264,7 @@ def mark_reviewed(conn: sqlite3.Connection, note_id: int, *, now: datetime | Non
 
 
 def count_review_attempt(conn: sqlite3.Connection, note_id: int) -> int:
-    """Registra uma tentativa e devolve o total. Fila com teto, não laço."""
+    """Record an attempt and return the total. A queue with a ceiling, not a loop."""
     conn.execute(
         "UPDATE notes SET review_attempts = review_attempts + 1 WHERE id = ?", (note_id,)
     )
@@ -268,11 +274,12 @@ def count_review_attempt(conn: sqlite3.Connection, note_id: int) -> int:
 
 
 def soft_delete(conn: sqlite3.Connection, note_id: int, *, now: datetime | None = None) -> None:
-    """Some da lixeira para fora. Reversível de propósito.
+    """Disappears from everywhere except the trash. Reversible on purpose.
 
-    Nota é coisa escrita às pressas, e errar o clique é fácil — apagar de verdade
-    não teria volta. O evento na agenda, se houver, **não** é removido: apagar a
-    anotação sobre um compromisso não desmarca o compromisso.
+    A note is something written in a hurry, and misclicking is easy — deleting
+    for real would have no way back. The calendar event, if there is one, is
+    **not** removed: deleting the note about an appointment does not cancel the
+    appointment.
     """
     now = now or datetime.now()
     conn.execute(
@@ -286,15 +293,16 @@ def restore(conn: sqlite3.Connection, note_id: int) -> None:
 
 
 def purge(conn: sqlite3.Connection, note_id: int) -> bool:
-    """Apaga em definitivo. **Só alcança o que já está na lixeira.**
+    """Delete permanently. **Only reaches what is already in the trash.**
 
-    Essa restrição é a segurança inteira desta função: não existe caminho que
-    pule o soft delete, então nada é destruído sem ter passado por um estado
-    recuperável antes. Devolve se algo foi apagado.
+    That restriction is this function's entire safety: there is no path that
+    skips the soft delete, so nothing is destroyed without having passed through
+    a recoverable state first. Returns whether anything was deleted.
 
-    As `tags` e o vínculo em `calendar_links` saem por `ON DELETE CASCADE`. O
-    evento na agenda **não** sai — apagar a anotação sobre um compromisso não
-    desmarca o compromisso, e isto vale mais ainda aqui, onde não há volta.
+    The `tags` and the `calendar_links` row go through `ON DELETE CASCADE`. The
+    calendar event does **not** — deleting the note about an appointment does not
+    cancel the appointment, and that matters even more here, where there is no
+    way back.
     """
     cur = conn.execute(
         "DELETE FROM notes WHERE id = ? AND deleted_at IS NOT NULL", (note_id,)
@@ -303,17 +311,17 @@ def purge(conn: sqlite3.Connection, note_id: int) -> bool:
 
 
 def purge_all(conn: sqlite3.Connection) -> int:
-    """Esvazia a lixeira. Devolve quantas foram."""
+    """Empty the trash. Returns how many went."""
     return conn.execute("DELETE FROM notes WHERE deleted_at IS NOT NULL").rowcount
 
 
 def queue_all_for_review(conn: sqlite3.Connection) -> int:
-    """Devolve TODAS as Notes não terminais para a fila de revisão.
+    """Put ALL non-terminal Notes back into the review queue.
 
-    Zera `review_attempts` de propósito: um pedido explícito do usuário é uma
-    ordem nova, não a continuação de tentativas antigas que já desistiram.
-    Concluída e cancelada ficam de fora — revisar prazo de coisa encerrada é
-    gastar chamada de modelo para nada.
+    It resets `review_attempts` on purpose: an explicit request from the user is
+    a new order, not the continuation of old attempts that already gave up. Done
+    and cancelled stay out — reviewing the deadline of something finished spends
+    a model call for nothing.
     """
     placeholders = ",".join("?" * len(TERMINAL_STATUSES))
     cur = conn.execute(
@@ -327,11 +335,11 @@ def queue_all_for_review(conn: sqlite3.Connection) -> int:
 def pending_review(
     conn: sqlite3.Connection, *, max_attempts: int = 5, limit: int = 10
 ) -> list[int]:
-    """Notes que nunca foram revisadas, mais antigas primeiro.
+    """Notes that were never reviewed, oldest first.
 
-    `limit` existe para uma semana offline não virar uma rajada de chamadas de
-    modelo na primeira captura com rede. A fila drena aos poucos, e a ordem por
-    id garante que ninguém fica para trás para sempre.
+    `limit` exists so a week offline does not become a burst of model calls on
+    the first capture with network. The queue drains gradually, and ordering by
+    id guarantees nobody is left behind forever.
     """
     return [
         r["id"]
@@ -347,14 +355,14 @@ def pending_review(
 def set_status(
     conn: sqlite3.Connection, note_id: int, status: str, *, now: datetime | None = None
 ) -> None:
-    """Muda o estado da Note.
+    """Change the Note's state.
 
-    `done_at` é mantido em sincronia como *carimbo de tempo*, não como estado:
-    entrar em `done` grava o instante, sair limpa. Cancelar não grava `done_at` —
-    a Note não foi feita.
+    `done_at` is kept in sync as a *timestamp*, not as state: entering `done`
+    records the instant, leaving clears it. Cancelling never writes `done_at` —
+    the Note was not done.
     """
     if status not in STATUSES:
-        raise ValueError(f"status inválido: {status!r}. Válidos: {', '.join(STATUSES)}")
+        raise ValueError(f"invalid status: {status!r}. Valid: {', '.join(STATUSES)}")
     now = now or datetime.now()
     done_at = now.isoformat(timespec="seconds") if status == "done" else None
     conn.execute(
@@ -367,56 +375,56 @@ def mark_done(conn: sqlite3.Connection, note_id: int, *, now: datetime | None = 
 
 
 def mark_undone(conn: sqlite3.Connection, note_id: int) -> None:
-    """Desmarcar é tão importante quanto marcar: clique errado acontece."""
+    """Unmarking matters as much as marking: a wrong click happens."""
     set_status(conn, note_id, "todo")
 
 
 def horizon(due: str | None, *, today: date | None = None) -> str:
-    """A faixa de tempo de um prazo, contada de hoje. Um de `HORIZONS`.
+    """The time band of a deadline, counted from today. One of `HORIZONS`.
 
-    Sem prazo cai em `depois`, junto do que é para muito longe. Isso é escolha,
-    não descuido: numa faixa própria no fim, uma nota `!alta` sem data ficaria
-    atrás de uma `!baixa` que vence em setembro — e o que não tem data marcada
-    não é, por isso, menos importante que o futuro distante.
+    No deadline lands in `later`, alongside what is far off. That is a choice,
+    not an oversight: in a band of its own at the end, a `!high` note with no date
+    would sit behind a `!low` due in September — and what has no date marked is
+    not, for that reason, less important than the distant future.
     """
     if due is None:
-        return "depois"
+        return "later"
     today = today or date.today()
-    dia = date.fromisoformat(due)
-    if dia < today:
-        return "vencida"
-    if dia == today:
-        return "hoje"
-    if dia <= today + timedelta(days=DIAS_DE_SEMANA):
-        return "semana"
-    return "depois"
+    day = date.fromisoformat(due)
+    if day < today:
+        return "overdue"
+    if day == today:
+        return "today"
+    if day <= today + timedelta(days=WEEK_DAYS):
+        return "week"
+    return "later"
 
 
 def by_urgency(notes: list[Note], *, today: date | None = None) -> list[Note]:
-    """Ordem de exibição: o relógio decide a faixa, o resto decide dentro dela.
+    """Display order: the clock decides the band, the rest decides within it.
 
-    O prazo domina a prioridade — uma `!baixa` que vence hoje vem antes de uma
-    `!alta` que vence em três dias, porque a de hoje é a que precisa ser feita
-    hoje (ADR 0010). A prioridade não perdeu valor, mudou de escopo: ela ordena
-    dentro da faixa.
+    The deadline dominates priority — a `!low` due today comes before a `!high`
+    due in three days, because today's is the one that has to be done today
+    (ADR 0010). Priority did not lose value, it changed scope: it orders within
+    the band.
     """
     today = today or date.today()
     return sorted(
         notes,
         key=lambda n: (
-            # Fora da fila, sempre no fim. Este termo vem ANTES do horizonte de
-            # propósito: sem isso, uma nota concluída na semana passada — prazo no
-            # passado, logo `vencida` — subiria para o topo do quadro.
+            # Out of the queue, always at the end. This term comes BEFORE the
+            # horizon on purpose: without it, a note completed last week —
+            # deadline in the past, therefore `overdue` — would rise to the top
+            # of the board.
             n.is_terminal,
             HORIZON_RANK[horizon(n.due, today=today)],
             PRIORITY_RANK.get(n.priority, 3),
-            # Com prazo antes de sem prazo. Sem este termo, `n.due or ""` mapeia
-            # a nota sem data para `""`, que ordena antes de qualquer data ISO, e
-            # dentro de `depois` as ideias soltas passariam na frente das tarefas
-            # datadas.
+            # With a deadline before without one. Without this term, `n.due or ""`
+            # maps an undated note to `""`, which sorts before any ISO date, and
+            # inside `later` the loose ideas would jump ahead of dated tasks.
             n.due is None,
             n.due or "",
-            # E por fim o que o `organize` gravou, ou a ordem de captura.
+            # And finally what `organize` stored, or the capture order.
             n.sort_key,
         ),
     )
@@ -432,15 +440,15 @@ def move_note(
     group_name: str | None = None,
     color: str | None = None,
 ) -> None:
-    """Reordenar/arrastar/colorir à mão.
+    """Reorder / drag / colour by hand.
 
-    Cor nula no banco não é ausência de cor: significa "usa o padrão da
-    prioridade", derivado na hora de desenhar. Só o que a mão escolheu fica
-    gravado, e é por isso que mudar a prioridade recolore uma nota nunca tocada e
-    não recolore uma que você pintou.
+    A null colour in the database is not the absence of colour: it means "use the
+    priority default", derived at drawing time. Only what the hand chose is
+    stored, and that is why changing the priority recolours a note nobody ever
+    touched and does not recolour one you painted.
 
-    Marca `pinned_by_user`, que é o que faz um `organize` posterior respeitar a
-    decisão do usuário em vez de desfazê-la (ADR 0003).
+    It sets `pinned_by_user`, which is what makes a later `organize` respect the
+    user's decision instead of undoing it (ADR 0003).
     """
     sets, params = ["pinned_by_user = 1"], []
     for column, value in (
@@ -450,8 +458,8 @@ def move_note(
         ("group_name", group_name),
         ("color", color),
     ):
-        # `color=""` pede a volta ao padrão da prioridade, o que é diferente de
-        # `color=None`, que quer dizer "não mexe na cor".
+        # `color=""` asks to go back to the priority default, which is different
+        # from `color=None`, which means "do not touch the colour".
         if column == "color" and value == "":
             sets.append("color = NULL")
             continue
@@ -466,21 +474,29 @@ STATUS_MARK = {"todo": "[ ]", "doing": "[~]", "hold": "[-]", "done": "[x]", "can
 
 
 def export_markdown(conn: sqlite3.Connection) -> str:
-    """Válvula de escape da escolha de SQLite: despeja tudo em markdown."""
-    lines = ["# Notas", ""]
+    """The escape hatch that justifies choosing SQLite: dump everything as markdown.
+
+    The labels go through the catalogue. They used to be hardcoded Portuguese,
+    which meant `ta export` answered in Portuguese no matter what `TA_LANG` said —
+    a gap the i18n pass missed because nothing in the export is on screen, so
+    nobody looked at it.
+    """
+    from .i18n import t
+
+    lines = [f"# {t('export.title')}", ""]
     for n in by_urgency(list_notes(conn, include_done=True)):
         box = STATUS_MARK[n.status]
         bits = []
         if n.status not in ("todo", "done"):
             bits.append(n.status)
         if n.due:
-            bits.append(f"prazo {n.due}")
+            bits.append(f"{t('export.due')} {n.due}")
         if n.remind_at:
-            bits.append(f"lembra {n.remind_at}")
+            bits.append(f"{t('export.reminds')} {n.remind_at}")
         if n.priority:
-            bits.append(f"prio {n.priority}")
+            bits.append(f"{t('export.priority')} {n.priority}")
         if n.tags:
-            bits.append(" ".join(f"#{t}" for t in n.tags))
+            bits.append(" ".join(f"#{t_}" for t_ in n.tags))
         suffix = f"  _({', '.join(bits)})_" if bits else ""
         lines.append(f"- {box} {n.text}{suffix}")
     return "\n".join(lines) + "\n"

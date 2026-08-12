@@ -365,7 +365,7 @@ def cmd_today(cfg: Config, args) -> int:
         # primeiro, prioridade dentro da faixa (ADR 0010). O rótulo continua na
         # frente porque no fim da linha era fácil não ver.
         for n in d["tasks"]:
-            atraso = f"  {t('cli.atrasada')}" if n.get("horizon") == "vencida" else ""
+            atraso = f"  {t('cli.atrasada')}" if n.get("horizon") == "overdue" else ""
             prio = PRIO_LABEL.get(n["priority"], "     ")   # 5 chars, sempre
             print(f"    {prio} #{n['id']} {n['text']}{atraso}")
     return 0

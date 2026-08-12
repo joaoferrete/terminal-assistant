@@ -99,7 +99,7 @@ def test_status_nasce_todo(conn):
 
 def test_set_status_valida_enum(conn):
     n = store.add_note(conn, "x", now=NOW)
-    with pytest.raises(ValueError, match="status inválido"):
+    with pytest.raises(ValueError, match="invalid status"):
         store.set_status(conn, n.id, "quase_feito")
 
 
@@ -156,12 +156,12 @@ def _ordem(conn, *, include_done=False):
 @pytest.mark.parametrize(
     ("due", "faixa"),
     [
-        ("2026-08-09", "vencida"),   # ontem
-        ("2026-08-10", "hoje"),
-        ("2026-08-13", "semana"),
-        ("2026-08-17", "semana"),    # dia 7 exato: dentro, o limite é inclusivo
-        ("2026-08-18", "depois"),    # dia 8: fora
-        (None, "depois"),            # sem prazo mora com o futuro distante
+        ("2026-08-09", "overdue"),   # ontem
+        ("2026-08-10", "today"),
+        ("2026-08-13", "week"),
+        ("2026-08-17", "week"),    # dia 7 exato: dentro, o limite é inclusivo
+        ("2026-08-18", "later"),    # dia 8: fora
+        (None, "later"),            # sem prazo mora com o futuro distante
     ],
 )
 def test_horizon_das_faixas(due, faixa):

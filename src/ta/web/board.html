@@ -340,7 +340,7 @@ const LABEL = Object.fromEntries(
 // tem data nenhuma, para uma nota `!alta` sem prazo não afundar embaixo de uma
 // `!baixa` de setembro.
 const HORIZON_LABEL = Object.fromEntries(
-  ["vencida", "hoje", "semana", "depois"].map(h => [h, tr(`horizon.${h}`)])
+  ["overdue", "today", "week", "later"].map(h => [h, tr(`horizon.${h}`)])
 );
 
 const boardEl = document.getElementById("board");
@@ -465,8 +465,8 @@ const metaHTML = (n) => {
   if (n.roles.task) {
     // A faixa vem do servidor, então "vencida" e "hoje" não dependem de o relógio
     // do navegador concordar com o do daemon.
-    const late = n.horizon === "vencida" && !n.terminal;
-    const quando = n.horizon === "hoje" && !n.terminal ? tr("horizon.hoje") : n.due;
+    const late = n.horizon === "overdue" && !n.terminal;
+    const quando = n.horizon === "today" && !n.terminal ? tr("horizon.today") : n.due;
     bits.push(`<span class="${late ? "overdue" : ""}">${late ? tr("board.vencida") : tr("board.prazo")}${quando}</span>`);
   }
   if (n.roles.reminder) bits.push(`<span>${tr("board.lembra")}${n.remind_at.slice(5, 16).replace("T", " ")}</span>`);
