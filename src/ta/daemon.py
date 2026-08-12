@@ -216,24 +216,25 @@ def _make_context(app: Starlette, trigger: engine.Trigger, **extra) -> engine.Co
 
 # ── Routes ──────────────────────────────────────────────────────────────────
 async def health(request: Request) -> JSONResponse:
-    """Diagnóstico. Reporta *presença* de segredo, nunca o valor.
+    """Diagnosis. Reports the *presence* of a secret, never the value.
 
-    Existe porque `systemctl show` não expõe o que veio de `EnvironmentFile`, e
-    "o serviço está lendo o .env?" é a primeira pergunta quando algo do HA ou do
-    Gemini falha.
+    It exists because `systemctl show` does not expose what came from
+    `EnvironmentFile`, and "is the service reading the .env?" is the first
+    question when something in Home Assistant or the model fails.
     """
     app = request.app
     cfg: Config = app.state.config
     caps = capabilities.inspect(cfg)
     return JSONResponse(
         {
-            # Era `True` literal. Um diagnóstico que responde "ok" mesmo com o
-            # núcleo quebrado não é diagnóstico — é decoração.
+            # This used to be a literal `True`. A diagnosis that answers "ok"
+            # with the core broken is not a diagnosis — it is decoration.
             "ok": all(c.ok for c in caps if c.essential),
             "lang": {"code": i18n.lang(), "source": i18n.lang_source()},
-            # `reason` e `fix` vão junto: o `Calendar` já calculava um motivo com
-            # o conserto embutido, e esta rota jogava fora, expondo só o booleano.
-            # Quem lê `available: false` fica sabendo o quê, não o que fazer.
+            # `reason` and `fix` go along: `Calendar` already computed a reason
+            # with the fix embedded, and this route threw it away, exposing only
+            # the boolean. Whoever reads `available: false` learns what, not what
+            # to do about it.
             "capabilities": [
                 {"key": c.key, "ok": c.ok, "reason": c.reason, "fix": c.fix}
                 for c in caps
@@ -259,17 +260,18 @@ async def notes_create(request: Request) -> JSONResponse:
     body = await request.json()
     raw = (body.get("text") or "").strip()
     if not raw:
-        return JSONResponse({"error": "texto vazio"}, status_code=400)
+        return JSONResponse({"error": i18n.t("api.empty_text")}, status_code=400)
     note = store.add_note(request.app.state.conn, raw)
-    # A revisão sai em background e o 201 volta agora: captura não espera rede
-    # (ADR 0003). O que ela mudar aparece no mural no próximo reload.
+    # Review goes out in the background and the 201 comes back now: capture never
+    # waits for the network (ADR 0003). Whatever it changes shows up on the board
+    # at the next reload.
     _schedule_review(request.app, note)
     return JSONResponse(_note_json(note), status_code=201)
 
 
-# Piso de confiança para agir sozinho. Abaixo disto a revisão não faz nada: uma
-# correção errada é pior que nenhuma, e evento fantasma na agenda de trabalho é
-# visível para colegas (emenda do ADR 0007).
+# The confidence floor for acting alone. Below it, review does nothing: a wrong
+# correction is worse than none, and a ghost event in a work calendar is visible
+# to colleagues (amendment to ADR 0007).
 MIN_CONFIDENCE = 0.7
 
 # Attempt ceiling per Note. A dropped network is temporary and deserves a retry;
@@ -526,18 +528,18 @@ def _iso_datetime(s: str) -> datetime | None:
 
 
 async def review_all(request: Request) -> JSONResponse:
-    """Devolve todas as Notes abertas à fila de revisão e começa a drenar.
+    """Put every open Note back in the review queue and start draining.
 
-    Existe porque as Notes anteriores à revisão nunca passaram por ela, e porque
-    editar as Priorities muda o que a revisão decidiria — reetiquetar tudo é o
-    jeito de aplicar o contexto novo ao que já estava escrito.
+    It exists because Notes older than review never went through it, and because
+    editing Priorities changes what review would decide — re-tagging everything is
+    how you apply the new context to what was already written.
     """
     app = request.app
     if not app.state.llm.configured:
-        return JSONResponse({"error": "GEMINI_API_KEY não configurada"}, status_code=400)
+        return JSONResponse({"error": i18n.t("api.ai_not_configured")}, status_code=400)
     if not app.state.auto_review:
         return JSONResponse(
-            {"error": "revisão desligada (TA_AUTO_REVIEW=0)"}, status_code=400
+            {"error": i18n.t("api.review_off")}, status_code=400
         )
 
     n = store.queue_all_for_review(app.state.conn)
@@ -546,7 +548,7 @@ async def review_all(request: Request) -> JSONResponse:
 
 
 async def review_status(request: Request) -> JSONResponse:
-    """Quantas faltam. O mural usa isto para mostrar progresso."""
+    """How many are left. The board uses this to show progress."""
     conn = request.app.state.conn
     return JSONResponse(
         {
@@ -560,50 +562,50 @@ async def review_status(request: Request) -> JSONResponse:
 
 async def notes_list(request: Request) -> JSONResponse:
     include_done = request.query_params.get("done") == "1"
-    # `deleted=1` devolve SÓ as apagadas: é a lixeira, não um "inclui também".
+    # `deleted=1` returns ONLY the deleted ones: it is the trash, not an "also include".
     deleted = request.query_params.get("deleted") == "1"
     notes = store.list_notes(
         request.app.state.conn, include_done=include_done, deleted=deleted
     )
-    # A ordem de exibição sai daqui, não do cliente: as três visões do mural, o
-    # `ta list` e qualquer outro consumidor recebem a mesma ordem sem cada um
-    # reimplementá-la (ADR 0010).
+    # Display order comes from here, not from the client: the board's three
+    # views, `ta list` and any other consumer get the same order without each
+    # reimplementing it (ADR 0010).
     hoje = date.today()
     notes = store.by_urgency(notes, today=hoje)
     return JSONResponse({"notes": [_note_json(n, today=hoje) for n in notes]})
 
 
 async def notes_delete(request: Request) -> JSONResponse:
-    """Apaga de forma reversível. O evento na agenda, se houver, fica.
+    """Delete reversibly. The calendar event, if there is one, stays.
 
-    Apagar a anotação sobre um compromisso não desmarca o compromisso — quem
-    apaga um post-it não está cancelando a consulta no dentista.
+    Deleting the note about an appointment does not cancel the appointment —
+    somebody deleting a post-it is not cancelling their dentist visit.
     """
     note_id = int(request.path_params["note_id"])
     conn = request.app.state.conn
     try:
         store.get_note(conn, note_id)
     except KeyError:
-        return JSONResponse({"error": f"nota {note_id} não existe"}, status_code=404)
+        return JSONResponse({"error": i18n.t("api.note_missing", id=note_id)}, status_code=404)
     store.soft_delete(conn, note_id)
     return JSONResponse(_note_json(store.get_note(conn, note_id)))
 
 
 async def notes_purge(request: Request) -> JSONResponse:
-    """Apaga em definitivo uma nota **que já está na lixeira**.
+    """Permanently delete a note **that is already in the trash**.
 
-    O 409 quando ela não está é deliberado: recusar é melhor que apagar de
-    surpresa algo que o usuário achava seguro.
+    The 409 when it is not there is deliberate: refusing beats deleting by
+    surprise something the user thought was safe.
     """
     note_id = int(request.path_params["note_id"])
     conn = request.app.state.conn
     try:
         nota = store.get_note(conn, note_id)
     except KeyError:
-        return JSONResponse({"error": f"nota {note_id} não existe"}, status_code=404)
+        return JSONResponse({"error": i18n.t("api.note_missing", id=note_id)}, status_code=404)
     if not nota.is_deleted:
         return JSONResponse(
-            {"error": f"nota {note_id} não está na lixeira. Apague primeiro."},
+            {"error": i18n.t("api.note_not_in_trash", id=note_id)},
             status_code=409,
         )
     store.purge(conn, note_id)
@@ -611,11 +613,11 @@ async def notes_purge(request: Request) -> JSONResponse:
 
 
 async def trash_purge(request: Request) -> JSONResponse:
-    """Esvazia a lixeira. Sem volta, e por isso exige `confirmed`."""
+    """Empty the trash. No way back, which is why it requires `confirmed`."""
     body = await request.json() if await request.body() else {}
     if not body.get("confirmed"):
         return JSONResponse(
-            {"error": "confirmação explícita é obrigatória: isto não tem volta"},
+            {"error": i18n.t("api.confirm_required")},
             status_code=400,
         )
     n = store.purge_all(request.app.state.conn)
@@ -628,7 +630,7 @@ async def notes_restore(request: Request) -> JSONResponse:
     try:
         store.get_note(conn, note_id)
     except KeyError:
-        return JSONResponse({"error": f"nota {note_id} não existe"}, status_code=404)
+        return JSONResponse({"error": i18n.t("api.note_missing", id=note_id)}, status_code=404)
     store.restore(conn, note_id)
     return JSONResponse(_note_json(store.get_note(conn, note_id)))
 
@@ -649,7 +651,7 @@ async def notes_move(request: Request) -> JSONResponse:
 
 
 async def notes_done(request: Request) -> JSONResponse:
-    """Alterna conclusão. Aceita `{"done": false}` para desmarcar."""
+    """Toggle completion. Accepts `{"done": false}` to unmark."""
     note_id = int(request.path_params["note_id"])
     done = True
     if await request.body():
@@ -660,7 +662,7 @@ async def notes_done(request: Request) -> JSONResponse:
 
 
 async def notes_status(request: Request) -> JSONResponse:
-    """Muda o estado da Note. É o que o arrastar entre colunas do kanban chama."""
+    """Change the Note's state. It is what dragging between kanban columns calls."""
     note_id = int(request.path_params["note_id"])
     status = (await request.json()).get("status", "")
     conn = request.app.state.conn
@@ -676,20 +678,20 @@ async def export(request: Request) -> PlainTextResponse:
 
 
 async def board(request: Request) -> HTMLResponse:
-    """Serve o mural, sempre relido do disco e nunca cacheado.
+    """Serve the board, always re-read from disk and never cached.
 
-    `no-store` não é zelo excessivo: o arquivo muda junto com o código, e o
-    Chrome cacheia HTML sem header por heurística própria. Sem isto, uma edição
-    no mural só aparecia depois de recarga forçada — e eu perdi tempo achando que
-    o CSS estava errado quando era só cache.
+    `no-store` is not excessive care: the file changes along with the code, and
+    Chrome caches header-less HTML by its own heuristic. Without this, an edit to
+    the board only appeared after a forced reload — and time was lost thinking the
+    CSS was wrong when it was only the cache.
     """
-    # O catálogo é INJETADO no HTML, e não buscado por uma rota: o idioma não muda
-    # durante a vida da página, então uma segunda requisição só acrescentaria
-    # latência e um modo de falha (o mural desenhado antes de o catálogo chegar,
-    # mostrando chaves cruas por um instante).
+    # The catalogue is INJECTED into the HTML rather than fetched by a route: the
+    # language does not change during the life of the page, so a second request
+    # would only add latency and a failure mode (the board drawn before the
+    # catalogue arrives, showing raw keys for an instant).
     #
-    # O JS não tem tabela paralela — mesma disciplina do `HORIZON_LABEL`. Uma
-    # segunda tradução vivendo no cliente seria uma que nenhum teste compara.
+    # The JS has no parallel table — the same discipline as `HORIZON_LABEL`. A
+    # second translation living in the client would be one no test compares.
     html = BOARD_HTML.read_text(encoding="utf-8").replace(
         I18N_MARKER, json.dumps(i18n.catalogo(), ensure_ascii=False), 1
     )
@@ -697,7 +699,7 @@ async def board(request: Request) -> HTMLResponse:
 
 
 async def today(request: Request) -> JSONResponse:
-    """O Digest: compromissos da agenda + Notes cobráveis.
+    """The Digest: calendar events plus chaseable Notes.
 
     Determinístico e instantâneo — o LLM nunca entra aqui (ADR 0003). A prosa
     gerada é enfeite opcional, pedida à parte.
@@ -705,9 +707,9 @@ async def today(request: Request) -> JSONResponse:
     app = request.app
     param = request.query_params.get("date")
     dia = date.fromisoformat(param) if param else None
-    # O aquecimento leva ~30s no boot, e ler a agenda antes de ele terminar
-    # bloqueia pelo mesmo tempo. Esperar aqui e DIZER que esperou é melhor que o
-    # CLI estourar o timeout e o usuário achar que o daemon morreu.
+    # Warming takes ~30s at boot, and reading the calendar before it finishes
+    # blocks for the same time. Waiting here and SAYING that it waited is better
+    # than the CLI blowing its timeout and the user thinking the daemon died.
     aquecendo = False
     warm = getattr(app.state, "warm_task", None)
     if warm is not None and not warm.done():
@@ -716,13 +718,14 @@ async def today(request: Request) -> JSONResponse:
             await warm
 
     eventos = await asyncio.to_thread(app.state.calendar.today, dia)
-    # `dia` e não `date.today()`: com `--date`, a faixa tem de ser contada contra
-    # o dia pedido, senão tudo o que ele devolve vira `vencida`. Aqui só aparecem
-    # `vencida` e `hoje`, porque `due_today` filtra `due <= dia`.
+    # `day` rather than `date.today()`: with `--date`, the band has to be counted
+    # against the requested day, otherwise everything it returns becomes
+    # `overdue`. Only `overdue` and `today` appear here, because `due_today`
+    # filters `due <= day`.
     hoje = dia or date.today()
     tarefas = store.by_urgency(store.due_today(app.state.conn, today=dia), today=hoje)
-    # Clima entra no Digest porque foi pedido, e degrada a None em silêncio: o
-    # Digest não deve falhar porque o HA está fora do ar.
+    # The weather goes into the Digest because it was asked for, and degrades to
+    # None silently: the Digest must not fail because Home Assistant is down.
     clima = None
     with contextlib.suppress(HomeError):
         clima = (await app.state.home.sensors())["weather"]
@@ -740,23 +743,23 @@ async def today(request: Request) -> JSONResponse:
 
 
 async def home_light(request: Request) -> JSONResponse:
-    """Liga um ou vários alvos. O termo pode ser entity_id, grupo ou ambiente."""
+    """Turn on one or several targets. The term can be an entity_id, group or room."""
     body = await request.json()
     termo = (body.get("entity") or "").strip()
     if not termo:
-        return JSONResponse({"error": "falta o entity"}, status_code=400)
+        return JSONResponse({"error": i18n.t("api.missing_entity")}, status_code=400)
     home = request.app.state.home
     try:
         alvos = resolve_targets(termo, await home.entities("light.", "switch."))
         if not alvos:
             return JSONResponse(
-                {"error": f"nada casou com {termo!r}. Veja `ta entities`."}, status_code=404
+                {"error": i18n.t("api.no_match", termo=termo)}, status_code=404
             )
-        # Sem brilho explícito, ligar uma luz quer dizer ligar por inteiro. O
-        # domínio `switch` ignora o valor (veja `Home.switch_on`), então o padrão
-        # não muda nada para a tomada.
+        # With no explicit brightness, turning a light on means turning it fully
+        # on. The `switch` domain ignores the value (see `Home.switch_on`), so
+        # the default changes nothing for a plug.
         brilho = int(body["brightness"]) if "brightness" in body else DEFAULT_BRIGHTNESS
-        # 0 apaga; qualquer outro valor (ou nenhum) liga.
+        # 0 turns off; any other value (or none) turns on.
         esperado = "off" if brilho == 0 else "on"
         resultados = []
         for entity in alvos:
@@ -779,11 +782,11 @@ async def home_off(request: Request) -> JSONResponse:
             entidades = resolve_targets(alvo, await home.entities("light.", "switch."))
             if not entidades:
                 return JSONResponse(
-                    {"error": f"nada casou com {alvo!r}. Veja `ta entities`."}, status_code=404
+                    {"error": i18n.t("api.no_match", termo=alvo)}, status_code=404
                 )
         else:
-            # Sem alvo, apaga tudo que está aceso. Nunca lista fixa no código: o
-            # inventário é do HA (ADR 0001).
+            # With no target, turn off everything that is on. Never a hardcoded
+            # list: the inventory belongs to Home Assistant (ADR 0001).
             entidades = [
                 e["entity_id"]
                 for e in await home.entities("light.", "switch.")
@@ -801,7 +804,7 @@ async def home_off(request: Request) -> JSONResponse:
 
 
 async def sensors_route(request: Request) -> JSONResponse:
-    """Clima, roteador e consumo da tomada. Curado — ver Home.sensors()."""
+    """Weather, router and the plug's consumption. Curated — see Home.sensors()."""
     try:
         return JSONResponse(await request.app.state.home.sensors())
     except HomeError as e:
@@ -819,25 +822,25 @@ async def home_entities(request: Request) -> JSONResponse:
 
 
 async def media(request: Request) -> JSONResponse:
-    """Mídia nos Echo. Zero código de Alexa: são `media_player` do HA (ADR 0009)."""
+    """Media on the Echos. Zero Alexa code: they are Home Assistant `media_player`s (ADR 0009)."""
     body = await request.json()
     cfg = request.app.state.config
     pedido = (body.get("entity") or "").strip()
-    # Sem alvo explícito, o alvo é o Echo configurado. Uma casa com um Echo não
-    # deveria ter que repetir o entity_id em todo comando.
+    # With no explicit target, the target is the configured Echo. A house with
+    # one Echo should not require typing its entity_id in every command.
     entity = resolve_entity(pedido) if pedido else next(iter(cfg.echo_entities), "")
     if not entity:
         return JSONResponse(
             {
-                "error": "nenhum Echo configurado. Defina TA_ECHOS no .env com o "
-                "entity_id do media_player, ou passe o alvo no comando."
+                "error": i18n.t("api.no_echo")
             },
             status_code=400,
         )
     if not entity.startswith("media_player."):
-        # Sem isto o HA devolve um 400 sem corpo útil e o erro chega ilegível.
+        # Without this, Home Assistant returns a 400 with no useful body and the
+        # error arrives unreadable.
         return JSONResponse(
-            {"error": f"{entity!r} não é um media_player. Veja `ta entities`."},
+            {"error": i18n.t("api.not_media_player", entity=entity)},
             status_code=400,
         )
     home = request.app.state.home
@@ -851,7 +854,7 @@ async def media(request: Request) -> JSONResponse:
         elif "announce" in body:
             await home.announce(entity, str(body["announce"]))
         else:
-            return JSONResponse({"error": "nada a fazer"}, status_code=400)
+            return JSONResponse({"error": i18n.t("api.nothing_to_do")}, status_code=400)
     except HomeError as e:
         return JSONResponse({"error": str(e)}, status_code=502)
     return JSONResponse({"ok": True, "entity_id": entity})
@@ -883,8 +886,8 @@ async def organize(request: Request) -> JSONResponse:
     """
     app = request.app
     conn = app.state.conn
-    # De propósito na ordem GRAVADA, sem `by_urgency`: é o que o modelo tem de
-    # ver para refinar, e é a ordem que ele vai reescrever.
+    # Deliberately in STORED order, without `by_urgency`: it is what the model
+    # has to see in order to refine, and it is the order it will rewrite.
     notes = store.list_notes(conn)
     if not notes:
         return JSONResponse({"placed": 0, "groups": []})
@@ -919,7 +922,7 @@ async def organize(request: Request) -> JSONResponse:
 
 
 async def detect_event(request: Request) -> JSONResponse:
-    """Propõe um evento a partir de uma nota. NÃO cria nada (ADR 0007)."""
+    """Propose an event from a note. It creates NOTHING (ADR 0007)."""
     app = request.app
     body = await request.json()
     note_id = body.get("note_id")
@@ -998,11 +1001,11 @@ async def priorities_route(request: Request) -> JSONResponse:
     if "content" in body:
         priorities.save(conn, body["content"])
         return JSONResponse({"content": body["content"]})
-    return JSONResponse({"error": "nada a fazer"}, status_code=400)
+    return JSONResponse({"error": i18n.t("api.nothing_to_do")}, status_code=400)
 
 
 async def digest_prose(request: Request) -> JSONResponse:
-    """A prosa do dia. Enfeite opcional — a listagem é o padrão (ADR 0003)."""
+    """The day in prose. Optional decoration — the listing is the default (ADR 0003)."""
     app = request.app
     eventos = await asyncio.to_thread(app.state.calendar.today)
     hoje = date.today()
@@ -1040,7 +1043,7 @@ async def rules_route(request: Request) -> JSONResponse:
 
 # ── Reação aos gatilhos ─────────────────────────────────────────────────────
 async def _fire_reminders(app: Starlette, agora: datetime) -> None:
-    """Reminders vencidos: notifica e marca. Fecha o loop tempo → ação.
+    """Due Reminders: notify and mark. It closes the time → action loop.
 
     A notificação de desktop é o caminho obrigatório; o anúncio no Echo é
     adicional, e sua ausência ou falha nunca impede o aviso (ADR 0009).
@@ -1102,9 +1105,9 @@ def create_app(
     aquecimento das fontes. Teste não deve tocar o ambiente do usuário.
     """
     cfg = config or Config.from_env()
-    # Antes de qualquer outra coisa: um bind que alcança a rede sem credencial não
-    # sobe. Fica aqui e não no `main()` para valer também para quem monta o app
-    # por conta própria.
+    # Before anything else: a bind that reaches the network with no credential
+    # does not start. It lives here rather than in `main()` so it also applies to
+    # anyone assembling the app themselves.
     cfg.check()
     rules_path = Path(rules_dir) if rules_dir else user_rules_dir()
 
@@ -1112,19 +1115,19 @@ def create_app(
     async def lifespan(app: Starlette):
         app.state.config = cfg
         app.state.auto_review = cfg.auto_review
-        # Referências fortes das revisões em voo: task sem dono pode ser coletada
-        # pelo GC antes de terminar.
+        # Strong references to in-flight reviews: an ownerless task can be
+        # collected by the GC before it finishes.
         app.state.reviews = set()
-        # Ids com revisão em voo. Impede que duas capturas seguidas enfileirem a
-        # mesma Note duas vezes.
+        # Ids with a review in flight. Stops two consecutive captures queuing
+        # the same Note twice.
         app.state.in_review = set()
         app.state.review_sem = asyncio.Semaphore(CONCURRENT_REVIEWS)
         app.state.conn = connect(db_path)
         app.state.home = Home(cfg.ha_url, cfg.ha_token)
-        # `lighter` é injetável pelo mesmo motivo que `calendar`: sem isso, cada
-        # teste que sobe o app roda `gsettings` de verdade e mexe nas
-        # configurações da extensão do usuário — inclusive deixando
-        # `auto-switch` ligado no shutdown. Teste não toca o desktop.
+        # `lighter` is injectable for the same reason as `calendar`: without it,
+        # every test that boots the app runs a real `gsettings` and changes the
+        # user's extension settings — including leaving `auto-switch` on at
+        # shutdown. A test does not touch the desktop.
         app.state.lighter = lighter if lighter is not None else Lighter()
         app.state.notify = Notifier()
         app.state.calendar = calendar if calendar is not None else Calendar()
@@ -1137,23 +1140,24 @@ def create_app(
             log.error("regra %s não carregou; as outras seguem", arquivo)
 
         _wire_engine(app)
-        # Tira a autonomia da extensão enquanto o daemon comanda, para o
-        # WindowWatcher dela não sobrescrever o que uma Rule acabou de fazer.
+        # Take autonomy from the extension while the daemon is in charge, so its
+        # WindowWatcher does not overwrite what a Rule just did.
         await app.state.lighter.take_over()
 
         tarefas = []
         if background:
-            # Aquece a agenda em background: uma fonte recém-criada paga até 10s
-            # para conectar, e o cache de clientes torna isso um custo único —
-            # mas só se alguém pagar antes do usuário digitar `ta today`.
+            # Warm the calendar in the background: a freshly created source pays
+            # up to 10s to connect, and the client cache makes that a one-off
+            # cost — but only if somebody pays it before the user types
+            # `ta today`.
             app.state.warm_task = asyncio.create_task(
                 asyncio.to_thread(app.state.calendar.warm), name="warm-calendar"
             )
             tarefas.append(app.state.warm_task)
             # Os watchers ficam sob a mesma chave porque o de microfone roda
             # `pw-dump` em subprocesso a cada segundo. Num teste isso deixava um
-            # `BaseSubprocessTransport` semi-destruído quando o loop fechava, e a
-            # suíte travava na saída em ~1 de cada 3 execuções.
+            # half-destroyed `BaseSubprocessTransport` when the loop closed, and
+            # the suite hung on exit in roughly 1 run in 3.
             tarefas += [
                 asyncio.create_task(app.state.scheduler.run(), name="scheduler"),
                 asyncio.create_task(app.state.mic.run(), name="mic"),
@@ -1175,7 +1179,7 @@ def create_app(
 
     return Starlette(
         lifespan=lifespan,
-        # Sem token não há middleware: o caminho local fica idêntico ao que era.
+        # With no token there is no middleware: the local path is identical to before.
         middleware=[Middleware(TokenAuth, token=cfg.token)] if cfg.token else [],
         routes=[
             Route("/", board),
@@ -1221,7 +1225,7 @@ def main() -> None:
     try:
         app = create_app(cfg)
     except ConfigError as e:
-        # A mensagem já traz o conserto; um traceback só a esconderia.
+        # The message already carries the fix; a traceback would only hide it.
         print(f"\n{e}\n", file=sys.stderr)
         raise SystemExit(2) from None
 

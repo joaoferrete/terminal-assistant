@@ -145,6 +145,39 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "The daemon is out of date — this board is newer than it is.\n"
               "Run: systemctl --user restart ta",
     },
+    "api.empty_text": {"pt": "texto vazio", "en": "empty text"},
+    "api.ai_not_configured": {
+        "pt": "GEMINI_API_KEY não configurada", "en": "GEMINI_API_KEY is not configured",
+    },
+    "api.review_off": {
+        "pt": "revisão desligada (TA_AUTO_REVIEW=0)",
+        "en": "review is off (TA_AUTO_REVIEW=0)",
+    },
+    "api.note_missing": {"pt": "nota {id} não existe", "en": "note {id} does not exist"},
+    "api.note_not_in_trash": {
+        "pt": "nota {id} não está na lixeira. Apague primeiro.",
+        "en": "note {id} is not in the trash. Delete it first.",
+    },
+    "api.confirm_required": {
+        "pt": "confirmação explícita é obrigatória: isto não tem volta",
+        "en": "explicit confirmation is required: this cannot be undone",
+    },
+    "api.missing_entity": {"pt": "falta o entity", "en": "the entity is missing"},
+    "api.no_match": {
+        "pt": "nada casou com {termo!r}. Veja `ta entities`.",
+        "en": "nothing matched {termo!r}. See `ta entities`.",
+    },
+    "api.no_echo": {
+        "pt": "nenhum Echo configurado. Defina TA_ECHOS no .env com o "
+              "entity_id do media_player, ou passe o alvo no comando.",
+        "en": "no Echo configured. Set TA_ECHOS in your .env to the "
+              "media_player entity_id, or pass the target in the command.",
+    },
+    "api.not_media_player": {
+        "pt": "{entity!r} não é um media_player. Veja `ta entities`.",
+        "en": "{entity!r} is not a media_player. See `ta entities`.",
+    },
+    "api.nothing_to_do": {"pt": "nada a fazer", "en": "nothing to do"},
     "review.note_reviewed": {"pt": "Nota revisada", "en": "Note reviewed"},
     "review.due_removed": {"pt": "prazo removido", "en": "deadline removed"},
     "review.priority": {"pt": "prioridade", "en": "priority"},
