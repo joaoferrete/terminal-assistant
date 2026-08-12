@@ -1,12 +1,12 @@
-"""A documentação virou dez arquivos que se apontam. Link quebrado é silencioso.
+"""The docs became ten files pointing at each other. A broken link is silent.
 
-A regra de dono único — cada fato mora em exatamente um arquivo, e todo o resto
-linka — só funciona enquanto os links funcionam. Um `docs/aliases.md` renomeado
-para `shortcuts.md` deixa seis páginas apontando para o vazio, e nada avisa: o
-GitHub renderiza o link, ele só dá 404 em quem clica.
+The single-owner rule — each fact lives in exactly one file, and everything else
+links — only works while the links work. A `docs/aliases.md` renamed to
+`shortcuts.md` leaves six pages pointing at nothing, and nothing warns you:
+GitHub renders the link happily, it only 404s for whoever clicks it.
 
-Também guarda a outra ponta: um comando novo que ninguém documentou some da única
-listagem que existe, porque a lista plana do argparse foi removida de propósito.
+It guards the other end too: a new command nobody documented disappears from the
+only listing there is, because the flat argparse list was removed on purpose.
 """
 import re
 from pathlib import Path
@@ -15,67 +15,67 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 
-# Todo markdown do projeto, menos o que é local e não versionado.
+# Every markdown file in the project, except what is local and unversioned.
 DOCS = sorted(
     p for p in REPO.rglob("*.md")
     if ".venv" not in p.parts and p.name != "ROADMAP.md"
 )
 
-# `[texto](destino)`, ignorando imagens e referências de link.
+# `[text](target)`, ignoring images and link references.
 LINK = re.compile(r"(?<!\!)\[[^\]]*\]\(([^)]+)\)")
 
 
-def test_ha_documentacao():
-    """Guarda contra o teste passar porque não achou arquivo nenhum."""
+def test_there_is_documentation():
+    """A guard against this suite passing because it found no files at all."""
     assert len(DOCS) >= 15, [p.name for p in DOCS]
 
 
 @pytest.mark.parametrize("doc", DOCS, ids=lambda p: str(p.relative_to(REPO)))
-def test_nenhum_link_relativo_quebrado(doc: Path):
-    quebrados = []
-    for destino in LINK.findall(doc.read_text()):
-        if destino.startswith(("http://", "https://", "mailto:")):
+def test_no_broken_relative_link(doc: Path):
+    broken = []
+    for target in LINK.findall(doc.read_text()):
+        if target.startswith(("http://", "https://", "mailto:")):
             continue
-        # Âncora dentro do próprio arquivo: o alvo é a página, não o heading —
-        # verificar heading exigiria reimplementar a geração de slug do GitHub,
-        # que erraria mais do que acertaria.
-        caminho = destino.split("#")[0]
-        if not caminho:
+        # An anchor inside the file itself: the target is the page, not the
+        # heading — checking the heading would mean reimplementing GitHub's slug
+        # generation, which would get it wrong more often than right.
+        path = target.split("#")[0]
+        if not path:
             continue
-        if not (doc.parent / caminho).exists():
-            quebrados.append(destino)
+        if not (doc.parent / path).exists():
+            broken.append(target)
 
-    assert not quebrados, f"{doc.relative_to(REPO)} aponta para o vazio: {quebrados}"
+    assert not broken, f"{doc.relative_to(REPO)} points at nothing: {broken}"
 
 
-def test_as_imagens_do_readme_existem():
-    """Imagem quebrada no README é a primeira coisa que um visitante vê."""
-    corpo = (REPO / "README.md").read_text()
-    for destino in re.findall(r"!\[[^\]]*\]\(([^)]+)\)", corpo):
-        if destino.startswith("http"):
+def test_the_readme_images_exist():
+    """A broken image in the README is the first thing a visitor sees."""
+    body = (REPO / "README.md").read_text()
+    for target in re.findall(r"!\[[^\]]*\]\(([^)]+)\)", body):
+        if target.startswith("http"):
             continue
-        assert (REPO / destino).exists(), f"imagem ausente: {destino}"
+        assert (REPO / target).exists(), f"missing image: {target}"
 
 
-def test_todo_comando_aparece_na_documentacao():
-    """Um comando que não está em doc nenhuma não existe para quem lê.
+def test_every_command_shows_up_in_the_documentation():
+    """A command in no document does not exist for whoever is reading.
 
-    A lista plana do `argparse` foi removida em favor do epílogo agrupado, então
-    a documentação é a única listagem completa que existe.
+    The flat `argparse` listing was dropped in favour of the grouped epilogue, so
+    the documentation is the only complete listing there is.
     """
     from ta.cli import build_parser
 
-    comandos = set(build_parser()._subparsers._group_actions[0].choices)
-    texto = "\n".join(p.read_text() for p in DOCS)
+    commands = set(build_parser()._subparsers._group_actions[0].choices)
+    text = "\n".join(p.read_text() for p in DOCS)
 
-    ausentes = {c for c in comandos if f"ta {c}" not in texto}
-    assert not ausentes, f"comando sem menção na documentação: {sorted(ausentes)}"
+    missing = {c for c in commands if f"ta {c}" not in text}
+    assert not missing, f"command never mentioned in the docs: {sorted(missing)}"
 
 
-def test_os_adr_citados_existem():
-    """ADR renumerado ou renomeado quebra a explicação, não só o link."""
+def test_the_cited_adrs_exist():
+    """A renumbered or renamed ADR breaks the explanation, not just the link."""
     adr = {p.name for p in (REPO / "docs" / "adr").glob("*.md")}
-    texto = "\n".join(p.read_text() for p in DOCS)
+    text = "\n".join(p.read_text() for p in DOCS)
 
-    citados = set(re.findall(r"(\d{4}-[a-z0-9-]+\.md)", texto))
-    assert citados - adr == set(), f"ADR citado e inexistente: {sorted(citados - adr)}"
+    cited = set(re.findall(r"(\d{4}-[a-z0-9-]+\.md)", text))
+    assert cited - adr == set(), f"ADR cited but missing: {sorted(cited - adr)}"
