@@ -67,11 +67,14 @@ def _fmt_note(n: dict) -> str:
     """One line per Note, naming the roles with the glossary's vocabulary."""
     marks = []
     if n["roles"]["task"]:
-        marks.append(f"tarefa, prazo {n['due']}")
+        marks.append(t("note.task", due=n["due"]))
     if n["roles"]["reminder"]:
-        marks.append(f"lembrete {n['remind_at']}")
+        marks.append(t("note.reminder", at=n["remind_at"]))
     if n["priority"]:
-        marks.append(f"prio {n['priority']}")
+        # The VALUE goes through the catalogue too: it is canonical English in the
+        # database (`high`), and printing it raw showed `prio high` to somebody
+        # reading Portuguese.
+        marks.append(t("note.priority", value=t(f"priority.{n['priority']}")))
     if n["tags"]:
         marks.append(" ".join(f"#{t}" for t in n["tags"]))
     # A marker per state, not binary: a cancelled note came out as `[ ]` and read
@@ -386,9 +389,22 @@ def cmd_rules(cfg: Config, args) -> int:
         # to run before restarting the service.
         from pathlib import Path
 
+        from .daemon import user_rules_dir
         from .engine import load_rules
 
-        rules_dir = Path(args.dir) if args.dir else Path.cwd() / "rules"
+        # `user_rules_dir()`, and NOT `Path.cwd() / "rules"`. ADR 0014 moved the
+        # Rules to `~/.config/ta/rules/` and turned the repository's `rules/` into
+        # `examples/rules/`, so the old default pointed at a directory that no
+        # longer exists — from anywhere but the repository root it pointed at
+        # nothing at all.
+        #
+        # The failure mode is the bad kind: `load_rules` treats a missing directory
+        # as "no rules", so the command printed `0 rule(s), 0 with errors` and
+        # exited 0. This is the check you run BEFORE `systemctl --user restart ta`,
+        # so it was handing out a green light without reading a single rule. Caught
+        # by running it on a machine that has two.
+        rules_dir = Path(args.dir) if args.dir else user_rules_dir()
+        print(f"  · {rules_dir}\n")
         rep = load_rules(rules_dir)
         for r in rep.rules:
             print(f"  ok   {r.name}  ({', '.join(str(trig) for trig in r.on)})")

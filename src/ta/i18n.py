@@ -341,6 +341,15 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "in the trash — `↩` restores; go back to the board to write",
     },
     # ── CLI ─────────────────────────────────────────────────────────────────
+    # A linha de uma nota no `ta note` e no `ta list`. Estava fixa em português —
+    # `tarefa, prazo`, `lembrete`, `prio` — então em `TA_LANG=en` o comando mais
+    # usado do projeto respondia no idioma errado.
+    #
+    # O VALOR da prioridade também passa pelo catálogo: ele é canônico em inglês no
+    # banco (`high`), e imprimi-lo cru mostrava `prio high` para quem lê português.
+    "note.task": {"pt": "tarefa, prazo {due}", "en": "task, due {due}"},
+    "note.reminder": {"pt": "lembrete {at}", "en": "reminder {at}"},
+    "note.priority": {"pt": "prio {value}", "en": "prio {value}"},
     "cli.sent_unconfirmed": {
         "pt": "enviado, estado não confirmado", "en": "sent, state not confirmed",
     },
