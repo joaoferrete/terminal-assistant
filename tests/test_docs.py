@@ -1,8 +1,8 @@
-"""A documentação de automações é código, e código na doc apodrece calado.
+"""The automation docs are code, and code in a document rots silently.
 
-Este teste existe porque uma receita que não carrega é pior que receita nenhuma:
-quem copiar leva o erro para casa achando que o problema é dele. Ele já pegou um
-bloco do `when=` que estava sem os imports.
+This test exists because a recipe that does not load is worse than no recipe:
+whoever copies it takes the error home thinking the problem is theirs. It has
+already caught a `when=` block that was missing its imports.
 """
 import re
 from pathlib import Path
@@ -15,133 +15,134 @@ from ta.actuators.notify import Notifier
 from ta.daemon import CalendarAdapter
 from ta.engine import Context, load_rules
 
-GUIA = Path(__file__).resolve().parents[1] / "docs" / "automations.md"
+GUIDE = Path(__file__).resolve().parents[1] / "docs" / "automations.md"
 
 
-def blocos_python() -> list[str]:
-    return re.findall(r"```python\n(.*?)```", GUIA.read_text(), re.S)
+def python_blocks() -> list[str]:
+    return re.findall(r"```python\n(.*?)```", GUIDE.read_text(), re.S)
 
 
-def test_o_guia_tem_receitas():
-    """Guarda contra o teste passar porque não achou nada para testar."""
-    assert len([b for b in blocos_python() if "@rule" in b]) >= 6
+def test_the_guide_has_recipes():
+    """A guard against the test passing because it found nothing to test."""
+    assert len([b for b in python_blocks() if "@rule" in b]) >= 6
 
 
-def test_toda_receita_do_guia_carrega(tmp_path):
-    receitas = [b for b in blocos_python() if "@rule" in b]
-    for i, bloco in enumerate(receitas):
-        (tmp_path / f"receita_{i:02d}.py").write_text(bloco)
+def test_every_recipe_in_the_guide_loads(tmp_path):
+    recipes = [b for b in python_blocks() if "@rule" in b]
+    for i, block in enumerate(recipes):
+        (tmp_path / f"recipe_{i:02d}.py").write_text(block)
 
     rep = load_rules(tmp_path)
-    assert rep.errors == [], f"receita do guia não carrega:\n{rep.errors}"
-    assert len(rep.rules) >= len(receitas)
+    assert rep.errors == [], f"a recipe from the guide does not load:\n{rep.errors}"
+    assert len(rep.rules) >= len(recipes)
 
 
-# ── A doc cita as regras que existem de verdade (ADR 0011) ──────────────────
+# ── The docs cite rules that really exist (ADR 0011) ────────────────────────
 REPO = Path(__file__).resolve().parents[1]
-DOCS_COM_REGRAS = (REPO / "README.md", GUIA)
+DOCS_COM_REGRAS = (REPO / "README.md", GUIDE)
 
 
-def regras_reais() -> set[str]:
+def real_rules() -> set[str]:
     return {r.name for r in load_rules(REPO / "examples" / "rules").rules}
 
 
-def test_a_doc_nao_cita_regra_de_reuniao_que_nao_existe():
-    """A regra foi renomeada e a condição saiu; a doc ficou meio dia mentindo.
+def test_the_docs_cite_no_meeting_rule_that_does_not_exist():
+    """The rule was renamed and the condition left; the docs lied for half a day.
 
-    `README.md` e o guia mostravam `reuniao_tarde` com `when=after("16:00")` depois
-    de a função virar `reuniao` e a hora sair do gatilho. Ninguém percebeu porque
-    nada comparava os dois — `test_toda_receita_do_guia_carrega` só prova que o
-    bloco é Python válido, e um nome errado carrega perfeitamente.
+    `README.md` and the guide showed `reuniao_tarde` with `when=after("16:00")`
+    after the function became `meeting` and the hour left the trigger. Nobody
+    noticed because nothing compared the two — `test_every_recipe_in_the_guide_loads`
+    only proves the block is valid Python, and a wrong name loads perfectly.
 
-    Só os nomes de `reuniao` são cobrados: as outras receitas são didáticas e não
-    existem em `rules/` de propósito.
+    Only the meeting names are held to this: the other recipes are didactic and
+    deliberately do not exist in `rules/`.
     """
-    reais = regras_reais()
-    citadas: set[str] = set()
+    real = real_rules()
+    cited: set[str] = set()
     for doc in DOCS_COM_REGRAS:
-        citadas |= set(re.findall(r"async def (\w+)\(ctx\)", doc.read_text()))
+        cited |= set(re.findall(r"async def (\w+)\(ctx\)", doc.read_text()))
 
-    fantasmas = {n for n in citadas if "reuniao" in n} - reais
-    assert not fantasmas, f"a doc cita regra(s) que não existem: {sorted(fantasmas)}"
-
-
-def test_toda_regra_real_aparece_no_guia():
-    """O lado inverso: regra nova que ninguém documentou também é doc errada."""
-    ausentes = {r for r in regras_reais() if r not in GUIA.read_text()}
-    assert not ausentes, f"regra sem menção no guia: {sorted(ausentes)}"
+    ghosts = {n for n in cited if "meeting" in n} - real
+    assert not ghosts, f"the docs cite rule(s) that do not exist: {sorted(ghosts)}"
 
 
-# Os métodos que o guia promete em `ctx.*`. Se um for renomeado, o guia mente.
+def test_every_real_rule_shows_up_in_the_guide():
+    """The other side: a new rule nobody documented is also a wrong document."""
+    missing = {r for r in real_rules() if r not in GUIDE.read_text()}
+    assert not missing, f"rule never mentioned in the guide: {sorted(missing)}"
+
+
+# The methods the guide promises on `ctx.*`. Rename one and the guide lies.
 @pytest.mark.parametrize(
-    ("classe", "metodos"),
+    ("cls", "methods"),
     [
         (Home, ("switch_on", "turn_off", "state", "entities", "sensors", "light")),
         (Lighter, ("apply_profile", "enable", "toggle", "profiles")),
         (Notifier, ("send",)),
-        # Os dois nomes ingleses E os dois apelidos em portugues: uma regra no
-        # disco de alguem chama `agora()`, e ela vive fora deste repositorio.
+        # Both English names AND both Portuguese aliases: a rule on somebody's
+        # disk calls `agora()`, and it lives outside this repository.
         (CalendarAdapter, ("now", "today", "agora", "hoje")),
     ],
 )
-def test_a_api_documentada_existe(classe, metodos):
-    for m in metodos:
-        assert callable(getattr(classe, m, None)), f"{classe.__name__}.{m} não existe"
+def test_the_documented_api_exists(cls, methods):
+    for m in methods:
+        assert callable(getattr(cls, m, None)), f"{cls.__name__}.{m} does not exist"
 
 
-def test_os_apelidos_em_portugues_da_agenda_apontam_para_o_mesmo():
-    """`agora`/`hoje` nao podem virar copias que envelhecem separado.
+def test_the_calendars_portuguese_aliases_point_at_the_same_thing():
+    """`agora`/`hoje` must not become copies that age separately.
 
-    Uma regra no `~/.config/ta/rules/` de alguem chama `ctx.calendar.agora()`, e
-    esse arquivo esta fora deste repositorio: nenhum rename daqui alcanca ele. O
-    par tem de ser o MESMO objeto, senao um conserto no ingles nao chega no
-    portugues e a regra antiga passa a se comportar diferente da nova.
+    A rule in somebody's `~/.config/ta/rules/` calls `ctx.calendar.agora()`, and
+    that file lives outside this repository: no rename of ours reaches it. The pair
+    has to be the SAME object, otherwise a fix on the English side never arrives on
+    the Portuguese one and the old rule starts behaving differently from a new one.
     """
     assert CalendarAdapter.agora is CalendarAdapter.now
     assert CalendarAdapter.hoje is CalendarAdapter.today
 
 
-def test_os_campos_de_ctx_documentados_existem():
-    campos = set(Context.__dataclass_fields__)
-    assert {"now", "trigger", "home", "lighter", "notify", "calendar", "note", "extra"} <= campos
+def test_the_documented_ctx_fields_exist():
+    fields = set(Context.__dataclass_fields__)
+    assert {"now", "trigger", "home", "lighter", "notify", "calendar", "note", "extra"} <= fields
 
 
-# ── Identidade de conta da agenda ───────────────────────────────────────────
+# ── Calendar account identity ───────────────────────────────────────────────
 from ta.sensors.calendar import CalendarSource  # noqa: E402
 
 
-def test_conta_pessoal_reconhecida_pelo_provedor():
+def test_a_personal_account_is_recognised_by_its_provider():
     for email in ("eu@gmail.com", "x@outlook.com", "y@icloud.com"):
         s = CalendarSource(uid="u", name="Terminal Assistant", parent="p", local=False,
                            account=email)
         assert s.personal, email
 
 
-def test_dominio_proprio_e_tratado_como_trabalho():
+def test_your_own_domain_is_treated_as_work():
     s = CalendarSource(uid="u", name="Terminal Assistant", parent="p", local=False,
                        account="eu@empresa-com-dominio.com")
     assert not s.personal
 
 
-def test_conta_desconhecida_nao_e_pessoal():
-    """Sem e-mail, não afirma que é pessoal — o padrão errado seria pior aqui."""
+def test_an_unknown_account_is_not_personal():
+    """With no email it does not claim personal — the wrong default costs more here."""
     s = CalendarSource(uid="u", name="x", parent="p", local=False, account="")
     assert not s.personal
 
 
-# ── O perfil do `ta init` chega ao prompt da revisão ────────────────────────
-# Este teste existe porque "estamos passando o contexto?" só se responde olhando
-# o prompt de verdade: o dado existir no banco não prova que ele chegou lá.
+# ── The `ta init` profile reaches the review prompt ─────────────────────────
+# This test exists because "are we passing the context?" can only be answered by
+# looking at the real prompt: the data being in the database does not prove it
+# arrived there.
 import asyncio  # noqa: E402
 
 from ta.llm import LLM  # noqa: E402
 
 
-class LLMEspiao(LLM):
-    """Intercepta `_structured` para inspecionar o prompt montado."""
+class SpyLLM(LLM):
+    """Intercepts `_structured` to inspect the assembled prompt."""
 
     def __init__(self):
-        super().__init__("chave-falsa")
+        super().__init__("a-fake-key")
         self.prompt = ""
 
     async def _structured(self, prompt, schema, system=""):
@@ -155,110 +156,110 @@ class LLMEspiao(LLM):
         )
 
 
-PERFIL = "## Trabalho\nbackend de um sistema de pagamentos (Kafka, Postgres, Go)"
+PROFILE = "## Trabalho\nbackend de um sistema de pagamentos (Kafka, Postgres, Go)"
 
 
-def test_o_perfil_de_priorities_entra_no_prompt_da_revisao():
-    espiao = LLMEspiao()
+def test_the_priorities_profile_enters_the_review_prompt():
+    spy = SpyLLM()
     asyncio.run(
-        espiao.review_capture(
+        spy.review_capture(
             "revisar o consumer do Kafka",
             due=None,
             remind_at=None,
-            priorities=PERFIL,
+            priorities=PROFILE,
             accounts="pessoal: gmail.com, trabalho: empresa.com",
         )
     )
-    assert "sistema de pagamentos" in espiao.prompt
-    assert "Kafka, Postgres, Go" in espiao.prompt
+    assert "sistema de pagamentos" in spy.prompt
+    assert "Kafka, Postgres, Go" in spy.prompt
 
 
-def test_apenas_o_dominio_da_conta_vai_para_o_modelo():
-    """Domínio decide o roteamento; e-mail inteiro seria dado a mais."""
-    espiao = LLMEspiao()
+def test_only_the_account_domain_goes_to_the_model():
+    """The domain decides the routing; the whole email would be more data than needed."""
+    spy = SpyLLM()
     asyncio.run(
-        espiao.review_capture(
+        spy.review_capture(
             "x", due=None, remind_at=None,
             accounts="pessoal: gmail.com, trabalho: empresa.com",
         )
     )
-    assert "empresa.com" in espiao.prompt
-    assert "eu@empresa.com" not in espiao.prompt
+    assert "empresa.com" in spy.prompt
+    assert "eu@empresa.com" not in spy.prompt
 
 
-def test_sem_perfil_o_prompt_nao_ganha_secao_vazia():
-    espiao = LLMEspiao()
-    asyncio.run(espiao.review_capture("x", due=None, remind_at=None))
-    assert "Contexto de quem escreveu" not in espiao.prompt
+def test_with_no_profile_the_prompt_gains_no_empty_section():
+    spy = SpyLLM()
+    asyncio.run(spy.review_capture("x", due=None, remind_at=None))
+    assert "Contexto de quem escreveu" not in spy.prompt
 
 
-def test_marcadores_do_cli_e_do_export_sao_os_mesmos():
-    """Divergir faria a mesma nota parecer diferente em `ta list` e `ta export`."""
+def test_the_cli_and_export_markers_are_the_same():
+    """Diverging would make the same note look different in `ta list` and `ta export`."""
     from ta.cli import STATUS_MARK as cli_marks
     from ta.store import STATUS_MARK as export_marks
 
     assert cli_marks == export_marks
 
 
-# ── O mural não reimplementa a ordem (ADR 0010) ─────────────────────────────
-MURAL = Path(__file__).resolve().parents[1] / "src" / "ta" / "web" / "board.html"
+# ── The board does not reimplement the order (ADR 0010) ─────────────────────
+BOARD = Path(__file__).resolve().parents[1] / "src" / "ta" / "web" / "board.html"
 
 
-def test_toda_faixa_tem_rotulo_nos_dois_idiomas():
-    """Desde o `TA_LANG`, o catálogo é a fonte única dos rótulos de faixa.
+def test_every_band_has_a_label_in_both_languages():
+    """Since `TA_LANG`, the catalogue is the single source of band labels.
 
-    Sem este pino, renomear ou acrescentar uma faixa no Python não quebra nada: a
-    divisória simplesmente perde o rótulo, em silêncio, e só num idioma.
+    Without this pin, renaming or adding a band in Python breaks nothing: the
+    divider simply loses its label, silently, and in only one language.
     """
     from ta.i18n import LANGS, MESSAGES
     from ta.store import HORIZONS
 
-    for faixa in HORIZONS:
-        entrada = MESSAGES.get(f"horizon.{faixa}")
-        assert entrada, f"a faixa {faixa!r} não tem rótulo no catálogo"
-        assert set(entrada) == set(LANGS), f"horizon.{faixa} não tem os dois idiomas"
+    for band in HORIZONS:
+        entry = MESSAGES.get(f"horizon.{band}")
+        assert entry, f"band {band!r} has no label in the catalogue"
+        assert set(entry) == set(LANGS), f"horizon.{band} is missing a language"
 
 
-def test_o_mural_le_as_faixas_do_catalogo():
-    """E não de uma tabela própria — que seria uma tradução sem teste."""
-    corpo = MURAL.read_text()
-    assert 'tr(`horizon.${h}`)' in corpo, "o mural voltou a nomear faixas por conta própria"
-    assert "const I18N = /*__I18N__*/{}" in corpo, "o mural perdeu o ponto de injeção"
+def test_the_board_reads_the_bands_from_the_catalogue():
+    """And not from a table of its own — which would be a translation with no test."""
+    body = BOARD.read_text()
+    assert 'tr(`horizon.${h}`)' in body, "the board went back to naming bands itself"
+    assert "const I18N = /*__I18N__*/{}" in body, "the board lost its injection point"
 
 
-def test_o_mural_nao_reimplementa_a_ordem():
-    """A ordem vem pronta de `GET /notes`; um sort no cliente é a regra em dobro."""
-    assert "PRIO_RANK" not in MURAL.read_text()
+def test_the_board_does_not_reimplement_the_order():
+    """The order arrives ready from `GET /notes`; a client sort is the rule twice."""
+    assert "PRIO_RANK" not in BOARD.read_text()
 
 
-def test_o_mural_avisa_quando_o_daemon_esta_velho():
-    """Tirar a ordenação do cliente criou dependência da versão do servidor.
+def test_the_board_warns_when_the_daemon_is_old():
+    """Taking the sort off the client created a dependency on the server version.
 
-    O mural é servido com `no-store` e atualiza na hora; as rotas Python só depois
-    de reiniciar. Contra um daemon velho não vem `horizon`, a ordem vem crua de
-    `sort_key` e a tela fica **errada com cara de certa** — foi o que aconteceu de
-    verdade. Sem harness de JS, este pino estático é o que impede a guarda de ser
-    removida no próximo refactor.
+    The board is served `no-store` and updates immediately; the Python routes only
+    after a restart. Against an old daemon no `horizon` arrives, the order comes
+    raw from `sort_key` and the screen is **wrong while looking right** — which is
+    what really happened. With no JS harness, this static pin is what stops the
+    guard being removed in the next refactor.
     """
     from ta.i18n import LANGS, MESSAGES
 
-    corpo = MURAL.read_text()
-    assert '"horizon" in allNotes[0]' in corpo, "o mural perdeu a guarda de versão"
-    assert 'tr("daemon.outdated")' in corpo, "a guarda perdeu a mensagem"
+    body = BOARD.read_text()
+    assert '"horizon" in allNotes[0]' in body, "the board lost its version guard"
+    assert 'tr("daemon.outdated")' in body, "the guard lost its message"
 
-    # A mensagem migrou para o catálogo, então é lá que o comando do conserto tem
-    # de estar — nos dois idiomas. Uma guarda que detecta e não diz o que fazer
-    # deixa a pessoa exatamente onde estava.
+    # The message moved to the catalogue, so that is where the fix command has to
+    # be — in both languages. A guard that detects and does not say what to do
+    # leaves the person exactly where they were.
     for lang in LANGS:
         assert "systemctl --user restart ta" in MESSAGES["daemon.outdated"][lang]
 
 
-def test_o_aviso_fica_fora_do_quadro():
-    """Na visão geral os post-its são `position: absolute` dentro do `#board`.
+def test_the_notice_stays_outside_the_board():
+    """In the free-form view the post-its are `position: absolute` inside `#board`.
 
-    A primeira versão do aviso foi inserida DENTRO dele e ficou ilegível atrás do
-    primeiro post-it — visto na tela, não em teste. Fora do `#board` ele empurra o
-    quadro para baixo em vez de ser coberto.
+    The first version of the notice was inserted INSIDE it and came out illegible
+    behind the first post-it — seen on screen, not in a test. Outside `#board` it
+    pushes the board down instead of being covered.
     """
-    corpo = MURAL.read_text()
-    assert corpo.index('id="notice"') < corpo.index('id="board"')
+    body = BOARD.read_text()
+    assert body.index('id="notice"') < body.index('id="board"')
