@@ -145,6 +145,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "The daemon is out of date — this board is newer than it is.\n"
               "Run: systemctl --user restart ta",
     },
+    "review.note_reviewed": {"pt": "Nota revisada", "en": "Note reviewed"},
+    "review.due_removed": {"pt": "prazo removido", "en": "deadline removed"},
+    "review.priority": {"pt": "prioridade", "en": "priority"},
+    "review.priority_removed": {"pt": "prioridade removida", "en": "priority removed"},
+    "review.untitled": {"pt": "(sem título)", "en": "(untitled)"},
+    "review.event_created": {"pt": "evento criado", "en": "event created"},
     "reminder.late_minutes": {"pt": " (atrasado {n} min)", "en": " ({n} min late)"},
     "reminder.late_hours": {"pt": " (atrasado {n} h)", "en": " ({n} h late)"},
     "reminder.very_late": {"pt": " (muito atrasado)", "en": " (very late)"},

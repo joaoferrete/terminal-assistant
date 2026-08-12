@@ -263,254 +263,262 @@ async def notes_create(request: Request) -> JSONResponse:
     note = store.add_note(request.app.state.conn, raw)
     # A revisão sai em background e o 201 volta agora: captura não espera rede
     # (ADR 0003). O que ela mudar aparece no mural no próximo reload.
-    _agendar_revisao(request.app, note)
+    _schedule_review(request.app, note)
     return JSONResponse(_note_json(note), status_code=201)
 
 
 # Piso de confiança para agir sozinho. Abaixo disto a revisão não faz nada: uma
 # correção errada é pior que nenhuma, e evento fantasma na agenda de trabalho é
 # visível para colegas (emenda do ADR 0007).
-CONFIANCA_MINIMA = 0.7
+MIN_CONFIDENCE = 0.7
 
-# Teto de tentativas por Note. Rede caída é temporário e merece retentativa;
-# resposta que nunca valida não merece, e sem teto a fila viraria laço.
-MAX_TENTATIVAS_REVISAO = 5
+# Attempt ceiling per Note. A dropped network is temporary and deserves a retry;
+# an answer that never validates does not, and with no ceiling the queue would
+# become a loop.
+MAX_REVIEW_ATTEMPTS = 5
 
-# Revisões simultâneas. "Revisar tudo" com 40 notas abriria 40 chamadas de uma
-# vez e tomaria rate limit; em fila de 4 leva alguns segundos mais e não falha.
-REVISOES_SIMULTANEAS = 4
+# Concurrent reviews. "Review everything" over 40 notes would open 40 calls at
+# once and hit a rate limit; queued four at a time it takes a few seconds longer
+# and does not fail.
+CONCURRENT_REVIEWS = 4
 
 
-def _agendar_revisao(
-    app: Starlette, note: store.Note | None = None, *, limite: int = 10
+def _schedule_review(
+    app: Starlette, note: store.Note | None = None, *, limit: int = 10
 ) -> None:
-    """Dispara a revisão da Note nova e drena a fila de atrasadas.
+    """Fire the review of the new Note and drain the backlog queue.
 
-    A fila existe porque a revisão dispara uma vez, na captura: quem foi
-    capturado sem rede nunca seria revisado. Cada captura nova com rede paga
-    também pelas que ficaram para trás — é o gatilho mais natural, porque
-    significa que você está usando o app e provavelmente tem rede agora.
+    The queue exists because review fires once, at capture: anything captured
+    with no network would never be reviewed. Each new capture with network pays
+    for some of the ones left behind too — it is the most natural trigger,
+    because it means you are using the app and probably have network now.
     """
     if not app.state.auto_review or not app.state.llm.configured:
         return
 
     ids = [note.id] if note is not None else []
-    # `pending_review` já exclui as que estouraram o teto de tentativas, e a Note
-    # que acabou de nascer também está pendente — daí o filtro.
-    ids += [i for i in store.pending_review(app.state.conn, limit=limite) if i not in ids]
+    # `pending_review` already excludes the ones over the attempt ceiling, and
+    # the Note that just came into being is pending too — hence the filter.
+    ids += [i for i in store.pending_review(app.state.conn, limit=limit) if i not in ids]
 
-    # Sem este filtro, quatro capturas em sequência reenfileiravam as mesmas
-    # pendentes: a #5 foi revisada 4 vezes, e duas passadas na mesma nota deram
-    # prazos DIFERENTES. `reviewed_at` só é gravado no fim, então a fila não
-    # protege contra concorrência — este conjunto é que protege.
-    ids = [i for i in ids if i not in app.state.em_revisao]
+    # Without this filter, four captures in a row re-queued the same pending
+    # notes: #5 was reviewed four times, and two passes over the same note gave
+    # DIFFERENT deadlines. `reviewed_at` is only written at the end, so the queue
+    # does not protect against concurrency — this set is what does.
+    ids = [i for i in ids if i not in app.state.in_review]
 
     for note_id in ids:
-        app.state.em_revisao.add(note_id)
-        tarefa = asyncio.create_task(_revisar_captura(app, note_id), name=f"review-{note_id}")
-        # Guardar a referência: task sem dono pode ser coletada antes de terminar.
-        app.state.revisoes.add(tarefa)
-        tarefa.add_done_callback(app.state.revisoes.discard)
+        app.state.in_review.add(note_id)
+        task = asyncio.create_task(_review_capture(app, note_id), name=f"review-{note_id}")
+        # Keep the reference: an ownerless task can be collected before it ends.
+        app.state.reviews.add(task)
+        task.add_done_callback(app.state.reviews.discard)
 
 
-async def _revisar_captura(app: Starlette, note_id: int) -> None:
-    """Corrige o que o regex não podia saber, e cria o evento se for o caso.
+async def _review_capture(app: Starlette, note_id: int) -> None:
+    """Fix what the regex could not know, and create the event if appropriate.
 
-    Roda solta: qualquer falha aqui é registrada e morre nela mesma. A Note já
-    está gravada, e o pior caso desta função é não acontecer.
+    It runs detached: any failure here is logged and dies with it. The Note is
+    already stored, and the worst case of this function is not happening.
     """
     try:
-        async with app.state.revisao_sem:
-            await _revisar_uma(app, note_id)
+        async with app.state.review_sem:
+            await _review_one(app, note_id)
     finally:
-        # Sai do conjunto de "em voo" aconteça o que acontecer, senão uma falha
-        # trancaria a Note fora de qualquer retentativa futura.
-        app.state.em_revisao.discard(note_id)
+        # Leave the "in flight" set whatever happens, otherwise a failure would
+        # lock the Note out of any future retry.
+        app.state.in_review.discard(note_id)
 
 
-async def _revisar_uma(app: Starlette, note_id: int) -> None:
+async def _review_one(app: Starlette, note_id: int) -> None:
     try:
         note = store.get_note(app.state.conn, note_id)
     except KeyError:
-        return  # apagada antes da revisão chegar
+        return  # deleted before review got to it
 
-    # Conta a tentativa ANTES de tentar: se o processo morrer no meio, a Note não
-    # fica tentando para sempre na próxima subida.
-    tentativas = store.count_review_attempt(app.state.conn, note_id)
+    # Count the attempt BEFORE trying: if the process dies halfway, the Note does
+    # not keep retrying forever on the next boot.
+    attempts = store.count_review_attempt(app.state.conn, note_id)
 
     try:
-        # Exception larga de propósito: esta função é opcional por desenho, e
-        # nada que ela faça vale derrubar o daemon ou perder a Note.
-        alvos = await asyncio.to_thread(app.state.calendar.write_targets)
+        # A broad Exception on purpose: this function is optional by design, and
+        # nothing it does is worth taking down the daemon or losing the Note.
+        targets = await asyncio.to_thread(app.state.calendar.write_targets)
         r = await app.state.llm.review_capture(
             note.text,
             due=note.due,
             remind_at=note.remind_at,
             priorities=priorities.current(app.state.conn) or "",
-            # Só o domínio, não o endereço: é o que decide o roteamento, e
-            # mandar o e-mail inteiro para fora seria dado a mais pelo mesmo
-            # resultado.
+            # Only the domain, not the address: it is what decides the routing,
+            # and sending the whole email outside would be extra data for the
+            # same result.
             accounts=", ".join(
                 f"{'pessoal' if a.personal else 'trabalho'}: "
                 f"{a.account.rsplit('@', 1)[-1] if '@' in a.account else '?'}"
-                for a in alvos
+                for a in targets
             ),
         )
     except Exception as e:
-        # Não marca como revisada: fica na fila para a próxima captura com rede.
-        if tentativas >= MAX_TENTATIVAS_REVISAO:
+        # Not marked reviewed: it stays queued for the next capture with network.
+        if attempts >= MAX_REVIEW_ATTEMPTS:
             store.mark_reviewed(app.state.conn, note_id)
             log.warning(
-                "revisão de #%s desistiu após %d tentativas: %s", note_id, tentativas, e
+                "review of #%s gave up after %d attempts: %s", note_id, attempts, e
             )
         else:
             log.info(
-                "revisão de #%s falhou (tentativa %d/%d), fica na fila: %s",
-                note_id, tentativas, MAX_TENTATIVAS_REVISAO, e,
+                "review of #%s failed (attempt %d/%d), staying queued: %s",
+                note_id, attempts, MAX_REVIEW_ATTEMPTS, e,
             )
         return
 
-    # Daqui em diante houve resposta do modelo: sai da fila mesmo que nada mude.
+    # From here on the model answered: it leaves the queue even if nothing changes.
     store.mark_reviewed(app.state.conn, note_id)
 
-    if r.confidence < CONFIANCA_MINIMA:
-        log.info("revisão de #%s ignorada: confiança %.2f", note_id, r.confidence)
+    if r.confidence < MIN_CONFIDENCE:
+        log.info("review of #%s ignored: confidence %.2f", note_id, r.confidence)
         return
 
-    avisos: list[str] = []
+    changes: list[str] = []
 
-    novo_due = _iso_data(r.due)
-    novo_remind = _iso_datahora(r.remind_at)
-    if (novo_due, novo_remind) != (
+    new_due = _iso_date(r.due)
+    new_remind = _iso_datetime(r.remind_at)
+    if (new_due, new_remind) != (
         date.fromisoformat(note.due) if note.due else None,
         datetime.fromisoformat(note.remind_at) if note.remind_at else None,
     ):
-        store.set_schedule(app.state.conn, note_id, due=novo_due, remind_at=novo_remind)
-        if note.due and novo_due is None:
-            avisos.append("prazo removido")
-        elif novo_due:
-            avisos.append(f"prazo {novo_due.isoformat()}")
+        store.set_schedule(app.state.conn, note_id, due=new_due, remind_at=new_remind)
+        if note.due and new_due is None:
+            changes.append(i18n.t("review.due_removed"))
+        elif new_due:
+            changes.append(f"{i18n.t('export.due')} {new_due.isoformat()}")
 
-    # Prioridade e tags só entram se **você** não as escreveu. `by_user` é o que
-    # separa "digitei `!alta`" de "a revisão pôs alta na passada anterior": o
-    # primeiro é intocável, o segundo é revisável.
-    tipo = r.intent if r.intent in notes_mod.KINDS else "anotacao"
+    # Priority and tags only apply if **you** did not write them. `by_user` is
+    # what separates "I typed `!high`" from "review put high there on an earlier
+    # pass": the first is untouchable, the second is revisable.
+    kind = r.intent if r.intent in notes_mod.KINDS else "anotacao"
 
     if not note.priority_by_user:
-        # Anotação não tem prioridade, por definição: registro e ideia solta não
-        # são cobráveis, e pedir urgência delas só suja o mural. Se havia
-        # prioridade posta por máquina, ela sai.
+        # A plain note has no priority, by definition: a record or a loose idea
+        # is not chaseable, and asking for its urgency only clutters the board.
+        # If a machine-set priority was there, it goes.
         #
-        # `resolve_priority` e não `in PRIORITIES`: o modelo pode devolver `alta`
-        # tanto quanto `high`, e as duas formas querem dizer a mesma coisa. Um
-        # valor que não é nem uma nem outra vira log — antes disso ele virava
-        # `None` calado, e o sintoma era a nota voltar da revisão sem prioridade
-        # sem que nada dissesse por quê.
-        nova = notes_mod.resolve_priority(r.priority) if tipo != "anotacao" else None
-        if r.priority and nova is None and tipo != "anotacao":
-            log.warning("revisão devolveu prioridade fora do enum: %r", r.priority)
-        if nova != note.priority:
-            store.set_priority(app.state.conn, note_id, nova)
-            avisos.append(f"prioridade {nova}" if nova else "prioridade removida")
+        # `resolve_priority` rather than `in PRIORITIES`: the model may return
+        # `alta` as readily as `high`, and both forms mean the same thing. A
+        # value that is neither becomes a log line — before this it silently
+        # became `None`, and the symptom was the note coming back from review
+        # with no priority and nothing saying why.
+        new_priority = notes_mod.resolve_priority(r.priority) if kind != "anotacao" else None
+        if r.priority and new_priority is None and kind != "anotacao":
+            log.warning("review returned a priority outside the enum: %r", r.priority)
+        if new_priority != note.priority:
+            store.set_priority(app.state.conn, note_id, new_priority)
+            changes.append(
+                f"{i18n.t('review.priority')} {new_priority}" if new_priority
+                else i18n.t("review.priority_removed")
+            )
 
-    # Três eixos, todos como tag para poderem ser filtrados e vistos no post-it:
-    # área (trabalho/pessoal), tipo (tarefa/compromisso/anotacao) e até dois temas.
+    # Three axes, all as tags so they can be filtered and seen on the post-it:
+    # area (work/personal), kind (task/appointment/note) and up to two themes.
     #
-    # Área e tipo entram SEMPRE, inclusive quando você escreveu tags à mão. Eles
-    # são estrutura, não tema: sem eles a nota desaparece dos filtros de área e
-    # de tipo, e "invisível no filtro" é pior que "mal classificada". A primeira
-    # versão disto tratava suas tags como tudo-ou-nada e produziu exatamente esse
-    # buraco numa nota real.
+    # Area and kind go in ALWAYS, including when you wrote tags by hand. They are
+    # structure, not theme: without them the note disappears from the area and
+    # kind filters, and "invisible in the filter" is worse than "badly
+    # classified". The first version of this treated your tags as all-or-nothing
+    # and produced exactly that hole in a real note.
     area = "trabalho" if r.account == "trabalho" else "pessoal"
-    eixos = [area, tipo]
+    axes = [area, kind]
 
     if note.tags_by_user:
-        # Seus temas ficam intocados; só o que falta de eixo é acrescentado.
-        novas = list(dict.fromkeys([*note.tags, *eixos]))
+        # Your themes stay untouched; only the missing axes are added.
+        new_tags = list(dict.fromkeys([*note.tags, *axes]))
     else:
-        temas = [
-            x for x in dict.fromkeys(r.tags) if x in notes_mod.SUGGESTED_TAGS and x not in eixos
+        themes = [
+            x for x in dict.fromkeys(r.tags) if x in notes_mod.SUGGESTED_TAGS and x not in axes
         ][:2]
-        novas = [*eixos, *temas]
+        new_tags = [*axes, *themes]
 
-    if sorted(novas) != sorted(note.tags):
-        store.set_tags(app.state.conn, note_id, novas)
-        avisos.append("tags " + " ".join(f"#{x}" for x in sorted(novas)))
+    if sorted(new_tags) != sorted(note.tags):
+        store.set_tags(app.state.conn, note_id, new_tags)
+        changes.append("tags " + " ".join(f"#{x}" for x in sorted(new_tags)))
 
     if r.is_event and r.start:
-        uid = await _criar_evento_automatico(app, note_id, r, alvos)
+        uid = await _create_event_automatically(app, note_id, r, targets)
         if uid:
-            avisos.append(f"evento criado: {r.title}")
+            changes.append(f"{i18n.t('review.event_created')}: {r.title}")
 
-    if avisos:
-        # Autonomia invisível é pior que nenhuma: se o app mexeu na sua nota ou
-        # escreveu na sua agenda, você fica sabendo na hora.
+    if changes:
+        # Invisible autonomy is worse than none: if the app touched your note or
+        # wrote to your calendar, you find out immediately.
         await app.state.notify.send(
-            "Nota revisada",
-            f"#{note_id}: {', '.join(avisos)}" + (f" — {r.reason}" if r.reason else ""),
+            i18n.t("review.note_reviewed"),
+            f"#{note_id}: {', '.join(changes)}" + (f" — {r.reason}" if r.reason else ""),
             urgency="low",
         )
-        log.info("revisão de #%s: %s", note_id, "; ".join(avisos))
+        log.info("review of #%s: %s", note_id, "; ".join(changes))
 
 
-async def _criar_evento_automatico(app: Starlette, note_id: int, r, alvos) -> str | None:
-    """Cria o evento na agenda dedicada da conta certa.
+async def _create_event_automatically(app: Starlette, note_id: int, r, targets) -> str | None:
+    """Create the event in the right account's dedicated calendar.
 
-    O usuário decidiu abrir mão da confirmação (emenda do ADR 0007). As outras
-    duas guardas continuam: **nunca convidados**, porque isso dispararia e-mail
-    para gente real, e **só na agenda "Terminal Assistant"**, que é o que mantém
-    tudo apagável de uma vez.
+    The user chose to give up the confirmation step (amendment to ADR 0007). The
+    other two guards remain: **never guests**, because that would send email to
+    real people, and **only in the "Terminal Assistant" calendar**, which is what
+    keeps everything deletable in one go.
     """
-    # Esta Note já tem evento? Então não cria outro.
+    # Does this Note already have an event? Then do not create another.
     #
-    # `calendar_links` tem PRIMARY KEY em `note_id` e o INSERT era OR REPLACE, o
-    # que trocava o vínculo e deixava o evento anterior **órfão na agenda**. Uma
-    # nota reetiquetada três vezes gerou três compromissos idênticos, e o banco
-    # só sabia do último. Duplicar compromisso é pior que não atualizar título.
-    já = app.state.conn.execute(
+    # `calendar_links` has a PRIMARY KEY on `note_id` and the INSERT was OR
+    # REPLACE, which swapped the link and left the previous event **orphaned in
+    # the calendar**. A note re-tagged three times produced three identical
+    # appointments, and the database only knew about the last. Duplicating an
+    # appointment is worse than not updating a title.
+    existing = app.state.conn.execute(
         "SELECT uid FROM calendar_links WHERE note_id = ?", (note_id,)
     ).fetchone()
-    if já is not None:
-        log.info("nota #%s já tem evento (%s): não crio outro", note_id, já["uid"][:16])
+    if existing is not None:
+        log.info("note #%s already has an event (%s): not creating another",
+                 note_id, existing["uid"][:16])
         return None
 
-    if not alvos:
-        log.warning("nenhuma agenda 'Terminal Assistant': evento de #%s não criado", note_id)
+    if not targets:
+        log.warning("no 'Terminal Assistant' calendar: event for #%s not created", note_id)
         return None
 
-    # Rotear por `parent` não funcionava: é um hash opaco do GOA, então a
-    # comparação era sempre falsa e TODO evento caía na mesma agenda,
-    # independentemente de o LLM ter dito 'trabalho' ou 'pessoal'. Erro
-    # silencioso: o evento aparecia, só na conta errada.
-    quer_pessoal = r.account != "trabalho"
-    escolhida = next((a for a in alvos if a.personal == quer_pessoal), alvos[0])
+    # Routing by `parent` did not work: it is an opaque Online Accounts hash, so
+    # the comparison was always false and EVERY event landed in the same
+    # calendar, regardless of whether the LLM said work or personal. A silent
+    # error: the event appeared, just in the wrong account.
+    wants_personal = r.account != "trabalho"
+    chosen = next((a for a in targets if a.personal == wants_personal), targets[0])
     try:
-        inicio = datetime.fromisoformat(r.start)
-        fim = datetime.fromisoformat(r.end) if r.end else inicio + timedelta(hours=1)
+        start_at = datetime.fromisoformat(r.start)
+        end_at = datetime.fromisoformat(r.end) if r.end else start_at + timedelta(hours=1)
     except ValueError:
-        log.info("revisão de #%s devolveu data inválida: %r", note_id, r.start)
+        log.info("review of #%s returned an invalid date: %r", note_id, r.start)
         return None
 
     uid = await asyncio.to_thread(
-        app.state.calendar.create_event, escolhida.uid, r.title or "(sem título)", inicio, fim
+        app.state.calendar.create_event, chosen.uid,
+        r.title or i18n.t("review.untitled"), start_at, end_at,
     )
     if uid:
         app.state.conn.execute(
             "INSERT OR REPLACE INTO calendar_links (note_id, uid, source_uid, created_at)"
             " VALUES (?, ?, ?, ?)",
-            (note_id, uid, escolhida.uid, datetime.now().isoformat(timespec="seconds")),
+            (note_id, uid, chosen.uid, datetime.now().isoformat(timespec="seconds")),
         )
     return uid
 
 
-def _iso_data(s: str) -> date | None:
+def _iso_date(s: str) -> date | None:
     try:
         return date.fromisoformat(s) if s else None
     except ValueError:
         return None
 
 
-def _iso_datahora(s: str) -> datetime | None:
+def _iso_datetime(s: str) -> datetime | None:
     try:
         return datetime.fromisoformat(s) if s else None
     except ValueError:
@@ -533,8 +541,8 @@ async def review_all(request: Request) -> JSONResponse:
         )
 
     n = store.queue_all_for_review(app.state.conn)
-    _agendar_revisao(app, limite=200)
-    return JSONResponse({"queued": n, "running": len(app.state.em_revisao)})
+    _schedule_review(app, limite=200)
+    return JSONResponse({"queued": n, "running": len(app.state.in_review)})
 
 
 async def review_status(request: Request) -> JSONResponse:
@@ -545,7 +553,7 @@ async def review_status(request: Request) -> JSONResponse:
             "pending": conn.execute(
                 "SELECT COUNT(*) FROM notes WHERE reviewed_at IS NULL"
             ).fetchone()[0],
-            "running": len(request.app.state.em_revisao),
+            "running": len(request.app.state.in_review),
         }
     )
 
@@ -1106,11 +1114,11 @@ def create_app(
         app.state.auto_review = cfg.auto_review
         # Referências fortes das revisões em voo: task sem dono pode ser coletada
         # pelo GC antes de terminar.
-        app.state.revisoes = set()
+        app.state.reviews = set()
         # Ids com revisão em voo. Impede que duas capturas seguidas enfileirem a
         # mesma Note duas vezes.
-        app.state.em_revisao = set()
-        app.state.revisao_sem = asyncio.Semaphore(REVISOES_SIMULTANEAS)
+        app.state.in_review = set()
+        app.state.review_sem = asyncio.Semaphore(CONCURRENT_REVIEWS)
         app.state.conn = connect(db_path)
         app.state.home = Home(cfg.ha_url, cfg.ha_token)
         # `lighter` é injetável pelo mesmo motivo que `calendar`: sem isso, cada

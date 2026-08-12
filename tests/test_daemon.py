@@ -353,7 +353,7 @@ def test_media_usa_o_echo_do_config_quando_o_alvo_e_omitido(tmp_path):
 from types import SimpleNamespace  # noqa: E402
 
 from ta import db, store  # noqa: E402
-from ta.daemon import _revisar_captura  # noqa: E402
+from ta.daemon import _review_capture  # noqa: E402
 
 
 class LLMDeMentira:
@@ -380,7 +380,7 @@ class NotifyDeMentira:
 
 
 class Revisao(SimpleNamespace):
-    """O mínimo do schema que `_revisar_captura` consome."""
+    """O mínimo do schema que `_review_capture` consome."""
 
     def __init__(self, **kw):
         super().__init__(
@@ -415,8 +415,8 @@ def _app_falso(tmp_path, review, *, alvos=()):
             llm=LLMDeMentira(review),
             notify=NotifyDeMentira(),
             calendar=cal,
-            em_revisao=set(),
-            revisao_sem=_asyncio.Semaphore(4),
+            in_review=set(),
+            review_sem=_asyncio.Semaphore(4),
         )
     )
 
@@ -428,7 +428,7 @@ async def test_revisao_remove_prazo_que_o_regex_inventou(tmp_path):
     nota = store.add_note(app.state.conn, "hoje eu preciso disso")
     assert nota.due is not None                       # o regex marcou
 
-    await _revisar_captura(app, nota.id)
+    await _review_capture(app, nota.id)
 
     assert store.get_note(app.state.conn, nota.id).due is None
     assert "prazo removido" in app.state.notify.avisos[0][1]
@@ -440,7 +440,7 @@ async def test_revisao_com_confianca_baixa_nao_mexe_em_nada(tmp_path):
     nota = store.add_note(app.state.conn, "revisar o PR hoje")
     antes = nota.due
 
-    await _revisar_captura(app, nota.id)
+    await _review_capture(app, nota.id)
 
     assert store.get_note(app.state.conn, nota.id).due == antes
     assert app.state.notify.avisos == []
@@ -455,7 +455,7 @@ async def test_revisao_cria_evento_na_agenda_dedicada(tmp_path):
     )
     nota = store.add_note(app.state.conn, "ir na nutricionista 17 de setembro as 8:30")
 
-    await _revisar_captura(app, nota.id)
+    await _review_capture(app, nota.id)
 
     assert "evento criado: nutricionista" in app.state.notify.avisos[0][1]
     link = app.state.conn.execute(
@@ -473,7 +473,7 @@ async def test_sem_agenda_dedicada_nao_cria_evento_em_outro_lugar(tmp_path):
     )
     nota = store.add_note(app.state.conn, "compromisso qualquer")
 
-    await _revisar_captura(app, nota.id)
+    await _review_capture(app, nota.id)
 
     assert app.state.conn.execute("SELECT COUNT(*) c FROM calendar_links").fetchone()["c"] == 0
 
@@ -486,7 +486,7 @@ async def test_revisao_com_data_invalida_do_modelo_nao_estoura(tmp_path):
     )
     nota = store.add_note(app.state.conn, "algo")
 
-    await _revisar_captura(app, nota.id)   # não deve levantar
+    await _review_capture(app, nota.id)   # não deve levantar
 
     assert app.state.conn.execute("SELECT COUNT(*) c FROM calendar_links").fetchone()["c"] == 0
 
@@ -502,7 +502,7 @@ def test_revisao_desligada_nao_agenda_nada(tmp_path):
     )
     with TestClient(app) as c:
         c.post("/notes", json={"text": "x"})
-        assert c.app.state.revisoes == set()
+        assert c.app.state.reviews == set()
 
 
 
@@ -516,7 +516,7 @@ async def test_evento_de_trabalho_vai_para_a_conta_de_trabalho(tmp_path):
     )
     nota = store.add_note(app.state.conn, "1:1 com a lead na terça às 14h")
 
-    await _revisar_captura(app, nota.id)
+    await _review_capture(app, nota.id)
 
     link = app.state.conn.execute("SELECT source_uid FROM calendar_links").fetchone()
     assert link["source_uid"] == "src-trabalho"
@@ -531,7 +531,7 @@ async def test_evento_pessoal_vai_para_a_conta_pessoal(tmp_path):
         )
     nota = store.add_note(app.state.conn, "nutricionista 17 de setembro às 8:30")
 
-    await _revisar_captura(app, nota.id)
+    await _review_capture(app, nota.id)
 
     link = app.state.conn.execute("SELECT source_uid FROM calendar_links").fetchone()
     assert link["source_uid"] == "src-pessoal"
@@ -568,8 +568,8 @@ def test_review_all_sem_chave_do_gemini(tmp_path):
 
 async def test_revisao_em_voo_nao_e_enfileirada_duas_vezes(tmp_path):
     """Quatro capturas seguidas revisavam a MESMA nota 4 vezes, com respostas
-    diferentes. `em_revisao` é a guarda."""
-    from ta.daemon import _agendar_revisao
+    diferentes. `in_review` é a guarda."""
+    from ta.daemon import _schedule_review
 
     conn = db.connect(tmp_path / "t.db")
     nota = store.add_note(conn, "x")
@@ -578,12 +578,12 @@ async def test_revisao_em_voo_nao_e_enfileirada_duas_vezes(tmp_path):
             conn=conn,
             llm=SimpleNamespace(configured=True),
             auto_review=True,
-            revisoes=set(),
-            em_revisao={nota.id},        # já em voo
+            reviews=set(),
+            in_review={nota.id},        # já em voo
         )
     )
-    _agendar_revisao(app, nota)
-    assert app.state.revisoes == set()   # nada de novo foi criado
+    _schedule_review(app, nota)
+    assert app.state.reviews == set()   # nada de novo foi criado
 
 
 async def test_anotacao_nao_recebe_prioridade(tmp_path):
@@ -591,7 +591,7 @@ async def test_anotacao_nao_recebe_prioridade(tmp_path):
     app = _app_falso(tmp_path, Revisao(intent="anotacao", priority="alta", confidence=0.9))
     nota = store.add_note(app.state.conn, "hoje descobri o bug do domínio")
 
-    await _revisar_captura(app, nota.id)
+    await _review_capture(app, nota.id)
 
     n = store.get_note(app.state.conn, nota.id)
     assert n.priority is None
@@ -604,7 +604,7 @@ async def test_anotacao_remove_prioridade_posta_por_maquina(tmp_path):
     nota = store.add_note(app.state.conn, "x")
     store.set_priority(app.state.conn, nota.id, "media")
 
-    await _revisar_captura(app, nota.id)
+    await _review_capture(app, nota.id)
 
     assert store.get_note(app.state.conn, nota.id).priority is None
 
@@ -615,7 +615,7 @@ async def test_prioridade_digitada_pelo_usuario_e_intocavel(tmp_path):
     nota = store.add_note(app.state.conn, "revisar isso !alta")
     assert nota.priority_by_user
 
-    await _revisar_captura(app, nota.id)
+    await _review_capture(app, nota.id)
 
     assert store.get_note(app.state.conn, nota.id).priority == "high"
 
@@ -634,7 +634,7 @@ async def test_tema_digitado_pelo_usuario_sobrevive_e_ganha_os_eixos(tmp_path):
     nota = store.add_note(app.state.conn, "fiz um novo app hoje #app")
     assert nota.tags_by_user and nota.tags == ["app"]
 
-    await _revisar_captura(app, nota.id)
+    await _review_capture(app, nota.id)
 
     tags = store.get_note(app.state.conn, nota.id).tags
     assert "app" in tags                       # o seu tema fica
@@ -650,7 +650,7 @@ async def test_area_e_tipo_entram_sempre_como_tag(tmp_path):
     )
     nota = store.add_note(app.state.conn, "revisar o PR")
 
-    await _revisar_captura(app, nota.id)
+    await _review_capture(app, nota.id)
 
     assert store.get_note(app.state.conn, nota.id).tags == ["tarefa", "trabalho"]
 
@@ -663,7 +663,7 @@ async def test_tema_inventado_pelo_modelo_e_descartado(tmp_path):
     )
     nota = store.add_note(app.state.conn, "x")
 
-    await _revisar_captura(app, nota.id)
+    await _review_capture(app, nota.id)
 
     assert store.get_note(app.state.conn, nota.id).tags == ["estudo", "pessoal", "tarefa"]
 
@@ -675,7 +675,7 @@ async def test_no_maximo_dois_temas_alem_dos_eixos(tmp_path):
     )
     nota = store.add_note(app.state.conn, "x")
 
-    await _revisar_captura(app, nota.id)
+    await _review_capture(app, nota.id)
 
     tags = store.get_note(app.state.conn, nota.id).tags
     assert len(tags) == 4          # área + tipo + 2 temas
@@ -693,9 +693,9 @@ async def test_revisao_nao_cria_evento_duplicado(tmp_path):
     )
     nota = store.add_note(app.state.conn, "nutricionista 17 de setembro às 8:30")
 
-    await _revisar_captura(app, nota.id)
-    await _revisar_captura(app, nota.id)      # segunda passada, como no `revisar tudo`
-    await _revisar_captura(app, nota.id)
+    await _review_capture(app, nota.id)
+    await _review_capture(app, nota.id)      # segunda passada, como no `revisar tudo`
+    await _review_capture(app, nota.id)
 
     n = app.state.conn.execute("SELECT COUNT(*) c FROM calendar_links").fetchone()["c"]
     assert n == 1
