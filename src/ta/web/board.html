@@ -360,7 +360,15 @@ const btnRevisar = document.getElementById("revisar");
 const btnEsvaziar = document.getElementById("esvaziar");
 
 // A visão sobrevive ao reload: voltar sempre para "geral" seria irritante.
-let view = localStorage.getItem("ta.view") || "board";
+// A visão sobrevive ao reload, e o valor guardado é VALIDADO antes de valer.
+// As visões se chamavam `geral` e `lista`; quem abriu o mural antes do rename
+// tem uma dessas no `localStorage`, e um `|| "board"` não a pegaria — string
+// velha é truthy. O resultado seria `renderers["geral"]` indefinido, ou seja um
+// mural em branco sem erro visível, para quem já usava.
+const VIEWS = ["board", "list", "kanban"];
+let view = VIEWS.includes(localStorage.getItem("ta.view"))
+  ? localStorage.getItem("ta.view")
+  : "board";
 
 // Lixeira: ligada por `#trash` na URL, não por botão. Escondida de propósito —
 // é uma tela de recuperação, não parte do fluxo diário, e um botão permanente
