@@ -1,4 +1,4 @@
-from ta.sensors.mic import DEBOUNCE_S, MicWatcher, _streams_de_entrada
+from ta.sensors.mic import DEBOUNCE_S, MicWatcher, _input_streams
 
 
 def node(media_class, app=None, node_name=None):
@@ -10,82 +10,82 @@ def node(media_class, app=None, node_name=None):
     return {"info": {"props": props}}
 
 
-# ── Leitura do grafo ────────────────────────────────────────────────────────
-def test_fora_de_call_nao_ha_stream_de_entrada():
-    """O negativo verificado na máquina real: só fontes, nenhum stream."""
+# ── Reading the graph ───────────────────────────────────────────────────────
+def test_outside_a_call_there_is_no_input_stream():
+    """The negative case verified on the real machine: sources only, no stream."""
     dump = [node("Audio/Source", node_name="alsa_input.pci-0000_04_00.6"), node("Audio/Sink")]
-    assert _streams_de_entrada(dump) == []
+    assert _input_streams(dump) == []
 
 
-def test_reconhece_stream_de_captura():
-    assert _streams_de_entrada([node("Stream/Input/Audio", app="Chromium")]) == ["Chromium"]
+def test_it_recognises_a_capture_stream():
+    assert _input_streams([node("Stream/Input/Audio", app="Chromium")]) == ["Chromium"]
 
 
-def test_ignora_o_monitor_do_proprio_gnome():
-    """gnome-shell aparece como Stream/Input/Audio e não é reunião."""
+def test_it_ignores_gnomes_own_monitor():
+    """gnome-shell shows up as Stream/Input/Audio and is not a meeting."""
     dump = [node("Stream/Input/Audio", app="gnome-shell"), node("Stream/Input/Audio", app="Zoom")]
-    assert _streams_de_entrada(dump) == ["Zoom"]
+    assert _input_streams(dump) == ["Zoom"]
 
 
-def test_stream_de_saida_nao_conta():
-    assert _streams_de_entrada([node("Stream/Output/Audio", app="Spotify")]) == []
+def test_an_output_stream_does_not_count():
+    assert _input_streams([node("Stream/Output/Audio", app="Spotify")]) == []
 
 
 # ── Debounce ────────────────────────────────────────────────────────────────
 class FakeWatcher(MicWatcher):
-    """Substitui a leitura do PipeWire por um roteiro."""
+    """Replaces the PipeWire read with a script of canned answers."""
 
-    def __init__(self, roteiro):
-        self.eventos = []
-        super().__init__(self._registrar)
-        self._roteiro = list(roteiro)
+    def __init__(self, script):
+        self.events = []
+        super().__init__(self._record)
+        self._script = list(script)
         self._bin = "/fake/pw-dump"
 
-    async def _registrar(self, ativo, apps):
-        self.eventos.append((ativo, apps))
+    async def _record(self, active, apps):
+        self.events.append((active, apps))
 
-    async def _ler(self):
-        return self._roteiro.pop(0) if self._roteiro else []
+    async def _read(self):
+        return self._script.pop(0) if self._script else []
 
 
-async def test_transicao_so_depois_do_debounce():
+async def test_the_transition_only_lands_after_the_debounce():
     w = FakeWatcher([["Zoom"], ["Zoom"]])
-    await w.tick(0.0)                 # vê ativo, marca pendente
-    assert w.eventos == []
-    await w.tick(DEBOUNCE_S + 0.1)     # confirma
-    assert w.eventos == [(True, ["Zoom"])]
+    await w.tick(0.0)                  # sees it active, marks it pending
+    assert w.events == []
+    await w.tick(DEBOUNCE_S + 0.1)     # confirms
+    assert w.events == [(True, ["Zoom"])]
     assert w.active
 
 
-async def test_rajada_curta_nao_dispara():
-    """Stream que abre e fecha em rajada não deve piscar a luz."""
+async def test_a_short_burst_does_not_fire():
+    """A stream that opens and closes in a burst must not flash the light."""
     w = FakeWatcher([["Zoom"], []])
     await w.tick(0.0)
-    await w.tick(0.5)                  # voltou a vazio antes do debounce
-    assert w.eventos == []
+    await w.tick(0.5)                  # back to empty before the debounce
+    assert w.events == []
     assert not w.active
 
 
-async def test_transicao_nos_dois_sentidos():
+async def test_the_transition_works_in_both_directions():
     w = FakeWatcher([["Zoom"], ["Zoom"], [], []])
     await w.tick(0.0)
     await w.tick(DEBOUNCE_S + 0.1)
     await w.tick(100.0)
     await w.tick(100.0 + DEBOUNCE_S + 0.1)
-    assert w.eventos == [(True, ["Zoom"]), (False, [])]
+    assert w.events == [(True, ["Zoom"]), (False, [])]
     assert not w.active
 
 
-class FalhaNaLeitura(FakeWatcher):
-    async def _ler(self):
+class FailingRead(FakeWatcher):
+    async def _read(self):
         return None
 
 
-async def test_falha_de_leitura_nao_inventa_transicao():
-    """None é 'não consegui ler', diferente de 'nada rodando'."""
-    w = FalhaNaLeitura([])
+async def test_a_failed_read_does_not_invent_a_transition():
+    """None means "I could not read", which is not "nothing is running"."""
+    w = FailingRead([])
     w.active = True
     await w.tick(0.0)
     await w.tick(100.0)
-    assert w.eventos == []
-    assert w.active     # mantém o estado, não conclui que a call caiu
+    assert w.events == []
+    assert w.active     # keeps the state; it does not conclude the call dropped

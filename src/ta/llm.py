@@ -1,15 +1,21 @@
-"""Gemini: as três chamadas de LLM do projeto.
+"""Gemini: the project's three LLM calls.
 
-Todas fora do caminho crítico (ADR 0003). Captura de nota, mural e Digest não
-passam por aqui; sem chave ou sem rede, tudo isso continua inteiro.
+All of them off the critical path (ADR 0003). Note capture, the board and the
+Digest never come through here; with no key or no network, all of that is intact.
 
-Modelo escolhido a partir de `client.models.list()` na máquina, não de memória.
-`gemini-flash-latest` é um **alias** que acompanha o flash atual — não apodrece
-com o tempo, ao custo de poder mudar de comportamento sozinho. Para fixar,
-`TA_GEMINI_MODEL=gemini-3.6-flash` no `.env`, uma linha.
+The model is chosen from `client.models.list()` on the machine, not from memory.
+`gemini-flash-latest` is an **alias** that follows the current flash — it does not
+go stale, at the cost of being able to change behaviour on its own. To pin it,
+`TA_GEMINI_MODEL=gemini-3.6-flash` in `.env`, one line.
 
-Saída estruturada via `response_schema` com modelos Pydantic, conferido contra o
-SDK instalado (google-genai 2.17.0) em vez de assumido.
+Structured output through `response_schema` with Pydantic models, checked against
+the installed SDK rather than assumed.
+
+NOTE ON LANGUAGE: the prompt bodies and the `description=` of every schema field
+stay in Portuguese, and that is deliberate (ADR 0013). They are not code — they
+are text sent to the model, and rewriting them would change its behaviour with no
+way to compare before and after without burning calls. What `TA_LANG` changes is
+the language the model **answers** in, through a system instruction in one place.
 """
 
 from __future__ import annotations
@@ -21,7 +27,7 @@ from datetime import date
 from pydantic import BaseModel, Field
 
 from . import i18n
-from .notes import TAGS_SUGERIDAS
+from .notes import SUGGESTED_TAGS
 
 log = logging.getLogger("ta.llm")
 
@@ -29,10 +35,10 @@ DEFAULT_MODEL = "gemini-flash-latest"
 
 
 class LLMUnavailable(RuntimeError):
-    """Sem chave, sem SDK ou sem rede. Mensagem para o usuário ler."""
+    """No key, no SDK or no network. The message is for a human to read."""
 
 
-# ── Schemas de saída ────────────────────────────────────────────────────────
+# ── Output schemas ──────────────────────────────────────────────────────────
 class NotePlacement(BaseModel):
     id: int = Field(description="id da nota")
     group: str = Field(description="nome curto do grupo temático")
@@ -59,11 +65,12 @@ class EventCandidate(BaseModel):
 
 
 class CaptureReview(BaseModel):
-    """A segunda passada sobre uma Note recém-capturada.
+    """The second pass over a freshly captured Note.
 
-    Corrige o parser e classifica a intenção na **mesma** chamada: decidir se
-    "hoje" é prazo e decidir se a nota é compromisso são a mesma pergunta sobre
-    a frase, e duas idas ao modelo custariam o dobro pelo mesmo raciocínio.
+    It corrects the parser and classifies the intent in the **same** call:
+    deciding whether "today" is a deadline and deciding whether the note is an
+    appointment are the same question about the sentence, and two round trips to
+    the model would cost double for the same reasoning.
     """
 
     intent: str = Field(
@@ -76,8 +83,8 @@ class CaptureReview(BaseModel):
     remind_at: str = Field(
         default="", description="lembrete correto em ISO (2026-08-14T08:30), ou vazio para NENHUM"
     )
-    # Valor canônico, independente do idioma da resposta: é campo estruturado que
-    # vai para o banco, não texto para o usuário ler (emenda do ADR 0006).
+    # A canonical value, independent of the answer's language: it is a structured
+    # field that goes to the database, not text for a human (amendment to ADR 0006).
     priority: str = Field(
         default="", description="'high', 'medium', 'low', ou vazio se não der para dizer"
     )
@@ -99,7 +106,7 @@ class Prose(BaseModel):
     text: str
 
 
-# ── Cliente ─────────────────────────────────────────────────────────────────
+# ── Client ──────────────────────────────────────────────────────────────────
 class LLM:
     def __init__(self, api_key: str | None, model: str | None = None) -> None:
         self.api_key = api_key
@@ -114,42 +121,41 @@ class LLM:
         if self._client is not None:
             return self._client
         if not self.api_key:
-            raise LLMUnavailable(i18n.t("ai.sem_chave"))
+            raise LLMUnavailable(i18n.t("ai.no_key"))
         try:
             from google import genai
         except ImportError as e:  # pragma: no cover - dependência declarada
-            raise LLMUnavailable(i18n.t("ai.sem_sdk")) from e
+            raise LLMUnavailable(i18n.t("ai.no_sdk")) from e
         self._client = genai.Client(api_key=self.api_key)
         return self._client
 
-    # ── Idioma de saída ─────────────────────────────────────────────────────
-    # O corpo dos prompts segue em português — é a fonte, e reescrevê-los mudaria
-    # o comportamento do modelo sem que eu tenha como comparar antes e depois sem
-    # queimar chamadas. O que muda com `TA_LANG` é o idioma em que ele RESPONDE,
-    # e isso cabe numa instrução de sistema, num lugar só.
+    # ── Output language ─────────────────────────────────────────────────────
+    # What changes with `TA_LANG` is the language the model ANSWERS in, and that
+    # fits in a system instruction, in one place. See the module docstring for why
+    # the prompts themselves stay put.
     #
-    # Só a prosa é traduzida. Campo estruturado (`priority`, `status`) é canônico:
-    # sem essa distinção, a revisão devolveria "alta" sob `TA_LANG=pt`, a
-    # validação recusaria por não estar no enum, e a prioridade sumiria em
-    # silêncio (emenda do ADR 0006).
-    IDIOMA_DE_SAIDA = {
+    # Only prose is translated. A structured field (`priority`, `status`) is
+    # canonical: without that distinction, review would return "alta" under
+    # `TA_LANG=pt`, validation would reject it for not being in the enum, and the
+    # priority would vanish silently (amendment to ADR 0006).
+    OUTPUT_LANGUAGE = {
         "pt": "Escreva todo texto livre em português do Brasil.",
         "en": "Write all free text in English.",
     }
 
-    def _sistema(self, system: str = "") -> str:
+    def _system(self, system: str = "") -> str:
         from .i18n import lang
 
-        regra = (
-            f"{self.IDIOMA_DE_SAIDA[lang()]} "
+        rule = (
+            f"{self.OUTPUT_LANGUAGE[lang()]} "
             "Isso vale para prosa e para nomes de grupo, NUNCA para campos de "
             "valor fixo como prioridade ou status, que têm um vocabulário próprio "
             "definido no schema."
         )
-        return f"{system}\n\n{regra}".strip()
+        return f"{system}\n\n{rule}".strip()
 
     async def _structured(self, prompt: str, schema: type[BaseModel], system: str = ""):
-        """Uma chamada com saída validada contra o schema."""
+        """One call with output validated against the schema."""
         import asyncio
 
         from google.genai import types
@@ -158,40 +164,40 @@ class LLM:
         cfg = types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=schema,
-            system_instruction=self._sistema(system),
+            system_instruction=self._system(system),
         )
         try:
             resp = await asyncio.to_thread(
                 client.models.generate_content, model=self.model, contents=prompt, config=cfg
             )
         except Exception as e:
-            raise LLMUnavailable(i18n.t("ai.falhou", erro=e)) from e
+            raise LLMUnavailable(i18n.t("ai.failed", erro=e)) from e
 
-        # `parsed` é a instância validada; o SDK a preenche quando há schema.
+        # `parsed` is the validated instance; the SDK fills it when there is a schema.
         if getattr(resp, "parsed", None) is None:
-            raise LLMUnavailable(i18n.t("ai.fora_do_schema"))
+            raise LLMUnavailable(i18n.t("ai.off_schema"))
         return resp.parsed
 
     async def list_models(self) -> list[str]:
         import asyncio
 
         client = self._get()
-        modelos = await asyncio.to_thread(lambda: list(client.models.list()))
+        models = await asyncio.to_thread(lambda: list(client.models.list()))
         return [
             m.name.replace("models/", "")
-            for m in modelos
+            for m in models
             if "generateContent" in (m.supported_actions or [])
         ]
 
-    # ── As três chamadas ────────────────────────────────────────────────────
+    # ── The three calls ─────────────────────────────────────────────────────
     async def organize(self, notes: list[dict], priorities: str) -> OrganizeResult:
-        """Agrupa e ordena. O resultado é GRAVADO pelo chamador (ADR 0003).
+        """Group and order. The result is STORED by the caller (ADR 0003).
 
-        O prazo **não** é assunto desta chamada. A faixa de horizonte é derivada
-        do relógio e vem na frente de tudo na exibição (ADR 0010), então pedir
-        urgência ao modelo era pedir que ele competisse com uma regra que sempre
-        ganha dele. O que sobra é o que só ele sabe fazer: agrupar por tema e ver
-        o que desbloqueia o quê.
+        The deadline is **not** this call's business. The horizon band is derived
+        from the clock and comes ahead of everything at display time (ADR 0010),
+        so asking the model for urgency was asking it to compete with a rule that
+        always beats it. What is left is what only it can do: group by theme and
+        see what unblocks what.
         """
         linhas = "\n".join(
             f"- id={n['id']} | {n['text']}"
@@ -224,7 +230,7 @@ class LLM:
         )
 
     async def detect_event(self, text: str) -> EventCandidate:
-        """Extrai candidato a evento. Nunca cria nada — quem decide é o usuário."""
+        """Extract an event candidate. It never creates anything — the user decides."""
         return await self._structured(
             prompt=(
                 f"Hoje é {date.today().isoformat()}, um "
@@ -249,33 +255,36 @@ class LLM:
         due: str | None,
         remind_at: str | None,
         priorities: str = "",
-        contas: str = "",
+        accounts: str = "",
     ) -> CaptureReview:
-        """Relê uma Note capturada e corrige o que o regex não podia saber.
+        """Re-read a captured Note and correct what the regex could not know.
 
-        O parser acerta a **forma** ("hoje" é uma data) e erra a **intenção**
-        ("hoje aprendi X" não é prazo). Esta passada é o oposto: entende intenção
-        e não precisa acertar formato, porque o schema já o impõe.
+        The parser gets the **form** right ("today" is a date) and the
+        **intention** wrong ("today I learned X" is not a deadline). This pass is
+        the opposite: it understands intent and does not need to get the format
+        right, because the schema already enforces it.
         """
-        hoje = date.today()
-        dia = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"][
-            hoje.weekday()
+        today = date.today()
+        # The weekday name is prompt content, so it stays Portuguese along with
+        # the rest of the prompt (see the module docstring).
+        weekday_name = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"][
+            today.weekday()
         ]
-        # Sem o perfil, "revisar o consumer do Kafka" obriga o modelo a adivinhar
-        # que Kafka é trabalho. O contexto foi coletado na entrevista do `ta init`
-        # e está gravado; não passá-lo era jogar fora a única informação que
-        # resolve o roteamento pessoal/trabalho.
-        contexto = f"Contexto de quem escreveu:\n{priorities}\n\n" if priorities else ""
-        if contas:
-            contexto += f"Contas disponíveis: {contas}.\n\n"
+        # Without the profile, "review the Kafka consumer" forces the model to
+        # guess that Kafka is work. The context was collected in the `ta init`
+        # interview and is stored; not passing it threw away the one piece of
+        # information that resolves personal/work routing.
+        context = f"Contexto de quem escreveu:\n{priorities}\n\n" if priorities else ""
+        if accounts:
+            context += f"Contas disponíveis: {accounts}.\n\n"
 
         return await self._structured(
             prompt=(
-                f"Hoje é {hoje.isoformat()}, uma {dia}.\n"
+                f"Hoje é {today.isoformat()}, uma {weekday_name}.\n"
                 f'Nota capturada: "{text}"\n'
                 f"O parser determinístico marcou prazo={due or 'nenhum'} e "
                 f"lembrete={remind_at or 'nenhum'}.\n\n"
-                f"{contexto}"
+                f"{context}"
                 "Revise. O parser lê datas por padrão de texto e não entende intenção, "
                 "então ele erra em frases retrospectivas: 'hoje aprendi X' é um registro "
                 "do que já aconteceu, não um prazo — nesse caso devolva due e remind_at "
@@ -289,7 +298,7 @@ class LLM:
                 "prioridade nenhuma; 'tarefa' para o que tem de ser feito; "
                 "'compromisso' para hora marcada.\n"
                 f"Classifique também: escolha 1 ou 2 tags EXCLUSIVAMENTE desta lista "
-                f"({', '.join(TAGS_SUGERIDAS)}) e uma prioridade, usando o que o "
+                f"({', '.join(SUGGESTED_TAGS)}) e uma prioridade, usando o que o "
                 "contexto diz sobre o que não pode cair e o que costuma ser adiado. "
                 "Se não der para dizer a prioridade, deixe vazia em vez de chutar."
             ),

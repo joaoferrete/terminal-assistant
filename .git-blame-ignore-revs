@@ -1,0 +1,69 @@
+# Commits that only renamed things, for `git blame` to skip.
+#
+# Turn it on once per clone:
+#
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Without it, blaming almost any file in `src/` credits the translation pass for
+# nearly every line, and the history stops answering "why is this line here?" —
+# which is the whole point of the way this repository comments.
+#
+# Only PURE renames belong here. Several commits from the same pass also fixed
+# real defects the translation exposed, or moved a string into the catalogue;
+# those are deliberately absent, because skipping them would hide the change.
+# Their subjects say so — anything with ", e ..." did a second thing.
+
+# Traduz db.py e notes.py para inglês
+fa9b6d0ad5d1b841d966bfaea89cbda1d1a76e59
+
+# Traduz engine, scheduler, capabilities e priorities
+7c6c9db81b846eaa0bab113dabf08b85a75bd0bf
+
+# Traduz notify, mic e lighter
+f76691fe204670937ee1d51791f2d7bbd46b7490
+
+# Traduz llm.py, preservando o que vai para o modelo
+fda2464385b9ea9991936d8f34cde9689d2d8388
+
+# Traduz a primeira metade de daemon.py
+f0a2d716b7c0390d65759f7efd3c7dd446a9f270
+
+# Traduz o pipeline de revisão e a criação de evento do daemon
+9396a0e299268eefdb3edeb7e17c63f2eb4c5ad8
+
+# daemon.py: zero português
+7c4354b959042d11f2ba3749d51fa0acd8630f5f
+
+# Traduz os exemplos: demo.py e a regra de reunião
+45ffe0f283abe0a291d5d87a8f44cca111dd2cfb
+
+# ── The test suite ──────────────────────────────────────────────────────────
+# Traduz conftest, test_cli e a suíte da regra de reunião
+5177686bd1d0bd3d27b30be6225f0518a1ac4849
+
+# Traduz scheduler, docs_links, sensors_mic e home nos testes
+e076e3d66b3d599c5039cb923061acbe237d9dd2
+
+# Traduz os testes de db e de engine
+52b8795036699392e4af6198cd637700e1138974
+
+# Traduz os testes de config do usuário e de capacidades
+5797ce409246463c1ccb5e88de8aa4f0ce3a937c
+
+# Traduz o teste de segurança e renomeia para test_security.py
+d7bedb10ca454380a0da4d5a857b97139ae3a6e8
+
+# Traduz o teste do parser de notas
+c77c917a5223553dbf2a71224a9ef2d41ad216f3
+
+# Traduz o teste do store
+25437e52bccb98f678a3036f2d6585a8001df83f
+
+# Traduz o teste da documentação
+73bec9a557685bd9cec926b8559ccd94ed73815d
+
+# Traduz o teste de i18n
+fa901bd18987176f2b518cd5b551883dfd534c55
+
+# Traduz o teste do daemon, o último dos 14
+c297621d12aef0e05ede1ec6f429530fef18c2a7

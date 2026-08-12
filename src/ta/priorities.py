@@ -1,11 +1,18 @@
-"""Priorities: a descrição, mantida pelo usuário, do que importa para ele.
+"""Priorities: the user's own description of what matters to them.
 
-Sem isso, "prioridade" é chute — foi o motivo de o próprio usuário pedir a
-entrevista inicial. É markdown, não formulário: mais expressivo, e editável por
-prompt ("prioriza estudo acima de trabalho" reescreve o arquivo).
+Without it, "priority" is a guess — which is why the initial interview exists at
+all. It is markdown, not a form: more expressive, and editable by prompt
+("put study above work" rewrites the document).
 
-Guardado no SQLite com histórico, para que uma reescrita por prompt seja
-auditável em vez de destrutiva.
+Stored in SQLite with history, so that a rewrite by prompt is auditable rather
+than destructive.
+
+KNOWN GAP: the interview questions and the document template are still
+Portuguese, regardless of `TA_LANG`. They were left alone deliberately — the
+template's headings end up **inside the stored document**, so translating them
+would make an existing profile inconsistent with a new one, and the fix needs to
+decide what happens to documents already written. It is a data question, not a
+translation one.
 """
 
 from __future__ import annotations
@@ -15,9 +22,9 @@ from datetime import datetime
 
 from .db import transaction
 
-# As perguntas da primeira execução. Poucas de propósito: um questionário longo
-# não é respondido.
-PERGUNTAS = [
+# The questions for the first run. Few on purpose: a long questionnaire does not
+# get answered.
+QUESTIONS = [
     ("trabalho", "O que você faz, e em que contexto? (ex: backend numa fintech)"),
     ("importa", "O que você não pode deixar cair, mesmo numa semana ruim?"),
     ("adia", "O que costuma ficar para depois e você preferia que não ficasse?"),
@@ -57,7 +64,7 @@ def history(conn: sqlite3.Connection, limit: int = 10) -> list[tuple[str, str]]:
 
 
 def save(conn: sqlite3.Connection, content: str, *, now: datetime | None = None) -> None:
-    """Grava uma nova versão. Nunca sobrescreve: o histórico é a auditoria."""
+    """Store a new version. Never overwrites: the history is the audit trail."""
     now = now or datetime.now()
     with transaction(conn):
         conn.execute(
@@ -66,25 +73,25 @@ def save(conn: sqlite3.Connection, content: str, *, now: datetime | None = None)
         )
 
 
-def from_answers(respostas: dict[str, str]) -> str:
+def from_answers(answers: dict[str, str]) -> str:
     return TEMPLATE.format(
-        **{chave: (respostas.get(chave) or "(não informado)").strip() for chave, _ in PERGUNTAS}
+        **{key: (answers.get(key) or "(não informado)").strip() for key, _ in QUESTIONS}
     )
 
 
-async def rewrite(conn: sqlite3.Connection, llm, instrucao: str) -> str:
-    """Reescreve o markdown a partir de uma instrução em linguagem natural.
+async def rewrite(conn: sqlite3.Connection, llm, instruction: str) -> str:
+    """Rewrite the markdown from a plain-language instruction.
 
-    Uma nova versão é gravada; a anterior fica no histórico. É o "alterável via
-    prompt" pedido, sem virar destrutivo.
+    A new version is stored; the previous one stays in the history. It is the
+    "editable by prompt" that was asked for, without becoming destructive.
     """
     from .llm import Prose
 
-    atual = current(conn) or "# Prioridades\n\n(vazio)\n"
-    novo = await llm._structured(
+    existing = current(conn) or "# Prioridades\n\n(vazio)\n"
+    updated = await llm._structured(
         prompt=(
-            f"Documento atual de prioridades:\n\n{atual}\n\n"
-            f"Instrução da pessoa: {instrucao}\n\n"
+            f"Documento atual de prioridades:\n\n{existing}\n\n"
+            f"Instrução da pessoa: {instruction}\n\n"
             "Devolva o documento inteiro reescrito em markdown, aplicando a "
             "instrução e preservando tudo que ela não pediu para mudar."
         ),
@@ -94,5 +101,5 @@ async def rewrite(conn: sqlite3.Connection, llm, instrucao: str) -> str:
             "parcimônia: aplique o que foi pedido e não reescreva o resto."
         ),
     )
-    save(conn, novo.text)
-    return novo.text
+    save(conn, updated.text)
+    return updated.text

@@ -154,7 +154,7 @@ because "there are no notes" and "the filter is hiding everything" looked
 identical and the second one is alarming.
 
 Deleting is reversible. `×` on a card asks for a second click, then moves the
-note to `/board#lixeira` — a hash-hidden screen, because it is a recovery tool
+note to `/board#trash` — a hash-hidden screen, because it is a recovery tool
 and not part of anyone's day. `ta restore <id>` does the same from the terminal.
 
 **Deleted is not `cancelled`.** `cancelled` means "I decided not to do this" and

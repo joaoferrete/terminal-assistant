@@ -1,38 +1,38 @@
-"""Isolamento que vale para a suíte inteira.
+"""Isolation that holds for the whole suite.
 
-O idioma e a configuração do usuário são resolvidos uma vez por processo e
-ficam em `lru_cache` — é o certo em produção, onde nada disso muda com o daemon
-de pé, e é veneno num processo de teste, onde um teste que fixa `TA_LANG=en`
-deixa o cache assim para todos os que vierem depois.
+The language and the user configuration are resolved once per process and then
+sit in an `lru_cache` — the right thing in production, where none of it changes
+while the daemon is up, and poison in a test process, where one test that pins
+`TA_LANG=en` leaves the cache that way for everything that runs after it.
 
-Aconteceu de verdade: `test_i18n` passou a rodar antes de `test_notes` e treze
-testes de parser em português começaram a falhar sem que nada relacionado a eles
-tivesse mudado. O sintoma aponta para o lugar errado, que é o que torna esse tipo
-de acoplamento caro.
+It really happened: `test_i18n` started running before `test_notes` and thirteen
+Portuguese parser tests began failing with nothing related to them having
+changed. The symptom points at the wrong place, which is what makes this kind of
+coupling expensive.
 """
 import pytest
 
-# O idioma da suíte é FIXADO, e não herdado da máquina.
+# The suite's language is PINNED, not inherited from the machine.
 #
-# Sem isto, `i18n.lang()` cai no locale de quem roda: na máquina do autor
-# (`pt_BR.UTF-8`) o parser ficava em português e os 17 testes de `@sexta`,
-# `3 de fevereiro` e `hoje eu preciso` passavam; no runner do CI, que não define
-# `LANG`, o padrão vira `en` e todos falhavam.
+# Without this, `i18n.lang()` falls back to the locale of whoever runs it: on the
+# author's machine (`pt_BR.UTF-8`) the parser stayed Portuguese and the 17 tests
+# for `@sexta`, `3 de fevereiro` and `hoje eu preciso` passed; on the CI runner,
+# which sets no `LANG`, the default becomes `en` and every one of them failed.
 #
-# Foi o CI que pegou, na primeira execução — que é exatamente para isso que ele
-# serve. Um teste que depende do ambiente de quem o roda não está testando o
-# código, está testando a máquina.
+# CI caught it on the very first run — which is exactly what CI is for. A test
+# that depends on the environment of whoever runs it is not testing the code, it
+# is testing the machine.
 #
-# `pt` porque é o que a maioria dos testes de parser exercita. Quem precisa do
-# outro idioma o declara por teste, como `test_i18n` faz.
-IDIOMA_DA_SUITE = "pt"
+# `pt` because that is what most of the parser tests exercise. Anything that
+# needs the other language declares it per test, the way `test_i18n` does.
+SUITE_LANGUAGE = "pt"
 
 
 @pytest.fixture(autouse=True)
-def _caches_limpos(monkeypatch):
+def _clean_caches(monkeypatch):
     from ta import config, i18n
 
-    monkeypatch.setenv("TA_LANG", IDIOMA_DA_SUITE)
+    monkeypatch.setenv("TA_LANG", SUITE_LANGUAGE)
     i18n.reset_cache()
     config._user_config.cache_clear()
     yield

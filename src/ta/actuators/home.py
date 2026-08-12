@@ -1,15 +1,17 @@
-"""Cliente do Home Assistant.
+"""Home Assistant client.
 
-O HA é a única camada que conhece protocolo de aparelho (ADR 0001). Este módulo
-só fala `entity_id` e serviços — nunca Tuya, nunca Zigbee, nunca IP.
+Home Assistant is the only layer that knows about device protocols (ADR 0001).
+This module speaks only `entity_id` and services — never Tuya, never Zigbee,
+never an IP address.
 
-**Estado por polling, não WebSocket.** O plano previa WS, e a troca é deliberada:
-WS exigiria uma dependência nova e uma máquina de reconexão, e o único consumidor
-de estado empurrado seria o gatilho `entity_state`, que não está no caminho da
-regra que motivou o projeto (essa usa microfone e hora). Polling de alguns
-segundos numa casa com três aparelhos custa nada e não tem estado para
-ressincronizar quando a rede oscila. Se um dia um gatilho precisar de latência
-sub-segundo, WS entra aqui sem mexer em quem chama.
+**State by polling, not WebSocket.** The plan called for WS, and the swap was
+deliberate: WS would need a new dependency and a reconnection state machine, and
+the only consumer of pushed state would be the `entity_state` trigger, which is
+not on the path of the rule that motivated the project (that one uses the
+microphone and the clock). Polling every few seconds in a house with three
+appliances costs nothing and has no state to resynchronise when the network
+wobbles. If a trigger ever needs sub-second latency, WS goes in here without
+touching any caller.
 """
 
 from __future__ import annotations
@@ -21,6 +23,8 @@ from typing import Any
 
 import httpx
 
+from .. import i18n
+
 log = logging.getLogger("ta.home")
 
 TIMEOUT = 8.0
@@ -28,7 +32,7 @@ POLL_S = 5.0
 
 
 class HomeError(RuntimeError):
-    """Falha ao falar com o HA. Mensagem pensada para o usuário ler."""
+    """A failure talking to Home Assistant. The message is for a human to read."""
 
 
 class Home:
@@ -44,10 +48,7 @@ class Home:
     async def _http(self) -> httpx.AsyncClient:
         if self._client is None:
             if not self.token:
-                raise HomeError(
-                    "HA_TOKEN não está configurado. Confira o .env e "
-                    "`curl localhost:7777/health`."
-                )
+                raise HomeError(i18n.t("home.no_token"))
             self._client = httpx.AsyncClient(
                 base_url=self.url,
                 headers={"Authorization": f"Bearer {self.token}"},
@@ -65,16 +66,16 @@ class Home:
         try:
             r = await client.request(method, path, json=payload)
         except httpx.ConnectError as e:
-            raise HomeError(f"Home Assistant não responde em {self.url}. `docker ps`?") from e
+            raise HomeError(i18n.t("home.unreachable", url=self.url)) from e
         except httpx.TimeoutException as e:
-            raise HomeError(f"Home Assistant não respondeu em {TIMEOUT:.0f}s.") from e
+            raise HomeError(i18n.t("home.timeout", s=f"{TIMEOUT:.0f}")) from e
         if r.status_code == 401:
-            raise HomeError("HA recusou o token (401). Ele foi revogado?")
+            raise HomeError(i18n.t("home.token_rejected"))
         if r.status_code >= 400:
             raise HomeError(f"HA respondeu {r.status_code}: {r.text[:200]}")
         return r.json() if r.content else None
 
-    # ── Leitura ─────────────────────────────────────────────────────────────
+    # ── Reading ─────────────────────────────────────────────────────────────
     async def state(self, entity_id: str) -> dict:
         return await self._request("GET", f"/api/states/{entity_id}")
 
@@ -82,13 +83,13 @@ class Home:
         return await self._request("GET", "/api/states")
 
     async def entities(self, *prefixes: str) -> list[dict]:
-        """Entities filtradas por domínio, para `ta luz --list`."""
-        todos = await self.states()
+        """Entities filtered by domain, for `ta entities`."""
+        everything = await self.states()
         if not prefixes:
-            return todos
-        return [e for e in todos if e["entity_id"].startswith(prefixes)]
+            return everything
+        return [e for e in everything if e["entity_id"].startswith(prefixes)]
 
-    # ── Comandos ────────────────────────────────────────────────────────────
+    # ── Commands ────────────────────────────────────────────────────────────
     async def call(self, domain: str, service: str, entity_id: str, **data: Any) -> Any:
         return await self._request(
             "POST", f"/api/services/{domain}/{service}", {"entity_id": entity_id, **data}
@@ -103,12 +104,13 @@ class Home:
         return await self.call(domain, "turn_off", entity_id)
 
     async def switch_on(self, entity_id: str, brightness_pct: int | None = None) -> Any:
-        """Liga a Entity, ciente do domínio.
+        """Turn the Entity on, aware of its domain.
 
-        `brightness_pct` só existe no domínio `light`. Uma versão anterior disto
-        chamava `light/turn_on` fixo, e num `switch` o HA respondia 200 sem fazer
-        nada — falha silenciosa, o pior tipo. Aqui o brilho é ignorado com aviso
-        quando o domínio não o suporta, em vez de o comando sumir.
+        `brightness_pct` only exists in the `light` domain. An earlier version of
+        this called `light/turn_on` unconditionally, and on a `switch` Home
+        Assistant answered 200 and did nothing — a silent failure, the worst kind.
+        Here the brightness is ignored with a warning when the domain does not
+        support it, rather than the command vanishing.
         """
         domain = entity_id.split(".", 1)[0]
         if brightness_pct is None:
@@ -118,76 +120,85 @@ class Home:
         if pct == 0:
             return await self.turn_off(entity_id)
         if domain != "light":
-            log.info("%s não é light: brilho ignorado, ligando normalmente", entity_id)
+            log.info("%s is not a light: brightness ignored, turning on normally", entity_id)
             return await self.turn_on(entity_id)
         return await self.call("light", "turn_on", entity_id, brightness_pct=pct)
 
-    # Nome antigo mantido para as Rules já escritas.
+    # The old name, kept for Rules that are already written.
     async def light(self, entity_id: str, brightness_pct: int) -> Any:
         return await self.switch_on(entity_id, brightness_pct)
 
-    async def confirm(self, entity_id: str, esperado: str, tries: int = 12) -> tuple[str, bool]:
-        """Espera o estado virar o esperado. Devolve (estado, confirmado).
+    async def confirm(self, entity_id: str, expected: str, tries: int = 12) -> tuple[str, bool]:
+        """Wait for the state to become the expected one. Returns (state, confirmed).
 
-        Necessário porque ler o estado imediatamente depois de chamar o serviço
-        devolve o valor ANTIGO: o comando vai para a nuvem da Tuya e volta em
-        300–800ms. Sem isto, `ta on` reportava `off` e parecia não ter funcionado
-        — foi exatamente como o bug se apresentou.
+        Necessary because reading the state right after calling the service
+        returns the OLD value: the command round-trips through the vendor's cloud
+        and comes back in 300–800ms. Without this, `ta on` reported `off` and
+        looked like it had not worked — which is exactly how the bug showed up.
 
-        Falha em confirmar não é falha em comandar, e por isso o chamador recebe
-        os dois valores em vez de uma exceção.
+        Failing to confirm is not failing to command, which is why the caller gets
+        both values instead of an exception.
         """
         for _ in range(tries):
-            estado = (await self.state(entity_id)).get("state", "unknown")
-            if estado == esperado:
-                return estado, True
+            state = (await self.state(entity_id)).get("state", "unknown")
+            if state == expected:
+                return state, True
             await asyncio.sleep(0.25)
-        return estado, False
+        return state, False
 
-    # ── Sensores ────────────────────────────────────────────────────────────
+    # ── Sensors ─────────────────────────────────────────────────────────────
     async def sensors(self) -> dict:
-        """Resumo curado: clima, roteador e consumo da tomada.
+        """A curated summary: weather, router and the plug's consumption.
 
-        Curado de propósito. As 17 entidades `sensor` incluem seis do módulo Sun e
-        quatro do backup do HA, que não são o que alguém quer ver ao perguntar
-        "como está a casa".
+        Curated on purpose. A raw sensor dump is mostly sun-position and backup
+        entities, which is not what anyone means by "how is the house?".
         """
-        todos = {e["entity_id"]: e for e in await self.states()}
+        from ..config import sensors as sensor_map
 
-        def val(eid: str):
-            e = todos.get(eid)
+        roles = sensor_map()
+        everything = {e["entity_id"]: e for e in await self.states()}
+
+        def val(role: str):
+            """The state behind a role, or None when the role is not mapped.
+
+            None here means two different things — "you did not configure this"
+            and "the sensor is unavailable" — and that is deliberate: to the
+            caller they are the same absence, and `ta doctor` is where the
+            difference gets explained.
+            """
+            e = everything.get(roles.get(role, ""))
             if e is None or e["state"] in ("unknown", "unavailable", None):
                 return None
             return e["state"]
 
-        clima = todos.get("weather.forecast_casa") or {}
-        attrs = clima.get("attributes", {})
+        weather = everything.get(roles.get("weather", "")) or {}
+        attrs = weather.get("attributes", {})
 
         return {
             "weather": {
-                "condition": clima.get("state"),
+                "condition": weather.get("state"),
                 "temperature": attrs.get("temperature"),
                 "unit": attrs.get("temperature_unit"),
                 "humidity": attrs.get("humidity"),
                 "wind_speed": attrs.get("wind_speed"),
             },
             "router": {
-                "external_ip": val("sensor.s7_external_ip"),
-                "download_kib_s": val("sensor.s7_download_speed"),
-                "upload_kib_s": val("sensor.s7_upload_speed"),
+                "external_ip": val("external_ip"),
+                "download_kib_s": val("download"),
+                "upload_kib_s": val("upload"),
             },
-            # A tomada mede corrente, então dá para saber se o ventilador está
-            # realmente puxando energia — diferente de "o interruptor está ligado".
+            # The plug measures current, so we can tell whether the fan is
+            # actually drawing power — different from "the switch is on".
             "outlet": {
-                "state": val("switch.ventilador_socket_1"),
-                "watts": val("sensor.ventilador_energia"),
-                "volts": val("sensor.ventilador_tensao"),
-                "amps": val("sensor.ventilador_corrente"),
-                "kwh_total": val("sensor.ventilador_energia_total"),
+                "state": val("outlet"),
+                "watts": val("watts"),
+                "volts": val("volts"),
+                "amps": val("amps"),
+                "kwh_total": val("kwh_total"),
             },
         }
 
-    # ── Mídia (Echo via alexa_media_player entra por aqui; ADR 0009) ─────────
+    # ── Media (Echo via alexa_media_player comes through here; ADR 0009) ─────
     async def volume(self, entity_id: str, level_pct: int) -> Any:
         pct = max(0, min(100, level_pct))
         return await self.call("media_player", "volume_set", entity_id, volume_level=pct / 100)
@@ -200,19 +211,19 @@ class Home:
 
     async def media(self, entity_id: str, action: str) -> Any:
         """`play`, `pause`, `stop`, `next`, `previous`."""
-        servicos = {
+        services = {
             "play": "media_play", "pause": "media_pause", "stop": "media_stop",
             "next": "media_next_track", "previous": "media_previous_track",
         }
-        if action not in servicos:
-            raise HomeError(f"ação de mídia inválida: {action}. Use: {', '.join(servicos)}")
-        return await self.call("media_player", servicos[action], entity_id)
+        if action not in services:
+            raise HomeError(f"invalid media action: {action}. Use: {', '.join(services)}")
+        return await self.call("media_player", services[action], entity_id)
 
     async def announce(self, entity_id: str, message: str) -> Any:
-        """Anúncio de voz num Echo.
+        """A voice announcement on an Echo.
 
-        Sempre **adicional** à notificação de desktop, nunca substituto — a
-        integração da Alexa é a peça menos confiável do projeto (ADR 0009).
+        Always **additional** to the desktop notification, never a substitute —
+        the Alexa integration is the least reliable piece here (ADR 0009).
         """
         return await self.call(
             "media_player", "play_media", entity_id,
@@ -221,35 +232,35 @@ class Home:
 
 
 class StateWatcher:
-    """Observa mudanças de estado por polling e chama de volta nas transições."""
+    """Watches state changes by polling and calls back on transitions."""
 
     def __init__(
         self, home: Home, on_change: Callable[[str, str, str], Awaitable[None]]
     ) -> None:
         self.home = home
         self.on_change = on_change
-        self._anterior: dict[str, str] = {}
+        self._previous: dict[str, str] = {}
 
     async def tick(self) -> None:
         try:
-            atual = {e["entity_id"]: e["state"] for e in await self.home.states()}
+            current = {e["entity_id"]: e["state"] for e in await self.home.states()}
         except HomeError as e:
-            log.debug("polling de estado falhou: %s", e)
-            return  # HA fora do ar não é transição de estado
+            log.debug("state polling failed: %s", e)
+            return  # Home Assistant being down is not a state transition
 
-        if not self._anterior:              # primeira leitura só estabelece a base
-            self._anterior = atual
+        if not self._previous:              # the first read only sets the baseline
+            self._previous = current
             return
 
-        for entity_id, novo in atual.items():
-            velho = self._anterior.get(entity_id)
-            if velho is not None and velho != novo:
-                await self.on_change(entity_id, velho, novo)
-        self._anterior = atual
+        for entity_id, new in current.items():
+            old = self._previous.get(entity_id)
+            if old is not None and old != new:
+                await self.on_change(entity_id, old, new)
+        self._previous = current
 
     async def run(self) -> None:
         if not self.home.configured:
-            log.info("HA sem token: watcher de estado inerte")
+            log.info("Home Assistant has no token: the state watcher stays inert")
             return
         while True:
             try:
@@ -257,5 +268,5 @@ class StateWatcher:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                log.exception("tick de estado falhou; o laço continua")
+                log.exception("state tick failed; the loop carries on")
             await asyncio.sleep(POLL_S)

@@ -1,11 +1,11 @@
-"""Configuração: um lugar só, lida do ambiente.
+"""Configuration: one place, read from the environment.
 
-Segredos nunca vêm de arquivo versionado. O systemd unit aponta um
-`EnvironmentFile` para o `.env` da raiz, que está no `.gitignore`.
+Secrets never come from a versioned file. The systemd unit points an
+`EnvironmentFile` at the `.env` in the root, which is in `.gitignore`.
 
-Nomes de variável têm que ser válidos para shell e para systemd: letras,
-dígitos e `_`. Hífen não funciona em nenhum dos dois — foi um erro real no
-início do projeto e está registrado no ROADMAP.
+Variable names have to be valid for both the shell and systemd: letters, digits
+and `_`. A hyphen works in neither — that was a real mistake early in the
+project, and it cost an afternoon.
 """
 
 from __future__ import annotations
@@ -19,58 +19,58 @@ from pathlib import Path
 
 log = logging.getLogger("ta")
 
-# Loopback por padrão. O mural no celular continua possível, mas passou a exigir
-# dois atos deliberados — `TA_HOST` e `TA_TOKEN` —, porque o daemon expõe as notas
-# inteiras, o comando da casa e a chave do modelo, tudo sem credencial (ADR 0012).
-# Quem lê SECURITY.md já se preocupa; quem segue o passo a passo é quem não sabe
-# que devia.
+# Loopback by default. The board on a phone is still possible, but it now takes
+# two deliberate acts — `TA_HOST` and `TA_TOKEN` — because the daemon exposes
+# every note, the command over the house and the model key, all with no
+# credential (ADR 0012). Whoever reads SECURITY.md already worries; whoever
+# follows the step-by-step is the one who does not know they should.
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 7777
 
-# Endereços em que não há rede alheia alcançando o daemon. Fora desta lista,
-# `TA_TOKEN` é obrigatório e o daemon recusa subir sem ele.
+# Addresses where no other machine's network reaches the daemon. Outside this
+# list `TA_TOKEN` is mandatory and the daemon refuses to start without it.
 LOOPBACK = ("127.0.0.1", "::1", "localhost")
 
 
 class ConfigError(RuntimeError):
-    """Configuração que não dá para corrigir em runtime. O daemon não sobe."""
+    """Configuration that cannot be fixed at runtime. The daemon does not start."""
 
 
 def env_file() -> Path:
-    """O `.env` do projeto — o mesmo que o `EnvironmentFile` do systemd aponta."""
+    """The project's `.env` — the same one systemd's `EnvironmentFile` points at."""
     return Path(__file__).resolve().parents[2] / ".env"
 
 
 def load_env_file() -> Path | None:
-    """Carrega o `.env` no ambiente do processo, sem sobrescrever o que já existe.
+    """Load `.env` into the process environment, without overwriting what is there.
 
-    O daemon **não** precisa disto: o systemd já lhe entrega o arquivo. Quem
-    precisa é o CLI, e o `ta doctor` em particular — sem isto ele reportava
-    `HA_TOKEN não está definido` numa máquina onde o token estava configurado e
-    funcionando, porque o processo do CLI simplesmente não enxerga o arquivo.
+    The daemon does **not** need this: systemd already hands it the file. Who
+    needs it is the CLI, and `ta doctor` in particular — without it, it reported
+    `HA_TOKEN is not set` on a machine where the token was configured and
+    working, because the CLI process simply cannot see the file.
 
-    Falso negativo em diagnóstico é pior que diagnóstico nenhum: manda a pessoa
-    consertar o que não está quebrado.
+    A false negative in a diagnosis is worse than no diagnosis: it sends people
+    to fix what is not broken.
 
-    Não sobrescrever o ambiente existente importa: `TA_LANG=en ta doctor` tem de
-    continuar valendo mais que a linha do arquivo.
+    Not overwriting the existing environment matters: `TA_LANG=en ta doctor` has
+    to keep winning over the line in the file.
     """
-    caminho = env_file()
-    if not caminho.exists():
+    path = env_file()
+    if not path.exists():
         return None
     try:
-        for linha in caminho.read_text().splitlines():
-            linha = linha.strip()
-            if not linha or linha.startswith("#") or "=" not in linha:
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
                 continue
-            chave, _, valor = linha.partition("=")
-            chave = chave.strip()
-            if chave and chave not in os.environ:
-                os.environ[chave] = valor.strip().strip("\"'")
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if key and key not in os.environ:
+                os.environ[key] = value.strip().strip("\"'")
     except OSError as e:
-        log.warning("%s não pôde ser lido: %s", caminho, e)
+        log.warning("%s could not be read: %s", path, e)
         return None
-    return caminho
+    return path
 
 
 @dataclass(frozen=True)
@@ -80,16 +80,16 @@ class Config:
     ha_url: str = "http://localhost:8123"
     ha_token: str | None = None
     gemini_api_key: str | None = None
-    # Credencial do PRÓPRIO daemon, não de terceiro. Só é exigida quando o bind
-    # sai do loopback; em loopback fica None e nada muda no uso local.
+    # The daemon's OWN credential, not a third party's. Only required when the
+    # bind leaves loopback; on loopback it stays None and local use is unchanged.
     token: str | None = None
-    # Echo(s) para anúncio de voz. Vazio = ninguém para falar, e o Reminder
-    # continua avisando na tela — o caminho confiável nunca depende disto.
+    # Echo device(s) for voice announcements. Empty = nobody to speak to, and the
+    # Reminder still warns on screen — the reliable path never depends on this.
     echo_entities: tuple[str, ...] = ()
 
-    # Segunda passada do LLM sobre cada Note capturada. Ligada por padrão; custa
-    # uma chamada de modelo por captura, e `TA_AUTO_REVIEW=0` desliga sem tocar
-    # em código. Desligada, a captura continua funcionando com o regex sozinho.
+    # The LLM's second pass over each captured Note. On by default; it costs one
+    # model call per capture, and `TA_AUTO_REVIEW=0` turns it off without
+    # touching code. Off, capture still works with the regex alone.
     auto_review: bool = True
 
     @classmethod
@@ -109,46 +109,38 @@ class Config:
 
     @property
     def base_url(self) -> str:
-        """Endereço que o CLI usa para falar com o daemon."""
+        """The address the CLI uses to reach the daemon."""
         host = "127.0.0.1" if self.host in ("0.0.0.0", "::") else self.host  # noqa: S104
         return f"http://{host}:{self.port}"
 
     @property
     def exposed(self) -> bool:
-        """Se o bind alcança outra máquina. `0.0.0.0` e um IP de LAN alcançam."""
+        """Whether the bind reaches another machine. `0.0.0.0` and a LAN IP do."""
         return self.host not in LOOPBACK
 
     def check(self) -> None:
-        """Recusa uma configuração que exporia o daemon sem credencial.
+        """Refuse a configuration that would expose the daemon with no credential.
 
-        Falha alto e cedo, com o conserto na mensagem — mesmo espírito do
-        `make check-gi`. Um daemon que sobe e só depois se descobre aberto é pior
-        que um que não sobe: ninguém vai reler o log de boot.
+        Fails loudly and early, with the fix in the message — the same spirit as
+        `make check-gi`. A daemon that starts and is only discovered to be open
+        afterwards is worse than one that does not start: nobody rereads the boot
+        log.
         """
         if self.exposed and not self.token:
-            raise ConfigError(
-                f"TA_HOST={self.host} expõe o daemon na rede, e ele não tem\n"
-                "autenticação própria: qualquer um na mesma rede leria suas notas,\n"
-                "comandaria a casa e gastaria sua chave de modelo.\n"
-                "\n"
-                "Para abrir com credencial, gere um token e reinicie:\n"
-                "\n"
-                "    echo \"TA_TOKEN=$(python3 -c 'import secrets;"
-                " print(secrets.token_urlsafe(32))')\" >> .env\n"
-                "    systemctl --user restart ta\n"
-                "\n"
-                "Para voltar ao acesso só local, remova TA_HOST do .env."
-            )
+            from .i18n import t
+
+            raise ConfigError(t("config.exposed_without_token", host=self.host))
 
 
-# ── Configuração do usuário ─────────────────────────────────────────────────
-# Apelidos e grupos moram em `~/.config/ta/config.toml`, e não aqui. Enquanto o
-# repositório foi de uma pessoa só, ter `quarto = light.abajur` fixo no
-# código-fonte era prático. Aberto, isso significaria que configurar a própria
-# casa exige editar o pacote instalado — mudança que se perde em toda
-# reinstalação (ADR 0014).
+# ── User configuration ──────────────────────────────────────────────────────
+# Aliases and groups live in `~/.config/ta/config.toml`, not here. While the
+# repository belonged to one person, having `bedroom = light.lamp` fixed in the
+# source was practical. Opened up, it would mean configuring your own house
+# requires editing the installed package — a change lost on any reinstall
+# (ADR 0014).
 #
-# O caminho segue o mesmo padrão de `db.default_db_path()`, que já estava certo.
+# The path follows the same pattern as `db.default_db_path()`, which was already
+# right.
 def config_dir() -> Path:
     base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
     return base / "ta"
@@ -158,10 +150,14 @@ def config_file() -> Path:
     return config_dir() / "config.toml"
 
 
-# Grupos por domínio: `ta on luz` liga todas as luzes. Diferente dos apelidos,
-# estes não são pessoais — valem para qualquer casa —, então vêm embutidos e o
-# arquivo do usuário só acrescenta.
-GRUPOS_PADRAO: dict[str, tuple[str, ...]] = {
+# Groups by domain: `ta on luz` turns on every light. Unlike the aliases, these
+# are not personal — they hold for any house — so they ship built in and the
+# user's file only adds to them.
+#
+# The KEYS stay in Portuguese: they are what the user types, the same category as
+# `!alta` and `@sexta`. Renaming them would break a command somebody has in their
+# fingers, which is exactly what the alias table exists to prevent.
+DEFAULT_GROUPS: dict[str, tuple[str, ...]] = {
     "luz": ("light.",),
     "luzes": ("light.",),
     "tomada": ("switch.",),
@@ -172,42 +168,63 @@ GRUPOS_PADRAO: dict[str, tuple[str, ...]] = {
 
 @lru_cache(maxsize=1)
 def _user_config() -> dict:
-    """Lê `config.toml` uma vez. Ausente ou ilegível não é erro.
+    """Read `config.toml` once. Missing or unreadable is not an error.
 
-    Uma casa sem apelidos funciona: `ta on light.o_que_for` continua exato, e
-    `ta on quarto` casa por trecho do nome vindo do próprio Home Assistant. Falhar
-    o daemon por causa de um arquivo de conveniência seria desproporcional — mas
-    falhar **calado** por causa de TOML quebrado seria pior, então isso vira log.
+    A house with no aliases works: `ta on light.whatever` is still exact, and
+    `ta on bedroom` matches by substring against Home Assistant's own names.
+    Failing the daemon over a convenience file would be disproportionate — but
+    failing **silently** over broken TOML would be worse, so that becomes a log.
     """
-    caminho = config_file()
-    if not caminho.exists():
+    path = config_file()
+    if not path.exists():
         return {}
     try:
-        with caminho.open("rb") as f:
+        with path.open("rb") as f:
             return tomllib.load(f)
     except (OSError, tomllib.TOMLDecodeError) as e:
-        log.warning("%s ignorado: %s", caminho, e)
+        log.warning("%s ignored: %s", path, e)
         return {}
 
 
 def entity_aliases() -> dict[str, str]:
-    """Apelidos curtos para `entity_id`, do arquivo do usuário. Pode ser vazio."""
-    bruto = _user_config().get("aliases", {})
-    return {str(k): str(v) for k, v in bruto.items()} if isinstance(bruto, dict) else {}
+    """Short names for `entity_id`, from the user's file. May be empty."""
+    raw = _user_config().get("aliases", {})
+    return {str(k): str(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
 
 
 def groups() -> dict[str, tuple[str, ...]]:
-    """Os grupos embutidos, mais os do usuário. O do usuário vence no conflito."""
-    do_usuario = _user_config().get("groups", {})
+    """The built-in groups, plus the user's. The user's wins on a conflict."""
+    from_user = _user_config().get("groups", {})
     extras = (
-        {str(k): tuple(v) for k, v in do_usuario.items() if isinstance(v, list)}
-        if isinstance(do_usuario, dict)
+        {str(k): tuple(v) for k, v in from_user.items() if isinstance(v, list)}
+        if isinstance(from_user, dict)
         else {}
     )
-    return {**GRUPOS_PADRAO, **extras}
+    return {**DEFAULT_GROUPS, **extras}
 
 
-def _sem_acento(s: str) -> str:
+# Which `entity_id`s feed `ta temp` and `ta router`. They were HARDCODED in
+# `actuators/home.py` — eight ids from one specific house — which ADR 0014 had
+# already forbidden for the aliases and did not catch here. For anybody else, the
+# two commands returned nothing but nulls, silently.
+#
+# Empty is the default and is a valid state: with this unset, `ta temp` says
+# there is no sensor rather than lying with blanks.
+SENSOR_ROLES = (
+    "weather", "external_ip", "download", "upload",
+    "outlet", "watts", "volts", "amps", "kwh_total",
+)
+
+
+def sensors() -> dict[str, str]:
+    """From sensor role to `entity_id`, from the user's file."""
+    raw = _user_config().get("sensors", {})
+    if not isinstance(raw, dict):
+        return {}
+    return {k: str(v) for k, v in raw.items() if k in SENSOR_ROLES and v}
+
+
+def _strip_accents(s: str) -> str:
     import unicodedata
 
     return "".join(
@@ -215,17 +232,17 @@ def _sem_acento(s: str) -> str:
     )
 
 
-def _comandavel(e: dict) -> bool:
-    """Se a Entity é um aparelho, e não um ajuste do aparelho.
+def _commandable(e: dict) -> bool:
+    """Whether the Entity is an appliance, rather than a setting of one.
 
-    A tomada Ekasa expõe duas Entities: o socket, com `device_class: outlet`, e o
-    travamento infantil, **sem device_class nenhum**. `ta on tudo` estava ligando
-    a trava, que é configuração e não aparelho.
+    A smart plug can expose two Entities: the socket, with `device_class: outlet`,
+    and the child lock, with **no device_class at all**. `ta on tudo` was turning
+    on the lock, which is configuration and not an appliance.
 
-    A API REST do HA não expõe `entity_category`, então a presença de
-    `device_class` é o sinal disponível — e é um sinal de princípio, não um
-    casamento de nome. Vale só para grupos e ambientes: nomear a Entity
-    explicitamente continua ligando o que você pediu.
+    Home Assistant's REST API does not expose `entity_category`, so the presence
+    of `device_class` is the available signal — and it is a signal of principle,
+    not a name match. It applies only to groups and rooms: naming the Entity
+    explicitly still turns on exactly what you asked for.
     """
     if e["entity_id"].startswith("light."):
         return True
@@ -233,53 +250,53 @@ def _comandavel(e: dict) -> bool:
 
 
 def resolve_entity(name: str) -> str:
-    """Traduz apelido para entity_id. Um valor com ponto já é entity_id."""
+    """Translate an alias into an entity_id. A value with a dot already is one."""
     if "." in name:
         return name
     return entity_aliases().get(name, name)
 
 
 def resolve_targets(term: str, entities: list[dict]) -> list[str]:
-    """Resolve um termo para uma LISTA de entity_id.
+    """Resolve a term into a LIST of entity_id.
 
-    A ordem importa, do mais específico ao mais amplo:
+    The order matters, most specific to broadest:
 
-      1. `light.abajur`          — já é entity_id
-      2. `luz`, `tudo`            — grupo por domínio
-      3. `quarto`                 — apelido explícito
-      4. `sala`                   — ambiente, por trecho do nome
+      1. `light.lamp`   — already an entity_id
+      2. `luz`, `tudo`  — a group by domain
+      3. `bedroom`      — an explicit alias
+      4. `kitchen`      — a room, by substring of the name
 
-    Ambiente casa por trecho porque o HA não expõe áreas na API REST, e porque
-    isso pega luzes futuras do mesmo lugar sem eu ter que atualizar uma lista.
-    Busca sem acento e sem caso: `Lâmpada do quarto` casa com `quarto`.
+    A room matches by substring because Home Assistant does not expose areas over
+    the REST API, and because it picks up future lights in the same place without
+    anyone updating a list. The search ignores accents and case.
     """
     if "." in term:
         return [term]
 
-    chave = _sem_acento(term)
+    key = _strip_accents(term)
 
-    grupos = groups()
-    if chave in grupos:
-        prefixos = grupos[chave]
+    all_groups = groups()
+    if key in all_groups:
+        prefixes = all_groups[key]
         return [
             e["entity_id"]
             for e in entities
-            if e["entity_id"].startswith(prefixos) and _comandavel(e)
+            if e["entity_id"].startswith(prefixes) and _commandable(e)
         ]
 
-    apelidos = entity_aliases()
-    if chave in apelidos:
-        return [apelidos[chave]]
+    aliases = entity_aliases()
+    if key in aliases:
+        return [aliases[key]]
 
-    def casa(e: dict, prefixo: str) -> bool:
-        if not e["entity_id"].startswith(prefixo) or not _comandavel(e):
+    def matches(e: dict, prefix: str) -> bool:
+        if not e["entity_id"].startswith(prefix) or not _commandable(e):
             return False
-        nome = _sem_acento(e.get("attributes", {}).get("friendly_name") or "")
-        return chave in _sem_acento(e["entity_id"]) or chave in nome
+        name = _strip_accents(e.get("attributes", {}).get("friendly_name") or "")
+        return key in _strip_accents(e["entity_id"]) or key in name
 
-    # Luz primeiro: "ligar o quarto" quer dizer a luz, não o ventilador. Só cai
-    # para switch se nenhuma luz casar.
-    luzes = [e["entity_id"] for e in entities if casa(e, "light.")]
-    if luzes:
-        return luzes
-    return [e["entity_id"] for e in entities if casa(e, "switch.")]
+    # Lights first: "turn on the bedroom" means the lamp, not the fan. It only
+    # falls through to switches if no light matches.
+    lights = [e["entity_id"] for e in entities if matches(e, "light.")]
+    if lights:
+        return lights
+    return [e["entity_id"] for e in entities if matches(e, "switch.")]

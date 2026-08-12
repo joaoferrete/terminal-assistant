@@ -1,11 +1,12 @@
-"""Notificação de desktop.
+"""Desktop notifications.
 
-Caminho confiável e obrigatório de qualquer aviso. O anúncio no Echo é sempre
-*adicional* a isto, nunca substituto — ver ADR 0009: a integração da Alexa é a
-peça menos confiável do projeto, e o caminho frágil não pode ser o único.
+The reliable, mandatory path for any alert. An Echo announcement is always
+*additional* to this, never a substitute — see ADR 0009: the Alexa integration is
+the least reliable piece in the project, and the fragile path cannot be the only
+one.
 
-Usa `notify-send`, que fala com o barramento de sessão do usuário. É por isso que
-o serviço é um systemd *user* unit e não um serviço de sistema (ADR 0005).
+It uses `notify-send`, which talks to the user's session bus. That is why the
+service is a systemd *user* unit and not a system service (ADR 0005).
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ class Notifier:
         self.app_name = app_name
         self._bin = shutil.which("notify-send")
         if self._bin is None:
-            log.warning("notify-send não encontrado: notificações ficam sem efeito")
+            log.warning("notify-send not found: notifications will do nothing")
 
     @property
     def available(self) -> bool:
@@ -33,10 +34,10 @@ class Notifier:
     async def send(
         self, title: str, body: str = "", *, urgency: str = "normal", icon: str | None = None
     ) -> bool:
-        """Dispara a notificação. Devolve se conseguiu.
+        """Fire the notification. Returns whether it worked.
 
-        Nunca levanta: um aviso que falha não deve derrubar a Rule que o pediu,
-        muito menos o daemon.
+        It never raises: an alert that fails must not take down the Rule that
+        asked for it, let alone the daemon.
         """
         if self._bin is None:
             return False
@@ -56,9 +57,9 @@ class Notifier:
             )
             _, err = await proc.communicate()
             if proc.returncode != 0:
-                log.error("notify-send saiu com %s: %s", proc.returncode, err.decode().strip())
+                log.error("notify-send exited with %s: %s", proc.returncode, err.decode().strip())
                 return False
             return True
         except Exception:
-            log.exception("notify-send falhou")
+            log.exception("notify-send failed")
             return False

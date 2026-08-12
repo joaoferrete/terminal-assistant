@@ -148,17 +148,52 @@ The **documentation** is English. There is a short Portuguese summary
 ([`README.pt-BR.md`](README.pt-BR.md)) that is deliberately *not* a translation —
 it is small enough to never rot.
 
-The **code comments** are Portuguese, because that is what they were written in
-and translating them mechanically would destroy `git blame` and lose nuance.
-New code may be commented in either language. This is not ideal and we know it;
-it is the honest state of a project that started in one language and opened up in
-another.
+The **code is English too** — comments, docstrings and identifiers. It was written
+in Portuguese and translated in one pass when the project opened up; if `git blame`
+points you at that commit, the line before it is in
+[`.git-blame-ignore-revs`](.git-blame-ignore-revs), and the next section tells your
+`git` to skip it.
 
-**Identifiers and the database are English.** `Note`, `horizon`, `sort_key`,
-`status`, `priority` — including the values (`high`, `todo`). Input still accepts
-both (`!alta` and `!high` both work, forever), because the language of what you
-type is not the language of what gets stored
+But not everything in the code *should* be English, and the line between the two
+is not a matter of taste. It is one question: **does a person or a database ever
+see this string?**
+
+| What | Language | Why |
+|---|---|---|
+| Identifiers, comments, docstrings | English | Nobody outside the repo reads them |
+| Catalogue keys (`board.title`), `HORIZONS` values (`overdue`) | English | Derived at display time; never stored, never typed |
+| Stored tags (`trabalho`, `anotacao`), group names (`luz`, `tudo`), priority input (`!alta`), date marks (`@sexta`) | **Portuguese, forever** | Somebody's database holds them and somebody's fingers type them |
+| `ctx.calendar.agora()` / `.hoje()` | **Portuguese, forever** | Rules live in `~/.config/ta/rules/`, outside this repo, where no rename of ours can reach |
+| Anything a person reads | Neither — it goes in the catalogue | `src/ta/i18n.py`, both languages side by side |
+
+That last row is the one that gets forgotten. A user-visible string written
+directly in English is not "translated", it is **untranslatable** — and it will
+read as broken to the half of users on the other language. The catalogue keeps both
+versions on the same line precisely so the gap is visible while you write it.
+
+Two known gaps, stated rather than hidden: the LLM prompts in `src/ta/llm.py` and
+the Priorities template in `src/ta/priorities.py` are still Portuguese. The prompts
+because they are one carefully tuned artefact and retuning them is its own change;
+the template because its headings end up *inside* the document that gets stored, so
+translating it would split the corpus in two.
+
+**The database is English.** `Note`, `horizon`, `sort_key`, `status`, `priority` —
+including the values (`high`, `todo`). Input still accepts both (`!alta` and
+`!high` both work, forever), because the language of what you type is not the
+language of what gets stored
 ([ADR 0006](docs/adr/0006-one-note-entity-with-roles.md#emenda-2026-08-11)).
+
+### Making `git blame` skip the translation
+
+One command, once per clone:
+
+```bash
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
+Without it, `git blame` on any file credits the translation commit for nearly every
+line, and the history stops being readable — which is the actual cost of a
+mechanical rename, and the reason this file exists.
 
 ## The comments are the point
 

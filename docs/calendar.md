@@ -83,16 +83,20 @@ And from a rule, where it is **context rather than a trigger**
 ([ADR 0008](adr/0008-the-microphone-is-the-meeting-trigger.md)):
 
 ```python
-event = await ctx.calendar.agora()      # the event happening right now, or None
-events = await ctx.calendar.hoje()      # today's list
+event = await ctx.calendar.now()        # the event happening right now, or None
+events = await ctx.calendar.today()     # today's list
 ```
+
+The Portuguese names `agora()` and `hoje()` are the same methods and keep working
+for good — a rule you already wrote does not break because the project changed
+language. New rules should use the English ones.
 
 The distinction matters. The microphone tells you that you are *in a call*; the
 calendar tells you *which* call, and only when something asks. A calendar-only
 trigger is wrong in both directions — it fires for meetings that did not happen,
 and is blind to ad-hoc calls.
 
-`agora()` returns an event only between its start and end. So a rule that runs
+`now()` returns an event only between its start and end. So a rule that runs
 after the scheduled end gets `None`, and should handle that rather than assuming.
 
 ## Personal versus work

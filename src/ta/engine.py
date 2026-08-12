@@ -1,11 +1,12 @@
-"""Motor de regras.
+"""The rule engine.
 
-O app é o cérebro das automações (ADR 0002): ele avalia os gatilhos e trata o
-Home Assistant como atuador burro. As Rules são Python, versionadas no
-repositório, e este módulo é o despachante — não um interpretador.
+The app is the brain of the automations (ADR 0002): it evaluates the triggers and
+treats Home Assistant as a dumb actuator. Rules are Python, kept under version
+control, and this module is the dispatcher — not an interpreter.
 
-Cada Rule é carregada isoladamente em try/except. Uma regra com erro de sintaxe
-tira **ela** do ar, nunca o daemon: é a mitigação prometida no ADR 0002.
+Each Rule is loaded in isolation inside a try/except. A rule with a syntax error
+takes **itself** off the air, never the daemon: that is the mitigation promised in
+ADR 0002.
 """
 
 from __future__ import annotations
@@ -22,17 +23,17 @@ from typing import Any
 
 log = logging.getLogger("ta.engine")
 
-# Assinatura de uma Rule: recebe o contexto, faz o que tem para fazer.
+# A Rule's signature: it takes the context and does what it has to do.
 RuleFn = Callable[["Context"], Awaitable[None] | None]
 
 
 @dataclass
 class Trigger:
-    """A condição que inicia uma Rule.
+    """The condition that starts a Rule.
 
-    `kind` identifica a fonte do sinal (`mic`, `time`, `reminder`, `state`), e
-    `value` a qualifica. Deliberadamente pobre: gatilho rico viraria a linguagem
-    de template que o ADR 0002 recusou escrever.
+    `kind` identifies the source of the signal (`mic`, `time`, `reminder`,
+    `state`), and `value` qualifies it. Deliberately poor: a rich trigger would
+    become the template language ADR 0002 refused to write.
     """
 
     kind: str
@@ -53,7 +54,7 @@ class Rule:
 
 @dataclass
 class Context:
-    """O que uma Rule recebe. Atuadores e sensores entram aqui pelo daemon."""
+    """What a Rule receives. Actuators and sensors are injected by the daemon."""
 
     trigger: Trigger
     now: Any = None
@@ -61,13 +62,14 @@ class Context:
     lighter: Any = None
     notify: Any = None
     calendar: Any = None
-    note: Any = None  # presente quando o gatilho é um Reminder
+    note: Any = None  # present when the trigger is a Reminder
     extra: dict[str, Any] = field(default_factory=dict)
 
 
-# ── Registro ────────────────────────────────────────────────────────────────
-# Registro de módulo: os arquivos em rules/ chamam @rule na importação, e o
-# loader recolhe o que apareceu. Simples e suficiente para um app de uma máquina.
+# ── Registry ────────────────────────────────────────────────────────────────
+# A module-level registry: the files in the rules directory call @rule at import
+# time, and the loader collects whatever showed up. Simple, and enough for a
+# single-machine app.
 _REGISTRY: list[Rule] = []
 
 
@@ -77,10 +79,10 @@ def rule(
     when: Callable[[Context], bool] | None = None,
     name: str | None = None,
 ) -> Callable[[RuleFn], RuleFn]:
-    """Registra uma Rule.
+    """Register a Rule.
 
         @rule(on=mic_active(), when=after("16:00"))
-        async def reuniao_tarde(ctx): ...
+        async def late_meeting(ctx): ...
     """
     triggers = on if isinstance(on, list) else [on]
 
@@ -99,9 +101,9 @@ def rule(
     return deco
 
 
-# ── Gatilhos e condições prontos ────────────────────────────────────────────
+# ── Ready-made triggers and conditions ──────────────────────────────────────
 def mic_active() -> Trigger:
-    """Microfone passou a ser usado — o sinal de 'entrei numa call' (ADR 0008)."""
+    """The microphone started being used — the "I joined a call" signal (ADR 0008)."""
     return Trigger("mic", True)
 
 
@@ -122,7 +124,7 @@ def entity_state(entity_id: str) -> Trigger:
 
 
 def after(hhmm: str) -> Callable[[Context], bool]:
-    """Condição de hora: 'e passou das 16h'. É o que não existe na Lighter."""
+    """A time condition: "and it is past 16:00". It is what Lighter cannot express."""
     h, m = (int(x) for x in hhmm.split(":"))
     return lambda ctx: ctx.now.time() >= time(h, m)
 
@@ -140,11 +142,11 @@ def any_of(*conds: Callable[[Context], bool]) -> Callable[[Context], bool]:
     return lambda ctx: any(c(ctx) for c in conds)
 
 
-# ── Carga ───────────────────────────────────────────────────────────────────
+# ── Loading ─────────────────────────────────────────────────────────────────
 @dataclass
 class LoadReport:
     rules: list[Rule]
-    errors: list[tuple[str, str]]  # (arquivo, traceback)
+    errors: list[tuple[str, str]]  # (filename, traceback)
 
     @property
     def ok(self) -> bool:
@@ -152,66 +154,66 @@ class LoadReport:
 
 
 def load_rules(directory: Path) -> LoadReport:
-    """Carrega os arquivos de Rule, um a um, isoladamente.
+    """Load the Rule files, one at a time, in isolation.
 
-    Um arquivo que estoura entra em `errors` e os outros seguem carregando. É a
-    diferença entre 'uma regra quebrada' e 'o daemon caiu'.
+    A file that blows up goes into `errors` and the others keep loading. It is the
+    difference between "one broken rule" and "the daemon is down".
     """
     _REGISTRY.clear()
     errors: list[tuple[str, str]] = []
 
     if not directory.is_dir():
-        log.warning("diretório de regras não existe: %s", directory)
+        log.warning("rules directory does not exist: %s", directory)
         return LoadReport([], [])
 
     for path in sorted(directory.glob("*.py")):
         if path.name.startswith("_"):
             continue
-        antes = len(_REGISTRY)
+        before_count = len(_REGISTRY)
         try:
             spec = importlib.util.spec_from_file_location(f"ta_rules.{path.stem}", path)
             if spec is None or spec.loader is None:
-                raise ImportError(f"não consegui carregar {path}")
+                raise ImportError(f"could not load {path}")
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
         except BaseException:
-            # BaseException de propósito: um `exit()` num arquivo de regra não
-            # deve derrubar o daemon junto.
+            # BaseException on purpose: a stray `exit()` in a rule file must not
+            # take the daemon down with it.
             errors.append((path.name, traceback.format_exc()))
-            log.error("regra %s falhou ao carregar; as outras seguem", path.name)
+            log.error("rule %s failed to load; the others carry on", path.name)
             continue
-        log.info("regra %s carregada (%d)", path.name, len(_REGISTRY) - antes)
+        log.info("rule %s loaded (%d)", path.name, len(_REGISTRY) - before_count)
 
     return LoadReport(list(_REGISTRY), errors)
 
 
-# ── Despacho ────────────────────────────────────────────────────────────────
+# ── Dispatch ────────────────────────────────────────────────────────────────
 def matching(rules: list[Rule], trigger: Trigger) -> list[Rule]:
     return [
         r
         for r in rules
-        # value None num gatilho registrado significa "qualquer valor".
+        # A None value on a registered trigger means "any value".
         for t in r.on
         if t.kind == trigger.kind and (t.value is None or t.value == trigger.value)
     ]
 
 
 async def dispatch(rules: list[Rule], ctx: Context) -> list[str]:
-    """Roda as Rules que casam com o gatilho. Devolve os nomes das que rodaram.
+    """Run the Rules matching the trigger. Returns the names of those that ran.
 
-    Exceção dentro de uma Rule é registrada e engolida: a regra seguinte roda de
-    qualquer forma, e o daemon continua de pé.
+    An exception inside a Rule is logged and swallowed: the next rule runs anyway,
+    and the daemon stays up.
     """
-    executadas: list[str] = []
+    ran: list[str] = []
     for r in matching(rules, ctx.trigger):
         try:
             if r.when is not None and not r.when(ctx):
                 continue
-            resultado = r.fn(ctx)
-            if inspect.isawaitable(resultado):
-                await resultado
-            executadas.append(r.name)
-            log.info("regra %s executada por %s", r.name, ctx.trigger)
+            result = r.fn(ctx)
+            if inspect.isawaitable(result):
+                await result
+            ran.append(r.name)
+            log.info("rule %s ran, triggered by %s", r.name, ctx.trigger)
         except Exception:
-            log.exception("regra %s falhou ao executar", r.name)
-    return executadas
+            log.exception("rule %s failed while running", r.name)
+    return ran

@@ -1,18 +1,19 @@
-"""Semeia um banco de demonstração, em inglês, num diretório temporário.
+"""Seed a demo database, in English, in a temporary directory.
 
-Existe por dois motivos.
+It exists for two reasons.
 
-O primeiro é as imagens do README: as notas reais do autor citam nome de colega e
-conteúdo de trabalho, e limpar isso à mão só funciona enquanto ele lembrar. Aqui
-os dados são fictícios por construção, e a screenshot pode ser regerada quando a
-interface mudar em vez de envelhecer numa pasta.
+The first is the README images: real notes cite colleagues' names and work
+content, and cleaning that by hand only works while you remember to. Here the
+data is fictional by construction, and the screenshot can be regenerated when the
+interface changes rather than ageing in a folder.
 
-O segundo é experimentar. `make demo` sobe um daemon isolado, com banco próprio,
-sem tocar no banco de verdade — dá para clicar em tudo, apagar tudo, e fechar.
+The second is trying things out. `make demo` boots an isolated daemon, with its
+own database, without touching the real one — you can click everything, delete
+everything, and close it.
 
-A seleção cobre de propósito as quatro faixas de Horizon, as cinco colunas do
-kanban, as três prioridades e uma nota arrastada à mão, porque uma tela de
-demonstração que só mostra o caso feliz não mostra o produto.
+The selection deliberately covers the four Horizon bands, the five kanban
+columns, the three priorities and one hand-dragged note, because a demo screen
+that only shows the happy case does not show the product.
 """
 
 from __future__ import annotations
@@ -27,46 +28,46 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from ta.db import connect  # noqa: E402
 from ta.store import add_note, move_note, set_status  # noqa: E402
 
-HOJE = date.today()
+TODAY = date.today()
 
 
-def d(dias: int) -> str:
-    return (HOJE + timedelta(days=dias)).isoformat()
+def d(days: int) -> str:
+    return (TODAY + timedelta(days=days)).isoformat()
 
 
-# (texto, prazo, status, prioridade, tags)
-NOTAS = [
-    # `vencida` — a faixa que o quadro existe para mostrar primeiro.
+# (text, due, status, priority, tags)
+NOTES = [
+    # `overdue` — the band the board exists to show first.
     ("Reply to the landlord about the lease", d(-3), "todo", "high", ["personal"]),
     ("Rotate the staging API keys", d(-1), "doing", "high", ["work"]),
-    # `hoje`
+    # `today`
     ("Review the pull request from the data team", d(0), "todo", "high", ["work"]),
     ("Pick up the dry cleaning", d(0), "todo", "low", ["personal", "errand"]),
     ("Write the incident postmortem", d(0), "doing", "medium", ["work"]),
-    # `semana` — janela rolante de 7 dias
+    # `week` — the rolling 7-day window
     ("Book the dentist appointment", d(2), "todo", "medium", ["health"]),
     ("Prepare slides for the quarterly review", d(4), "hold", "high", ["work"]),
     ("Renew the domain before it lapses", d(6), "todo", "medium", ["personal"]),
-    # `depois`, e o que não tem prazo nenhum — moram juntos de propósito
+    # `later`, and whatever has no deadline at all — they live together on purpose
     ("Plan the trip in September", d(40), "todo", "low", ["personal"]),
     ("Idea: a rule that dims the lights during calls", None, "todo", "medium", ["ideas"]),
     ("Read the paper on CRDTs someone linked", None, "todo", None, ["reading"]),
-    # Fora da fila: os dois caminhos de saída são diferentes, e o kanban mostra isso.
+    # Out of the queue: the two exits differ, and the kanban shows that.
     ("Ship the board redesign", d(-2), "done", "high", ["work"]),
     ("Migrate the blog to a static site", d(-10), "cancelled", "low", ["personal"]),
 ]
 
 
-def semear(db_path: Path) -> int:
+def seed(db_path: Path) -> int:
     conn = connect(db_path)
-    for i, (texto, prazo, status, prio, tags) in enumerate(NOTAS):
-        # Escrito pelo caminho normal, e não por INSERT cru: assim a demo exercita
-        # o mesmo parser e as mesmas regras que o uso real, e uma quebra nele
-        # aparece aqui antes de aparecer para alguém.
-        n = add_note(conn, texto)
+    for i, (text, due, status, prio, tags) in enumerate(NOTES):
+        # Written through the normal path rather than a raw INSERT: that way the
+        # demo exercises the same parser and the same rules as real use, and a
+        # break in it shows up here before it shows up for somebody.
+        n = add_note(conn, text)
         conn.execute(
             "UPDATE notes SET due = ?, priority = ?, created_at = ? WHERE id = ?",
-            (prazo, prio, (datetime.now() - timedelta(hours=len(NOTAS) - i)).isoformat(), n.id),
+            (due, prio, (datetime.now() - timedelta(hours=len(NOTES) - i)).isoformat(), n.id),
         )
         for tag in tags:
             conn.execute(
@@ -75,8 +76,9 @@ def semear(db_path: Path) -> int:
         if status != "todo":
             set_status(conn, n.id, status)
 
-    # Uma nota arrastada à mão, para a visão geral não parecer uma grade vazia —
-    # e porque a posição gravada é o mecanismo que faz a mão vencer o modelo.
+    # One hand-dragged note, so the free-form view does not look like an empty
+    # grid — and because the stored position is the mechanism that makes the hand
+    # beat the model.
     move_note(conn, 3, pos_x=48, pos_y=430)
     total = conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
     conn.close()
@@ -84,8 +86,8 @@ def semear(db_path: Path) -> int:
 
 
 if __name__ == "__main__":
-    destino = Path(os.environ.get("TA_DB", "/tmp/ta-demo/demo.db"))
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    if destino.exists():
-        destino.unlink()
-    print(f"{semear(destino)} notas em {destino}")
+    target = Path(os.environ.get("TA_DB", "/tmp/ta-demo/demo.db"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        target.unlink()
+    print(f"{seed(target)} notes in {target}")

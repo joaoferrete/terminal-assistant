@@ -1,74 +1,80 @@
-"""O bug do domínio era silencioso: o HA respondia 200 e não fazia nada."""
+"""The domain bug was silent: HA answered 200 and did nothing."""
 from ta.actuators.home import Home
 
 
 class FakeHome(Home):
     def __init__(self):
         super().__init__("http://x", "t")
-        self.chamadas = []
+        self.calls = []
 
     async def _request(self, method, path, payload=None):
-        self.chamadas.append((path, payload))
+        self.calls.append((path, payload))
         return {"state": "on"}
 
 
-async def test_brilho_em_light_usa_o_dominio_light():
+async def test_brightness_on_a_light_uses_the_light_domain():
     h = FakeHome()
     await h.switch_on("light.lampada_do_quarto", 70)
-    path, payload = h.chamadas[0]
+    path, payload = h.calls[0]
     assert path == "/api/services/light/turn_on"
     assert payload["brightness_pct"] == 70
 
 
-async def test_brilho_em_switch_nao_vira_chamada_de_light():
-    """A versão anterior chamava light/turn_on num switch: 200 e nada acontecia."""
+async def test_brightness_on_a_switch_is_not_a_light_call():
+    """The previous version called light/turn_on on a switch: 200, and nothing happened."""
     h = FakeHome()
     await h.switch_on("switch.ventilador_socket_1", 100)
-    path, payload = h.chamadas[0]
+    path, payload = h.calls[0]
     assert path == "/api/services/switch/turn_on"
     assert "brightness_pct" not in payload
 
 
-async def test_brilho_zero_apaga_em_qualquer_dominio():
-    for entity, esperado in (
+async def test_zero_brightness_turns_off_in_either_domain():
+    for entity, expected in (
         ("light.lampada_do_quarto", "/api/services/light/turn_off"),
         ("switch.ventilador_socket_1", "/api/services/switch/turn_off"),
     ):
         h = FakeHome()
         await h.switch_on(entity, 0)
-        assert h.chamadas[0][0] == esperado
+        assert h.calls[0][0] == expected
 
 
-async def test_sem_brilho_liga_pelo_dominio_certo():
+async def test_with_no_brightness_it_turns_on_via_the_right_domain():
     h = FakeHome()
     await h.switch_on("switch.ventilador_socket_1")
-    assert h.chamadas[0][0] == "/api/services/switch/turn_on"
+    assert h.calls[0][0] == "/api/services/switch/turn_on"
 
 
-async def test_confirm_devolve_nao_confirmado_sem_estourar():
-    """Ler o estado logo após o comando devolve o valor antigo. Falhar em
-    confirmar não é falhar em comandar."""
-    class Travado(FakeHome):
+async def test_confirm_reports_unconfirmed_without_blowing_up():
+    """Reading the state right after the command returns the old value.
+
+    Failing to confirm is not failing to command.
+    """
+    class Stuck(FakeHome):
         async def _request(self, method, path, payload=None):
             return {"state": "off"}
 
-    h = Travado()
-    estado, confirmado = await h.confirm("switch.x", "on", tries=2)
-    assert (estado, confirmado) == ("off", False)
+    h = Stuck()
+    state, confirmed = await h.confirm("switch.x", "on", tries=2)
+    assert (state, confirmed) == ("off", False)
 
 
-# ── Resolução de alvos: grupo e ambiente ────────────────────────────────────
+# ── Resolving targets: groups and rooms ─────────────────────────────────────
 from ta.config import resolve_targets  # noqa: E402
 
-ENTIDADES = [
+# Sample entities with Portuguese names on purpose: matching a room by a slice of
+# its `friendly_name` has to survive accents and case, and `Lâmpada` is what
+# proves it. They are fixture data, not anybody's house.
+ENTITIES = [
     {"entity_id": "light.lampada_do_quarto", "attributes": {"friendly_name": "Lâmpada do quarto"}},
     {"entity_id": "light.teto_sala", "attributes": {"friendly_name": "Teto da sala"}},
     {
         "entity_id": "switch.ventilador_socket_1",
         "attributes": {"friendly_name": "Ventilador Socket 1", "device_class": "outlet"},
     },
-    # A tomada Ekasa expõe também o travamento infantil, que é ajuste do aparelho
-    # e não aparelho. Ele não tem `device_class` — é assim que o distinguimos.
+    # A smart plug also exposes its child lock, which is a setting of the
+    # appliance rather than an appliance. It has no `device_class` — that is how we
+    # tell them apart.
     {
         "entity_id": "switch.ventilador_bloqueio_para_criancas",
         "attributes": {"friendly_name": "Ventilador Bloqueio para crianças"},
@@ -76,44 +82,44 @@ ENTIDADES = [
 ]
 
 
-def test_entity_id_explicito_passa_direto():
-    assert resolve_targets("light.teto_sala", ENTIDADES) == ["light.teto_sala"]
+def test_an_explicit_entity_id_passes_straight_through():
+    assert resolve_targets("light.teto_sala", ENTITIES) == ["light.teto_sala"]
 
 
-def test_grupo_luz_pega_todas_as_luzes():
-    assert resolve_targets("luz", ENTIDADES) == ["light.lampada_do_quarto", "light.teto_sala"]
-    assert resolve_targets("luzes", ENTIDADES) == resolve_targets("luz", ENTIDADES)
+def test_the_luz_group_picks_up_every_light():
+    assert resolve_targets("luz", ENTITIES) == ["light.lampada_do_quarto", "light.teto_sala"]
+    assert resolve_targets("luzes", ENTITIES) == resolve_targets("luz", ENTITIES)
 
 
-def test_grupo_tudo_inclui_a_tomada_mas_nao_o_travamento_infantil():
-    """`ta on tudo` ligava a trava: configuração não é aparelho."""
-    assert resolve_targets("tudo", ENTIDADES) == [
+def test_the_tudo_group_includes_the_plug_but_not_the_child_lock():
+    """`ta on tudo` used to switch on the lock: configuration is not an appliance."""
+    assert resolve_targets("tudo", ENTITIES) == [
         "light.lampada_do_quarto",
         "light.teto_sala",
         "switch.ventilador_socket_1",
     ]
 
 
-def test_ambiente_casa_por_trecho_do_nome():
-    assert resolve_targets("sala", ENTIDADES) == ["light.teto_sala"]
+def test_a_room_matches_by_a_slice_of_the_name():
+    assert resolve_targets("sala", ENTITIES) == ["light.teto_sala"]
 
 
-def test_ambiente_ignora_acento_e_caso():
-    """`Lâmpada do quarto` tem que casar com `QUARTO`."""
-    assert resolve_targets("QUARTO", ENTIDADES) == ["light.lampada_do_quarto"]
-    assert resolve_targets("lampada", ENTIDADES) == ["light.lampada_do_quarto"]
+def test_a_room_ignores_accents_and_case():
+    """`Lâmpada do quarto` has to match `QUARTO`."""
+    assert resolve_targets("QUARTO", ENTITIES) == ["light.lampada_do_quarto"]
+    assert resolve_targets("lampada", ENTITIES) == ["light.lampada_do_quarto"]
 
 
-def test_ambiente_prefere_luz_e_so_cai_pra_switch_se_nao_houver():
-    """'ligar o quarto' quer dizer a luz. Mas 'ventilador' não é luz nenhuma."""
-    assert resolve_targets("ventilador", ENTIDADES) == ["switch.ventilador_socket_1"]
+def test_a_room_prefers_lights_and_only_falls_to_switches_if_there_are_none():
+    """"turn on the bedroom" means the light. But "ventilador" is no light at all."""
+    assert resolve_targets("ventilador", ENTITIES) == ["switch.ventilador_socket_1"]
 
 
-def test_termo_sem_correspondencia_devolve_vazio():
-    assert resolve_targets("cozinha", ENTIDADES) == []
+def test_a_term_that_matches_nothing_returns_empty():
+    assert resolve_targets("cozinha", ENTITIES) == []
 
 
-def test_nomear_explicitamente_ainda_liga_a_trava():
-    """Grupo é conservador; explícito é exato."""
+def test_naming_it_explicitly_still_switches_the_lock_on():
+    """A group is conservative; naming it explicitly is exact."""
     eid = "switch.ventilador_bloqueio_para_criancas"
-    assert resolve_targets(eid, ENTIDADES) == [eid]
+    assert resolve_targets(eid, ENTITIES) == [eid]
