@@ -90,8 +90,12 @@ Every task falls into a band counted from today:
 | `week` | the next 7 days — a rolling window, not the calendar week | **next 7 days** |
 | `later` | beyond that, **and everything with no deadline** | **later and undated** |
 
+![The list view, with a divider per band](img/list.jpg)
+
 So a `!low` due today sits above a `!high` due in three days. The one due today
-is the one that has to be done today.
+is the one that has to be done today. In the picture above, "Pick up the dry
+cleaning" is `!low` and sits above three `!medium` tasks — because it is due
+today and they are not.
 
 Two consequences worth knowing:
 
