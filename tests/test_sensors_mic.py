@@ -1,4 +1,4 @@
-from ta.sensors.mic import DEBOUNCE_S, MicWatcher, _streams_de_entrada
+from ta.sensors.mic import DEBOUNCE_S, MicWatcher, _input_streams
 
 
 def node(media_class, app=None, node_name=None):
@@ -14,21 +14,21 @@ def node(media_class, app=None, node_name=None):
 def test_fora_de_call_nao_ha_stream_de_entrada():
     """O negativo verificado na máquina real: só fontes, nenhum stream."""
     dump = [node("Audio/Source", node_name="alsa_input.pci-0000_04_00.6"), node("Audio/Sink")]
-    assert _streams_de_entrada(dump) == []
+    assert _input_streams(dump) == []
 
 
 def test_reconhece_stream_de_captura():
-    assert _streams_de_entrada([node("Stream/Input/Audio", app="Chromium")]) == ["Chromium"]
+    assert _input_streams([node("Stream/Input/Audio", app="Chromium")]) == ["Chromium"]
 
 
 def test_ignora_o_monitor_do_proprio_gnome():
     """gnome-shell aparece como Stream/Input/Audio e não é reunião."""
     dump = [node("Stream/Input/Audio", app="gnome-shell"), node("Stream/Input/Audio", app="Zoom")]
-    assert _streams_de_entrada(dump) == ["Zoom"]
+    assert _input_streams(dump) == ["Zoom"]
 
 
 def test_stream_de_saida_nao_conta():
-    assert _streams_de_entrada([node("Stream/Output/Audio", app="Spotify")]) == []
+    assert _input_streams([node("Stream/Output/Audio", app="Spotify")]) == []
 
 
 # ── Debounce ────────────────────────────────────────────────────────────────
@@ -44,7 +44,7 @@ class FakeWatcher(MicWatcher):
     async def _registrar(self, ativo, apps):
         self.eventos.append((ativo, apps))
 
-    async def _ler(self):
+    async def _read(self):
         return self._roteiro.pop(0) if self._roteiro else []
 
 
@@ -77,7 +77,7 @@ async def test_transicao_nos_dois_sentidos():
 
 
 class FalhaNaLeitura(FakeWatcher):
-    async def _ler(self):
+    async def _read(self):
         return None
 
 

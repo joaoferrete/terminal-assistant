@@ -1,15 +1,15 @@
-"""Atuador da extensão Lighter, por gsettings.
+"""Actuator for the Lighter extension, through gsettings.
 
-A Lighter (https://github.com/joaoferrete/Lighter) é do próprio usuário. O daemon
-manda no *quê* — qual profile aplicar — e a extensão manda no *como*, porque a
-calibração da borda está tunada para a posição da webcam e não deve ser
-duplicada aqui (ADR 0002, decisão 12).
+[Lighter](https://github.com/joaoferrete/Lighter) is by the same author. The
+daemon decides *what* — which profile to apply — and the extension decides *how*,
+because the edge calibration is tuned to the webcam's position and must not be
+duplicated here (ADR 0002).
 
-Verificado no código dela: `extension.js` conecta um handler genérico de `changed`
-sobre as chaves de aparência, e o GSettings notifica escrita externa — então
-`gsettings set` de fora funciona ao vivo, sem alterar a extensão. A única
-alteração necessária foi um listener de `changed::active-profile`, para que
-aplicar um profile *por nome* fosse possível de fora.
+Verified in its code: `extension.js` connects a generic `changed` handler over
+the appearance keys, and GSettings notifies external writes — so `gsettings set`
+from outside works live, without altering the extension. The only change needed
+was a `changed::active-profile` listener, so that applying a profile *by name*
+became possible from outside.
 """
 
 from __future__ import annotations
@@ -25,10 +25,10 @@ log = logging.getLogger("ta.lighter")
 SCHEMA = "org.gnome.shell.extensions.lighter"
 UUID = "lighter@gnome-shell-extensions.ferrete.com"
 
-# O schema de uma extensão do GNOME NÃO fica no caminho de busca padrão do
-# gsettings — ele vive dentro do diretório da própria extensão. Sem `--schemadir`
-# todo comando falha com "Nenhum esquema org.gnome.shell.extensions.lighter".
-# Descoberto na prática; o caminho é resolvido, nunca fixado.
+# A GNOME extension's schema is NOT on gsettings' default search path — it lives
+# inside the extension's own directory. Without `--schemadir` every command fails
+# with "No such schema org.gnome.shell.extensions.lighter". Found the hard way;
+# the path is resolved at runtime, never hardcoded.
 SCHEMA_DIRS = (
     Path.home() / ".local/share/gnome-shell/extensions" / UUID / "schemas",
     Path("/usr/share/gnome-shell/extensions") / UUID / "schemas",
@@ -47,9 +47,9 @@ class Lighter:
         self._bin = shutil.which("gsettings")
         self._dir = _schemadir()
         if self._bin is None:
-            log.warning("gsettings não encontrado: a Lighter fica fora de alcance")
+            log.warning("gsettings not found: Lighter is out of reach")
         elif self._dir is None:
-            log.warning("schema da Lighter não encontrado; a extensão está instalada?")
+            log.warning("Lighter schema not found; is the extension installed?")
 
     @property
     def available(self) -> bool:
@@ -65,16 +65,16 @@ class Lighter:
             )
             out, err = await proc.communicate()
             if proc.returncode != 0:
-                log.error("gsettings %s falhou: %s", " ".join(args), err.decode().strip())
+                log.error("gsettings %s failed: %s", " ".join(args), err.decode().strip())
                 return None
             return out.decode().strip()
         except Exception:
-            log.exception("gsettings falhou")
+            log.exception("gsettings failed")
             return None
 
     async def get(self, key: str) -> str | None:
         raw = await self._run("get", SCHEMA, key)
-        # gsettings devolve string com aspas simples em volta; o chamador quer o valor.
+        # gsettings returns a string wrapped in single quotes; the caller wants the value.
         if raw and len(raw) >= 2 and raw[0] == "'" and raw[-1] == "'":
             return raw[1:-1]
         return raw
@@ -82,70 +82,69 @@ class Lighter:
     async def set(self, key: str, value: str) -> bool:
         return await self._run("set", SCHEMA, key, value) is not None
 
-    # ── Estado ──────────────────────────────────────────────────────────────
+    # ── State ───────────────────────────────────────────────────────────────
     async def enable(self, on: bool = True) -> bool:
         return await self.set("enabled", "true" if on else "false")
 
     async def toggle(self) -> bool:
-        atual = await self.get("enabled")
-        return await self.enable(atual != "true")
+        current = await self.get("enabled")
+        return await self.enable(current != "true")
 
     async def profiles(self) -> list[dict]:
-        """Os profiles salvos na extensão. O daemon não os mantém — ela mantém."""
-        raw = await self.get("profiles")   # `get` já removeu as aspas
+        """The profiles stored in the extension. The daemon does not keep them."""
+        raw = await self.get("profiles")   # `get` already stripped the quotes
         if not raw:
             return []
         try:
             doc = json.loads(raw)
         except json.JSONDecodeError:
-            log.error("JSON de profiles da Lighter ilegível")
+            log.error("Lighter profiles JSON is unreadable")
             return []
         return doc.get("profiles", doc) if isinstance(doc, dict) else doc
 
-    async def profile_id(self, nome: str) -> str | None:
-        """Resolve profile por *nome*, não por uid.
+    async def profile_id(self, name: str) -> str | None:
+        """Resolve a profile by *name*, not by uid.
 
-        Fixar o uid no código seria o mesmo erro que evitamos com as agendas: ele
-        muda se o profile for recriado.
+        Hardcoding the uid would be the same mistake we avoid with the calendars:
+        it changes if the profile is recreated.
         """
         for p in await self.profiles():
-            if p.get("name", "").lower() == nome.lower():
+            if p.get("name", "").lower() == name.lower():
                 return p.get("id")
         return None
 
-    async def apply_profile(self, nome: str, *, enable: bool = True) -> bool:
-        """Aplica um profile por nome e acende a borda.
+    async def apply_profile(self, name: str, *, enable: bool = True) -> bool:
+        """Apply a profile by name and turn the edge on.
 
-        Depende do listener de `changed::active-profile` adicionado na extensão.
-        Sem ele, escrever a chave não aplica nada — e o silêncio é a pior parte:
-        não há erro, a borda só não muda.
+        It depends on the `changed::active-profile` listener added to the
+        extension. Without it, writing the key applies nothing — and the silence
+        is the worst part: there is no error, the edge just does not change.
         """
-        pid = await self.profile_id(nome)
+        pid = await self.profile_id(name)
         if pid is None:
-            log.error("profile %r não existe na Lighter", nome)
+            log.error("profile %r does not exist in Lighter", name)
             return False
         ok = await self.set("active-profile", pid)
         if ok and enable:
             ok = await self.enable(True)
         return ok
 
-    # ── Guarda contra corrida ───────────────────────────────────────────────
+    # ── Guard against a race ────────────────────────────────────────────────
     async def take_over(self) -> None:
-        """Desliga o `auto-switch` da extensão enquanto o daemon está no comando.
+        """Turn the extension's `auto-switch` off while the daemon is in charge.
 
-        Sem isso, o `WindowWatcher` dela aplicaria um profile no próximo
-        `notify::focus-window` e sobrescreveria o que a Rule acabou de fazer.
-        Hoje `auto-switch` já vem `false`, então isto é uma garantia, não um
-        conserto.
+        Without it, its `WindowWatcher` would apply a profile on the next
+        `notify::focus-window` and overwrite what the Rule just did. `auto-switch`
+        already ships as `false` today, so this is a guarantee, not a fix.
         """
         if (await self.get("auto-switch")) == "true":
-            log.info("desligando auto-switch da Lighter enquanto o daemon estiver de pé")
+            log.info("turning Lighter auto-switch off while the daemon is up")
             await self.set("auto-switch", "false")
 
     async def hand_back(self) -> None:
-        """Devolve a autonomia à extensão quando o daemon sai.
+        """Give autonomy back to the extension when the daemon leaves.
 
-        Chamado no desligamento limpo. Se o daemon morrer de morte matada, a
-        chave fica `false` — e a extensão continua controlável pela UI dela.
+        Called on a clean shutdown. If the daemon is killed outright, the key
+        stays `false` — and the extension is still controllable from its own UI.
         """
         await self.set("auto-switch", "true")
