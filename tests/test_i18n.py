@@ -225,9 +225,9 @@ def test_o_marcador_sobrevive_no_arquivo_em_disco():
     Por isso o marcador é um comentário JS seguido de `{}`, e não um placeholder
     que deixaria o arquivo com sintaxe inválida fora do daemon.
     """
-    from ta.daemon import BOARD_HTML, MARCA_I18N
+    from ta.daemon import BOARD_HTML, I18N_MARKER
 
-    assert MARCA_I18N in BOARD_HTML.read_text()
+    assert I18N_MARKER in BOARD_HTML.read_text()
 
 
 def test_o_dia_do_mes_nao_vira_hora(em):

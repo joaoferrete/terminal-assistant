@@ -1,8 +1,9 @@
-"""O daemon: um processo asyncio.
+"""The daemon: one asyncio process.
 
-Serve a API que o CLI consome e o mural, e roda o motor de gatilhos — scheduler,
-watcher de microfone e watcher de estado — no mesmo loop. Existe porque gatilho de
-tempo e de estado do PC não sobrevivem num CLI que roda e morre.
+It serves the API the CLI consumes and the board, and runs the trigger engine —
+scheduler, microphone watcher and state watcher — in the same loop. It exists
+because time and machine-state triggers do not survive in a CLI that runs and
+dies.
 """
 
 from __future__ import annotations
@@ -44,47 +45,48 @@ from .sensors.mic import MicWatcher
 
 log = logging.getLogger("ta")
 
-# `ta on quarto` sem número acende a luz no máximo. Um padrão menor faria o
-# comando mais curto ser o mais fraco, o que não é o que ninguém quer digitando
-# "liga a luz".
-BRILHO_PADRAO = 100
+# `ta on bedroom` with no number turns the light up to full. A lower default
+# would make the shortest command the weakest one, which is not what anybody
+# means when they type "turn on the light".
+DEFAULT_BRIGHTNESS = 100
 
 BOARD_HTML = Path(__file__).parent / "web" / "board.html"
 
-# O marcador que a rota do mural troca pelo catálogo de mensagens. Escrito como
-# comentário JS para que o arquivo continue abrindo direto no navegador durante o
-# desenvolvimento, em vez de virar sintaxe inválida.
-MARCA_I18N = "/*__I18N__*/{}"
+# The marker the board route swaps for the message catalogue. Written as a JS
+# comment so the file still opens directly in a browser during development,
+# rather than becoming invalid syntax.
+I18N_MARKER = "/*__I18N__*/{}"
 
-# Regras de exemplo, versionadas como documentação. NÃO são carregadas: elas
-# miram o inventário de uma casa específica, e carregar isso no boot de outra
-# pessoa seria a regra falhando em silêncio contra uma entity inexistente.
+# Example rules, versioned as documentation. They are NOT loaded: they target one
+# specific house's inventory, and loading that on somebody else's boot would be
+# the rule failing silently against a non-existent entity.
 EXAMPLE_RULES = Path(__file__).resolve().parents[2] / "examples" / "rules"
 
 
 def user_rules_dir() -> Path:
-    """Onde as Rules do usuário moram: `~/.config/ta/rules/`.
+    """Where the user's Rules live: `~/.config/ta/rules/`.
 
-    O nome não é `rules_dir` porque `create_app` tem um parâmetro com esse nome,
-    e a sombra faria a chamada silenciosamente virar outra coisa.
+    The name is not `rules_dir` because `create_app` has a parameter by that name,
+    and the shadowing would silently turn the call into something else.
 
-    Cai de volta para `<repo>/rules` quando o destino novo ainda não existe, e é
-    de propósito: quem já tinha regras ali não pode perdê-las por causa desta
-    mudança. `ta doctor` copia — nunca move — e a partir daí o XDG vence
+    It falls back to `<repo>/rules` when the new destination does not exist yet,
+    and that is on purpose: whoever already had rules there cannot lose them over
+    this change. `ta doctor` copies — never moves — and from then on XDG wins
     (ADR 0014).
     """
-    novo = config_dir() / "rules"
-    if novo.is_dir():
-        return novo
-    legado = Path(__file__).resolve().parents[2] / "rules"
-    if legado.is_dir():
-        log.info("regras lidas de %s (legado); `ta doctor` migra para %s", legado, novo)
-        return legado
-    return novo
+    new = config_dir() / "rules"
+    if new.is_dir():
+        return new
+    legacy = Path(__file__).resolve().parents[2] / "rules"
+    if legacy.is_dir():
+        log.info("rules read from %s (legacy); `ta doctor` migrates them to %s", legacy, new)
+        return legacy
+    return new
 
 
-# Um socket IPv6 aceitando IPv4 reporta o par como `::ffff:127.0.0.1`. Sem isto,
-# o CLI local passaria a precisar de token só por causa da família do socket.
+# An IPv6 socket accepting IPv4 reports the peer as `::ffff:127.0.0.1`. Without
+# this, the local CLI would start needing a token purely because of the socket
+# family.
 LOOPBACK_PEERS = (*LOOPBACK, "::ffff:127.0.0.1")
 
 
@@ -93,56 +95,57 @@ def _peer_local(request: Request) -> bool:
 
 
 class TokenAuth(BaseHTTPMiddleware):
-    """Exige `TA_TOKEN` de quem chega de outra máquina.
+    """Require `TA_TOKEN` from anyone arriving from another machine.
 
-    Cliente em loopback passa sem credencial, de propósito: quem já está nesta
-    máquina tem o `.env`, e exigir token dele faria `ta note` carregar segredo sem
-    ganhar segurança nenhuma. O que este middleware cobre é a **rede** — o caso em
-    que o daemon foi aberto com `TA_HOST` e um vizinho de wifi alcança as rotas.
+    A loopback client passes with no credential, on purpose: whoever is already on
+    this machine has the `.env`, and requiring a token from them would make
+    `ta note` carry a secret without buying any safety. What this middleware
+    covers is the **network** — the case where the daemon was opened with
+    `TA_HOST` and a Wi-Fi neighbour can reach the routes.
 
-    Só é instalado quando há token. Em loopback puro o daemon não tem middleware
-    nenhum, e o caminho local segue exatamente como era (ADR 0012).
+    It is only installed when there is a token. On pure loopback the daemon has no
+    middleware at all, and the local path is exactly as it was (ADR 0012).
 
-    O token também é aceito na query, e não só no header, porque o mural precisa
-    bootar de algum jeito: `http://<ip>:7777/board?token=…` carrega o HTML, e daí
-    o JS guarda o valor e passa a mandá-lo no header.
+    The token is also accepted in the query, not only in the header, because the
+    board has to boot somehow: `http://<ip>:7777/board?token=…` loads the HTML,
+    and from there the JS stores the value and sends it in the header.
     """
 
     def __init__(self, app, token: str) -> None:
         super().__init__(app)
         self._token = token
 
-    def _apresentado(self, request: Request) -> str:
-        cabecalho = request.headers.get("authorization", "")
-        if cabecalho.lower().startswith("bearer "):
-            return cabecalho[7:].strip()
+    def _presented(self, request: Request) -> str:
+        header = request.headers.get("authorization", "")
+        if header.lower().startswith("bearer "):
+            return header[7:].strip()
         return request.query_params.get("token", "")
 
     async def dispatch(self, request: Request, call_next):
         if not _peer_local(request):
-            # `compare_digest` em vez de `==`: comparação de segredo com saída
-            # antecipada vaza o prefixo correto pelo tempo de resposta.
-            enviado = self._apresentado(request)
-            if not enviado or not hmac.compare_digest(enviado, self._token):
+            # `compare_digest` instead of `==`: comparing a secret with an early
+            # exit leaks the correct prefix through response timing.
+            presented = self._presented(request)
+            if not presented or not hmac.compare_digest(presented, self._token):
                 log.warning(
-                    "401 de %s em %s", request.client.host if request.client else "?",
+                    "401 from %s on %s", request.client.host if request.client else "?",
                     request.url.path,
                 )
                 return JSONResponse(
-                    {"error": "credencial ausente ou inválida (TA_TOKEN)"},
+                    {"error": i18n.t("auth.missing_credential")},
                     status_code=401,
                 )
         return await call_next(request)
 
 
 def _note_json(n: store.Note, *, today: date | None = None) -> dict:
-    """Serializa uma Note para o cliente.
+    """Serialise a Note for the client.
 
-    `horizon` vai junto e é derivado aqui, no servidor: ele depende do relógio, e
-    uma segunda definição de "próximos 7 dias" vivendo no JS do mural seria uma
-    definição que nenhum teste compara com esta (ADR 0010). Quem serializa uma
-    lista passa `today` calculado UMA vez, para um payload longo não atravessar a
-    meia-noite no meio dele.
+    `horizon` goes along and is derived here, on the server: it depends on the
+    clock, and a second definition of "the next 7 days" living in the board's JS
+    would be a definition no test compares with this one (ADR 0010). Whoever
+    serialises a list passes `today` computed ONCE, so a long payload does not
+    cross midnight halfway through.
     """
     return {
         "id": n.id,
@@ -152,8 +155,8 @@ def _note_json(n: store.Note, *, today: date | None = None) -> dict:
         "horizon": store.horizon(n.due, today=today),
         "remind_at": n.remind_at,
         "done": n.is_done,
-        # O instante em que entrou em `done`. Distinto de `status`: estado e
-        # carimbo de tempo são coisas diferentes.
+        # The instant it entered `done`. Distinct from `status`: state and
+        # timestamp are different things.
         "done_at": n.done_at,
         "priority": n.priority,
         "group": n.group_name,
@@ -165,7 +168,7 @@ def _note_json(n: store.Note, *, today: date | None = None) -> dict:
         "terminal": n.is_terminal,
         "tags": n.tags,
         "deleted_at": n.deleted_at,
-        # Papéis derivados, explicitados para o cliente não recalcular a regra.
+        # Derived roles, made explicit so the client does not recompute the rule.
         "roles": {"task": n.is_task, "reminder": n.is_reminder},
     }
 
@@ -180,11 +183,11 @@ def _event_json(e) -> dict:
     }
 
 
-# ── Contexto do motor ───────────────────────────────────────────────────────
+# ── Engine context ──────────────────────────────────────────────────────────
 class CalendarAdapter:
-    """A fachada que as Rules recebem em `ctx.calendar`.
+    """The facade Rules receive as `ctx.calendar`.
 
-    Fina de propósito: uma Rule não deve saber que existe EDS, DBus ou `gi`.
+    Thin on purpose: a Rule must not know that Evolution, DBus or `gi` exist.
     """
 
     def __init__(self, cal: Calendar) -> None:
@@ -211,7 +214,7 @@ def _make_context(app: Starlette, trigger: engine.Trigger, **extra) -> engine.Co
     )
 
 
-# ── Rotas ───────────────────────────────────────────────────────────────────
+# ── Routes ──────────────────────────────────────────────────────────────────
 async def health(request: Request) -> JSONResponse:
     """Diagnóstico. Reporta *presença* de segredo, nunca o valor.
 
@@ -680,7 +683,7 @@ async def board(request: Request) -> HTMLResponse:
     # O JS não tem tabela paralela — mesma disciplina do `HORIZON_LABEL`. Uma
     # segunda tradução vivendo no cliente seria uma que nenhum teste compara.
     html = BOARD_HTML.read_text(encoding="utf-8").replace(
-        MARCA_I18N, json.dumps(i18n.catalogo(), ensure_ascii=False), 1
+        I18N_MARKER, json.dumps(i18n.catalogo(), ensure_ascii=False), 1
     )
     return HTMLResponse(html, headers={"Cache-Control": "no-store, must-revalidate"})
 
@@ -744,7 +747,7 @@ async def home_light(request: Request) -> JSONResponse:
         # Sem brilho explícito, ligar uma luz quer dizer ligar por inteiro. O
         # domínio `switch` ignora o valor (veja `Home.switch_on`), então o padrão
         # não muda nada para a tomada.
-        brilho = int(body["brightness"]) if "brightness" in body else BRILHO_PADRAO
+        brilho = int(body["brightness"]) if "brightness" in body else DEFAULT_BRIGHTNESS
         # 0 apaga; qualquer outro valor (ou nenhum) liga.
         esperado = "off" if brilho == 0 else "on"
         resultados = []
