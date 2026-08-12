@@ -21,7 +21,7 @@ import shutil
 from dataclasses import dataclass
 
 from .config import Config, config_file
-from .i18n import lang, lang_source
+from .i18n import lang, lang_source, t
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,7 @@ def _notes(cfg: Config) -> Capability:
         writable = False
     return Capability(
         key="notes",
-        label="Notes",
+        label=t("cap.notes"),
         ok=writable,
         reason="" if writable else f"cannot write to {path.parent}",
         fix="" if writable else f"check the permissions on {path.parent}",
@@ -94,7 +94,7 @@ def _calendar(_: Config) -> Capability:
 
     return Capability(
         key="calendar",
-        label="Calendar",
+        label=t("cap.calendar"),
         ok=ok,
         reason=reason,
         fix=fix,
@@ -106,7 +106,7 @@ def _mic(_: Config) -> Capability:
     ok = shutil.which("pw-dump") is not None
     return Capability(
         key="mic",
-        label="Microphone",
+        label=t("cap.mic"),
         ok=ok,
         reason="" if ok else "`pw-dump` not found: the meeting trigger stays inert",
         fix="" if ok else "sudo apt install pipewire-utils",
@@ -118,7 +118,7 @@ def _home(cfg: Config) -> Capability:
     ok = bool(cfg.ha_token)
     return Capability(
         key="home",
-        label="Home Assistant",
+        label=t("cap.home"),
         ok=ok,
         reason="" if ok else "HA_TOKEN is not set",
         fix="" if ok else "create a long-lived token in Home Assistant and put HA_TOKEN in .env",
@@ -134,7 +134,7 @@ def _lighter(_: Config) -> Capability:
     has_gsettings = shutil.which("gsettings") is not None
     return Capability(
         key="lighter",
-        label="Lighter (ringlight)",
+        label=t("cap.lighter"),
         ok=ok,
         reason=(
             ""
@@ -151,7 +151,7 @@ def _ai(cfg: Config) -> Capability:
     ok = bool(cfg.gemini_api_key)
     return Capability(
         key="ai",
-        label="AI (Gemini)",
+        label=t("cap.ai"),
         ok=ok,
         reason="" if ok else "GEMINI_API_KEY is not set",
         # The sentence says it is optional on purpose: without that, a red line
@@ -204,7 +204,15 @@ def environment(cfg: Config | None = None) -> list[tuple[str, str]]:
     """Context that is not a capability, but is the second thing people ask."""
     cfg = cfg or Config.from_env()
     return [
-        ("language", f"{lang()} (from: {lang_source()})"),
-        ("config", str(config_file()) + ("" if config_file().exists() else "  (does not exist)")),
-        ("daemon", cfg.base_url + ("  [open to the network]" if cfg.exposed else "  [local only]")),
+        (t("doctor.language"), f"{lang()} ({t('doctor.from')}: {lang_source()})"),
+        (
+            t("doctor.config"),
+            str(config_file())
+            + ("" if config_file().exists() else "  " + t("doctor.does_not_exist")),
+        ),
+        (
+            t("doctor.daemon"),
+            cfg.base_url + "  "
+            + (t("doctor.exposed") if cfg.exposed else t("doctor.local_only")),
+        ),
     ]

@@ -15,6 +15,7 @@ import pytest
 from ta.capabilities import Capability, by_command, inspect
 from ta.cli import HELP_GROUPS, build_parser
 from ta.config import Config
+from ta.i18n import lang
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -139,6 +140,32 @@ def test_help_survives_a_broken_probe(monkeypatch):
     for _, title, commands in HELP_GROUPS:
         assert title in epilogue
         assert commands.split()[0] in epilogue
+
+
+def test_the_doctor_screen_is_all_in_one_language():
+    """Metade traduzida e metade nao le como software quebrado.
+
+    O `ta doctor` mostrava `language`/`config`/`daemon` e `Notes`/`Calendar` fixos
+    em ingles, e o resumo pelo catalogo. Em `TA_LANG=pt` a MESMA tabela saia nos
+    dois idiomas ao mesmo tempo.
+
+    Nome de produto e a excecao declarada: `Home Assistant`, `Lighter` e `Gemini`
+    sao iguais nos dois, porque traduzir nome proprio atrapalha quem vai procurar
+    por ele.
+    """
+    from ta.capabilities import environment
+    from ta.i18n import LANGS, MESSAGES
+
+    for c in inspect(Config()):
+        chave = f"cap.{c.key}"
+        assert chave in MESSAGES, f"o rotulo de {c.key!r} nao passa pelo catalogo"
+        assert set(MESSAGES[chave]) == set(LANGS)
+        assert c.label == MESSAGES[chave][lang()]
+
+    rotulos = [k for k, _ in environment(Config())]
+    for r in rotulos:
+        assert r in {MESSAGES[k][lang()] for k in
+                     ("doctor.language", "doctor.config", "doctor.daemon")}, r
 
 
 # ── The grouped --help ──────────────────────────────────────────────────────

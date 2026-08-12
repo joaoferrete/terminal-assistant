@@ -496,7 +496,7 @@ def cmd_doctor(cfg: Config, args) -> int:
     # diagnosing at all.
     if (env_path := load_env_file()) is not None:
         cfg = Config.from_env()
-        print(f"  · read {env_path}\n")
+        print("  · " + t("doctor.read_env", path=env_path) + "\n")
 
     done = _migrate_layout(cfg)
     for f in done:

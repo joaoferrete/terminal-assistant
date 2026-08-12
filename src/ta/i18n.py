@@ -361,6 +361,26 @@ MESSAGES: dict[str, dict[str, str]] = {
         "pt": "(ainda não definido — rode `ta init`)",
         "en": "(not set yet — run `ta init`)",
     },
+    # As linhas de contexto e os rótulos do `ta doctor`. Estavam fixos em inglês,
+    # então em `TA_LANG=pt` a tela saía metade traduzida: rótulos ingleses e o
+    # resumo em português, na mesma tabela.
+    #
+    # `Home Assistant`, `Lighter` e `Gemini` são nomes de produto e ficam iguais
+    # nos dois idiomas — traduzir nome próprio atrapalha quem vai procurar por ele.
+    "doctor.language": {"pt": "idioma", "en": "language"},
+    "doctor.config": {"pt": "config", "en": "config"},
+    "doctor.daemon": {"pt": "daemon", "en": "daemon"},
+    "doctor.does_not_exist": {"pt": "(não existe)", "en": "(does not exist)"},
+    "doctor.from": {"pt": "de", "en": "from"},
+    "doctor.exposed": {"pt": "[aberto para a rede]", "en": "[open to the network]"},
+    "doctor.local_only": {"pt": "[só local]", "en": "[local only]"},
+    "doctor.read_env": {"pt": "li {path}", "en": "read {path}"},
+    "cap.notes": {"pt": "Notas", "en": "Notes"},
+    "cap.calendar": {"pt": "Agenda", "en": "Calendar"},
+    "cap.mic": {"pt": "Microfone", "en": "Microphone"},
+    "cap.home": {"pt": "Home Assistant", "en": "Home Assistant"},
+    "cap.lighter": {"pt": "Lighter (ringlight)", "en": "Lighter (ringlight)"},
+    "cap.ai": {"pt": "IA (Gemini)", "en": "AI (Gemini)"},
     "cli.doctor_summary": {
         "pt": "{live}/{total} disponíveis. O que está marcado com — é opcional.",
         "en": "{live}/{total} available. Anything marked with — is optional.",
