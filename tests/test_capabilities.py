@@ -125,7 +125,10 @@ def test_one_broken_probe_does_not_take_the_others_down(monkeypatch):
 
 
 def test_help_survives_a_broken_probe(monkeypatch):
-    """And this is the one that matters: a `--help` that raises is far worse than an unmarked one."""
+    """And this is the one that matters.
+
+    A `--help` that raises is far worse than an unmarked one.
+    """
     from ta import capabilities
 
     monkeypatch.setattr(

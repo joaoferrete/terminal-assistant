@@ -5,19 +5,20 @@ from starlette.testclient import TestClient
 
 from ta.config import Config
 from ta.daemon import create_app
+from ta.i18n import t
 from ta.llm import NotePlacement, OrganizeResult
 
 
 class FakeCalendar:
-    """Agenda de mentira. Teste não fala com o Evolution Data Server do usuário."""
+    """A fake calendar. A test never talks to the user's Evolution Data Server."""
 
     available = True
     error = None
 
-    def today(self, dia=None):
+    def today(self, day=None):
         return []
 
-    def now(self, momento=None):
+    def now(self, moment=None):
         return None
 
     def write_targets(self):
@@ -28,8 +29,8 @@ class FakeCalendar:
 
 
 class FakeLighter:
-    """Sem isto, o teste escrevia em `org.gnome.shell.extensions.lighter` de
-    verdade: `take_over` no boot e `hand_back` no shutdown, uma vez por teste."""
+    """Without it, the test wrote to the real `org.gnome.shell.extensions.lighter`:
+    `take_over` on boot and `hand_back` on shutdown, once per test."""
 
     available = True
 
@@ -45,7 +46,7 @@ class FakeLighter:
     async def toggle(self):
         return True
 
-    async def apply_profile(self, nome, *, enable=True):
+    async def apply_profile(self, name, *, enable=True):
         return True
 
     async def take_over(self):
@@ -60,7 +61,7 @@ def client(tmp_path):
     app = create_app(
         Config(ha_token="fake", gemini_api_key="fake", auto_review=False),
         db_path=tmp_path / "t.db",
-        rules_dir=tmp_path / "sem-regras",
+        rules_dir=tmp_path / "no-rules",
         calendar=FakeCalendar(),
         lighter=FakeLighter(),
         background=False,
@@ -69,17 +70,17 @@ def client(tmp_path):
         yield c
 
 
-def test_health_reporta_presenca_nao_valor(client):
-    """O /health existe para responder 'o serviço leu o .env?' sem vazar segredo."""
+def test_health_reports_presence_not_value(client):
+    """`/health` exists to answer "did the service read the .env?" without leaking it."""
     body = client.get("/health").json()
     assert body["ok"] is True
     assert body["ha"]["token_configured"] is True
     assert body["gemini"]["key_configured"] is True
-    # O valor nunca aparece.
+    # The value never shows up.
     assert "fake" not in client.get("/health").text
 
 
-def test_health_sem_segredos(tmp_path):
+def test_health_with_no_secrets(tmp_path):
     app = create_app(
         Config(auto_review=False),
         db_path=tmp_path / "t.db",
@@ -93,7 +94,7 @@ def test_health_sem_segredos(tmp_path):
     assert body["gemini"]["key_configured"] is False
 
 
-def test_captura_via_http_extrai_papeis(client):
+def test_capture_over_http_extracts_the_roles(client):
     r = client.post("/notes", json={"text": "ligar dentista @2026-12-25 #saude !alta"})
     assert r.status_code == 201
     n = r.json()
@@ -103,11 +104,11 @@ def test_captura_via_http_extrai_papeis(client):
     assert n["tags"] == ["saude"]
 
 
-def test_texto_vazio_e_400(client):
+def test_empty_text_is_400(client):
     assert client.post("/notes", json={"text": "   "}).status_code == 400
 
 
-def test_mover_e_colorir_persiste_e_marca_pinned(client):
+def test_moving_and_colouring_persists_and_marks_pinned(client):
     note_id = client.post("/notes", json={"text": "x"}).json()["id"]
     r = client.post(f"/notes/{note_id}/move", json={"pos_x": 300, "pos_y": 150, "color": "#bfdcf5"})
     n = r.json()
@@ -116,13 +117,13 @@ def test_mover_e_colorir_persiste_e_marca_pinned(client):
     assert n["pinned_by_user"] is True
 
 
-def test_done_alterna_nos_dois_sentidos(client):
+def test_done_toggles_both_ways(client):
     note_id = client.post("/notes", json={"text": "x"}).json()["id"]
     assert client.post(f"/notes/{note_id}/done").json()["done"] is True
     assert client.post(f"/notes/{note_id}/done", json={"done": False}).json()["done"] is False
 
 
-def test_list_esconde_concluidas_por_padrao(client):
+def test_list_hides_finished_notes_by_default(client):
     a = client.post("/notes", json={"text": "aberta"}).json()["id"]
     b = client.post("/notes", json={"text": "fechada"}).json()["id"]
     client.post(f"/notes/{b}/done")
@@ -130,27 +131,27 @@ def test_list_esconde_concluidas_por_padrao(client):
     assert len(client.get("/notes?done=1").json()["notes"]) == 2
 
 
-# ── Ordem de exibição chega pronta ao cliente (ADR 0010) ────────────────────
-# Aqui os prazos são RELATIVOS a `date.today()`: a rota lê o relógio de verdade, e
-# uma data ISO fixa envelheceria de faixa sozinha.
-def _daqui(dias):
-    return (date.today() + timedelta(days=dias)).isoformat()
+# ── The display order arrives ready at the client (ADR 0010) ────────────────
+# The deadlines here are RELATIVE to `date.today()`: the route reads the real
+# clock, and a fixed ISO date would age out of its band on its own.
+def _in_days(days):
+    return (date.today() + timedelta(days=days)).isoformat()
 
 
-def test_notes_vem_ordenado_por_urgencia(client):
-    """O teste que prova que o mural recebe a ordem em vez de calculá-la.
+def test_notes_arrives_sorted_by_urgency(client):
+    """The test that proves the board receives the order rather than computing it.
 
-    A `!alta` distante está embaixo da `!media` de hoje: era exatamente o contrário
-    quando a prioridade era o primeiro critério.
+    The distant `!alta` sits below today's `!media`: it was exactly the other way
+    round when priority was the first criterion.
     """
-    for texto in (
-        f"distante !alta @{_daqui(30)}",
-        f"hoje !media @{_daqui(0)}",
-        f"atrasada !baixa @{_daqui(-3)}",
-        f"esta semana !alta @{_daqui(4)}",
+    for text in (
+        f"distante !alta @{_in_days(30)}",
+        f"hoje !media @{_in_days(0)}",
+        f"atrasada !baixa @{_in_days(-3)}",
+        f"esta semana !alta @{_in_days(4)}",
         "sem prazo !baixa",
     ):
-        client.post("/notes", json={"text": texto})
+        client.post("/notes", json={"text": text})
 
     notes = client.get("/notes").json()["notes"]
     assert [n["text"] for n in notes] == [
@@ -161,23 +162,23 @@ def test_notes_vem_ordenado_por_urgencia(client):
     ]
 
 
-def test_today_vem_com_vencidas_primeiro(client):
-    client.post("/notes", json={"text": f"hoje !alta @{_daqui(0)}"})
-    client.post("/notes", json={"text": f"atrasada !baixa @{_daqui(-5)}"})
+def test_today_arrives_with_overdue_first(client):
+    client.post("/notes", json={"text": f"hoje !alta @{_in_days(0)}"})
+    client.post("/notes", json={"text": f"atrasada !baixa @{_in_days(-5)}"})
     tasks = client.get("/today").json()["tasks"]
     assert [t["text"] for t in tasks] == ["atrasada", "hoje"]
     assert [t["horizon"] for t in tasks] == ["overdue", "today"]
 
 
-def test_organize_grava_a_ordem_e_respeita_o_arrastado(client):
-    """O `/organize` não tinha teste nenhum. Ele grava, e a mão vence (ADR 0003)."""
+def test_organize_writes_the_order_and_respects_what_was_dragged(client):
+    """`/organize` had no test at all. It writes, and the hand wins (ADR 0003)."""
     a = client.post("/notes", json={"text": "primeira"}).json()["id"]
     b = client.post("/notes", json={"text": "segunda"}).json()["id"]
-    # `b` foi arrastada à mão: o modelo não a toca.
+    # `b` was dragged by hand: the model does not touch it.
     client.post(f"/notes/{b}/move", json={"pos_x": 10, "pos_y": 10})
 
-    class LLMFalso:
-        model = "modelo-de-mentira"
+    class StubLLM:
+        model = "a-fake-model"
 
         async def organize(self, notes, priorities):
             self.notes = notes
@@ -189,59 +190,59 @@ def test_organize_grava_a_ordem_e_respeita_o_arrastado(client):
                 groups_in_order=["casa"],
             )
 
-    falso = LLMFalso()
-    client.app.state.llm = falso
+    stub = StubLLM()
+    client.app.state.llm = stub
     r = client.post("/organize").json()
 
     assert r == {
-        "placed": 1,                # só `a`: `b` está fixada pela mão do usuário
+        "placed": 1,                # only `a`: `b` is pinned by the user's hand
         "skipped_pinned": 1,
         "groups": ["casa"],
-        "model": "modelo-de-mentira",
+        "model": "a-fake-model",
     }
-    # E o modelo viu a faixa de cada nota, que é o que o impede de reordenar por
-    # prazo (ADR 0010).
-    assert all("horizon" in n for n in falso.notes)
+    # And the model saw each note's band, which is what stops it reordering by
+    # deadline (ADR 0010).
+    assert all("horizon" in n for n in stub.notes)
 
 
-def test_board_e_servido_na_raiz_e_em_board(client):
+def test_the_board_is_served_at_the_root_and_at_board(client):
     for path in ("/", "/board"):
         r = client.get(path)
         assert r.status_code == 200
         assert "text/html" in r.headers["content-type"]
-        assert "Mural" in r.text
+        assert t("board.title") in r.text
 
 
-def test_export_markdown_via_http(client):
+def test_export_markdown_over_http(client):
     client.post("/notes", json={"text": "ligar dentista @2026-12-25"})
     body = client.get("/export").text
     assert "- [ ] ligar dentista" in body
-    assert "prazo 2026-12-25" in body
+    assert f"{t('export.due')} 2026-12-25" in body
 
 
-def test_status_via_http_e_done_at_exposto(client):
+def test_status_over_http_and_done_at_exposed(client):
     note_id = client.post("/notes", json={"text": "x"}).json()["id"]
     n = client.post(f"/notes/{note_id}/status", json={"status": "done"}).json()
     assert n["status"] == "done"
     assert n["terminal"] is True
-    assert n["done_at"] is not None      # o carimbo tem que chegar ao cliente
+    assert n["done_at"] is not None      # the stamp has to reach the client
 
 
-def test_cancelar_e_terminal_mas_nao_done(client):
+def test_cancelling_is_terminal_but_not_done(client):
     note_id = client.post("/notes", json={"text": "x"}).json()["id"]
     n = client.post(f"/notes/{note_id}/status", json={"status": "cancelled"}).json()
     assert (n["status"], n["terminal"], n["done"]) == ("cancelled", True, False)
-    assert n["done_at"] is None          # cancelada não foi feita
+    assert n["done_at"] is None          # cancelled was not done
 
 
-def test_status_invalido_e_400(client):
+def test_an_invalid_status_is_400(client):
     note_id = client.post("/notes", json={"text": "x"}).json()["id"]
     r = client.post(f"/notes/{note_id}/status", json={"status": "quase_feito"})
     assert r.status_code == 400
     assert "quase_feito" in r.json()["error"]
 
 
-def test_doing_e_hold_continuam_na_fila(client):
+def test_doing_and_hold_stay_in_the_queue(client):
     a = client.post("/notes", json={"text": "a"}).json()["id"]
     b = client.post("/notes", json={"text": "b"}).json()["id"]
     client.post(f"/notes/{a}/status", json={"status": "doing"})
@@ -250,14 +251,14 @@ def test_doing_e_hold_continuam_na_fila(client):
     assert sorted(ids) == sorted([a, b])
 
 
-class HomeDeMentira:
-    """Registra as chamadas em vez de falar com o HA."""
+class StubHome:
+    """Records the calls instead of talking to Home Assistant."""
 
-    def __init__(self, inventario=None):
-        self.chamadas = []
-        self.apagados = []
-        self.midia = []
-        self.inventario = inventario or [
+    def __init__(self, inventory=None):
+        self.calls = []
+        self.turned_off = []
+        self.media_calls = []
+        self.inventory = inventory or [
             {
                 "entity_id": "light.lampada_do_quarto",
                 "state": "on",
@@ -266,43 +267,43 @@ class HomeDeMentira:
         ]
 
     async def entities(self, *prefixes):
-        return self.inventario
+        return self.inventory
 
     async def turn_off(self, entity_id):
-        self.apagados.append(entity_id)
+        self.turned_off.append(entity_id)
 
     async def media(self, entity_id, action):
-        self.midia.append((entity_id, action))
+        self.media_calls.append((entity_id, action))
 
     async def switch_on(self, entity_id, brightness_pct=None):
-        self.chamadas.append((entity_id, brightness_pct))
+        self.calls.append((entity_id, brightness_pct))
 
-    async def confirm(self, entity_id, esperado, tries=12):
-        return esperado, True
+    async def confirm(self, entity_id, expected, tries=12):
+        return expected, True
 
     async def close(self):
         pass
 
 
-def test_on_sem_brilho_acende_no_maximo(client):
-    """`ta on quarto` sem número é 'liga a luz', não 'liga fraco'."""
-    fake = HomeDeMentira()
+def test_on_with_no_brightness_goes_to_full(client):
+    """`ta on quarto` with no number means "turn the light on", not "turn it on dim"."""
+    fake = StubHome()
     client.app.state.home = fake
     r = client.post("/home/light", json={"entity": "quarto"})
     assert r.status_code == 200
-    assert fake.chamadas == [("light.lampada_do_quarto", 100)]
+    assert fake.calls == [("light.lampada_do_quarto", 100)]
 
 
-def test_on_com_brilho_explicito_respeita_o_valor(client):
-    fake = HomeDeMentira()
+def test_on_with_an_explicit_brightness_respects_the_value(client):
+    fake = StubHome()
     client.app.state.home = fake
     client.post("/home/light", json={"entity": "quarto", "brightness": 30})
-    assert fake.chamadas == [("light.lampada_do_quarto", 30)]
+    assert fake.calls == [("light.lampada_do_quarto", 30)]
 
 
-def test_off_sem_alvo_nao_mexe_no_travamento_infantil(client):
-    """A varredura do `ta off` também é um grupo, e vale a mesma regra."""
-    fake = HomeDeMentira([
+def test_off_with_no_target_does_not_touch_the_child_lock(client):
+    """`ta off`'s sweep is a group too, and the same rule holds."""
+    fake = StubHome([
         {"entity_id": "light.lampada_do_quarto", "state": "on", "attributes": {}},
         {
             "entity_id": "switch.ventilador_socket_1",
@@ -314,23 +315,23 @@ def test_off_sem_alvo_nao_mexe_no_travamento_infantil(client):
     client.app.state.home = fake
     r = client.post("/home/off", json={})
     assert r.status_code == 200
-    assert fake.apagados == ["light.lampada_do_quarto", "switch.ventilador_socket_1"]
+    assert fake.turned_off == ["light.lampada_do_quarto", "switch.ventilador_socket_1"]
 
 
-def test_media_sem_echo_configurado_explica_o_que_falta(client):
-    """Sem TA_ECHOS o HA devolvia um 400 sem corpo útil, e o erro chegava ilegível."""
+def test_media_with_no_echo_configured_explains_what_is_missing(client):
+    """Without TA_ECHOS, HA returned a 400 with no useful body and the error arrived illegible."""
     r = client.post("/media", json={"action": "pause"})
     assert r.status_code == 400
     assert "TA_ECHOS" in r.json()["error"]
 
 
-def test_media_recusa_alvo_que_nao_e_media_player(client):
+def test_media_refuses_a_target_that_is_not_a_media_player(client):
     r = client.post("/media", json={"entity": "light.lampada_do_quarto", "action": "play"})
     assert r.status_code == 400
     assert "media_player" in r.json()["error"]
 
 
-def test_media_usa_o_echo_do_config_quando_o_alvo_e_omitido(tmp_path):
+def test_media_uses_the_configured_echo_when_the_target_is_omitted(tmp_path):
     app = create_app(
         Config(ha_token="fake", echo_entities=("media_player.echo_quarto",)),
         db_path=tmp_path / "t.db",
@@ -339,48 +340,49 @@ def test_media_usa_o_echo_do_config_quando_o_alvo_e_omitido(tmp_path):
         background=False,
     )
     with TestClient(app) as c:
-        fake = HomeDeMentira()
+        fake = StubHome()
         c.app.state.home = fake
         r = c.post("/media", json={"action": "pause"})
         assert r.status_code == 200
         assert r.json()["entity_id"] == "media_player.echo_quarto"
-        assert fake.midia == [("media_player.echo_quarto", "pause")]
+        assert fake.media_calls == [("media_player.echo_quarto", "pause")]
 
 
-# ── Segunda passada do LLM sobre a captura ──────────────────────────────────
-# Testada como unidade, não pela rota: a revisão roda solta em background, e
-# esperar por task de fundo dentro do TestClient é receita de teste instável.
+# ── The LLM's second pass over a capture ────────────────────────────────────
+# Tested as a unit, not through the route: the review runs loose in the
+# background, and waiting on a background task inside TestClient is a recipe for
+# a flaky test.
 from types import SimpleNamespace  # noqa: E402
 
 from ta import db, store  # noqa: E402
 from ta.daemon import _review_capture  # noqa: E402
 
 
-class LLMDeMentira:
-    """Devolve uma revisão fixa. Teste não fala com o Gemini."""
+class StubLLMReview:
+    """Returns a fixed review. A test never talks to Gemini."""
 
     configured = True
 
     def __init__(self, review):
         self.review = review
-        self.chamadas = []
+        self.calls = []
 
     async def review_capture(self, text, *, due, remind_at, priorities="", accounts=""):
-        self.chamadas.append((text, due, remind_at, priorities, accounts))
+        self.calls.append((text, due, remind_at, priorities, accounts))
         return self.review
 
 
-class NotifyDeMentira:
+class StubNotify:
     def __init__(self):
-        self.avisos = []
+        self.warnings = []
 
     async def send(self, title, body="", *, urgency="normal", icon=None):
-        self.avisos.append((title, body))
+        self.warnings.append((title, body))
         return True
 
 
-class Revisao(SimpleNamespace):
-    """O mínimo do schema que `_review_capture` consome."""
+class Review(SimpleNamespace):
+    """The minimum of the schema `_review_capture` consumes."""
 
     def __init__(self, **kw):
         super().__init__(
@@ -399,21 +401,21 @@ class Revisao(SimpleNamespace):
         )
 
 
-PESSOAL = SimpleNamespace(uid="src-pessoal", name="Terminal Assistant", personal=True,
+PERSONAL = SimpleNamespace(uid="src-pessoal", name="Terminal Assistant", personal=True,
                             account="eu@gmail.com")
-TRABALHO = SimpleNamespace(uid="src-trabalho", name="Terminal Assistant", personal=False,
+WORK = SimpleNamespace(uid="src-trabalho", name="Terminal Assistant", personal=False,
                              account="eu@empresa.co")
 
 
-def _app_falso(tmp_path, review, *, alvos=()):
+def _stub_app(tmp_path, review, *, targets=()):
     conn = db.connect(tmp_path / "t.db")
-    cal = SimpleNamespace(write_targets=lambda: list(alvos), create_event=lambda *a: "uid-1")
+    cal = SimpleNamespace(write_targets=lambda: list(targets), create_event=lambda *a: "uid-1")
     import asyncio as _asyncio
     return SimpleNamespace(
         state=SimpleNamespace(
             conn=conn,
-            llm=LLMDeMentira(review),
-            notify=NotifyDeMentira(),
+            llm=StubLLMReview(review),
+            notify=StubNotify(),
             calendar=cal,
             in_review=set(),
             review_sem=_asyncio.Semaphore(4),
@@ -421,78 +423,78 @@ def _app_falso(tmp_path, review, *, alvos=()):
     )
 
 
-async def test_revisao_remove_prazo_que_o_regex_inventou(tmp_path):
-    """O regex marca prazo pela forma; a revisão desfaz quando a intenção não é essa."""
-    app = _app_falso(tmp_path, Revisao(intent="anotacao", due="", confidence=0.95,
+async def test_the_review_removes_a_deadline_the_regex_invented(tmp_path):
+    """The regex marks a deadline by shape; the review undoes it when that was not the intent."""
+    app = _stub_app(tmp_path, Review(intent="anotacao", due="", confidence=0.95,
                                        reason="é um registro, não um prazo"))
-    nota = store.add_note(app.state.conn, "hoje eu preciso disso")
-    assert nota.due is not None                       # o regex marcou
+    note = store.add_note(app.state.conn, "hoje eu preciso disso")
+    assert note.due is not None                       # the regex marked it
 
-    await _review_capture(app, nota.id)
+    await _review_capture(app, note.id)
 
-    assert store.get_note(app.state.conn, nota.id).due is None
-    assert "prazo removido" in app.state.notify.avisos[0][1]
-
-
-async def test_revisao_com_confianca_baixa_nao_mexe_em_nada(tmp_path):
-    """Correção errada é pior que nenhuma: abaixo do piso, não age."""
-    app = _app_falso(tmp_path, Revisao(due="", confidence=0.3))
-    nota = store.add_note(app.state.conn, "revisar o PR hoje")
-    antes = nota.due
-
-    await _review_capture(app, nota.id)
-
-    assert store.get_note(app.state.conn, nota.id).due == antes
-    assert app.state.notify.avisos == []
+    assert store.get_note(app.state.conn, note.id).due is None
+    assert t("review.due_removed") in app.state.notify.warnings[0][1]
 
 
-async def test_revisao_cria_evento_na_agenda_dedicada(tmp_path):
-    app = _app_falso(
+async def test_a_low_confidence_review_touches_nothing(tmp_path):
+    """A wrong correction is worse than none: below the floor, it does not act."""
+    app = _stub_app(tmp_path, Review(due="", confidence=0.3))
+    note = store.add_note(app.state.conn, "revisar o PR hoje")
+    before = note.due
+
+    await _review_capture(app, note.id)
+
+    assert store.get_note(app.state.conn, note.id).due == before
+    assert app.state.notify.warnings == []
+
+
+async def test_the_review_creates_an_event_in_the_dedicated_calendar(tmp_path):
+    app = _stub_app(
         tmp_path,
-        Revisao(intent="compromisso", is_event=True, title="nutricionista",
+        Review(intent="compromisso", is_event=True, title="nutricionista",
                 start="2026-09-17T08:30", end="2026-09-17T09:30", confidence=0.95),
-        alvos=(PESSOAL,),
+        targets=(PERSONAL,),
     )
-    nota = store.add_note(app.state.conn, "ir na nutricionista 17 de setembro as 8:30")
+    note = store.add_note(app.state.conn, "ir na nutricionista 17 de setembro as 8:30")
 
-    await _review_capture(app, nota.id)
+    await _review_capture(app, note.id)
 
-    assert "evento criado: nutricionista" in app.state.notify.avisos[0][1]
+    assert f"{t('review.event_created')}: nutricionista" in app.state.notify.warnings[0][1]
     link = app.state.conn.execute(
-        "SELECT uid, source_uid FROM calendar_links WHERE note_id = ?", (nota.id,)
+        "SELECT uid, source_uid FROM calendar_links WHERE note_id = ?", (note.id,)
     ).fetchone()
     assert (link["uid"], link["source_uid"]) == ("uid-1", "src-pessoal")
 
 
-async def test_sem_agenda_dedicada_nao_cria_evento_em_outro_lugar(tmp_path):
-    """Sem a agenda 'Terminal Assistant', não escreve na principal. Guarda do ADR 0007."""
-    app = _app_falso(
+async def test_with_no_dedicated_calendar_it_creates_the_event_nowhere_else(tmp_path):
+    """With no "Terminal Assistant" calendar, it does not write to the main one (ADR 0007)."""
+    app = _stub_app(
         tmp_path,
-        Revisao(is_event=True, title="x", start="2026-09-17T08:30", confidence=0.99),
-        alvos=(),
+        Review(is_event=True, title="x", start="2026-09-17T08:30", confidence=0.99),
+        targets=(),
     )
-    nota = store.add_note(app.state.conn, "compromisso qualquer")
+    note = store.add_note(app.state.conn, "compromisso qualquer")
 
-    await _review_capture(app, nota.id)
+    await _review_capture(app, note.id)
 
     assert app.state.conn.execute("SELECT COUNT(*) c FROM calendar_links").fetchone()["c"] == 0
 
 
-async def test_revisao_com_data_invalida_do_modelo_nao_estoura(tmp_path):
-    app = _app_falso(
+async def test_an_invalid_date_from_the_model_does_not_blow_up(tmp_path):
+    app = _stub_app(
         tmp_path,
-        Revisao(is_event=True, title="x", start="semana que vem", confidence=0.99),
-        alvos=(PESSOAL,),
+        Review(is_event=True, title="x", start="semana que vem", confidence=0.99),
+        targets=(PERSONAL,),
     )
-    nota = store.add_note(app.state.conn, "algo")
+    note = store.add_note(app.state.conn, "algo")
 
-    await _review_capture(app, nota.id)   # não deve levantar
+    await _review_capture(app, note.id)   # must not raise
 
     assert app.state.conn.execute("SELECT COUNT(*) c FROM calendar_links").fetchone()["c"] == 0
 
 
-def test_revisao_desligada_nao_agenda_nada(tmp_path):
-    """`TA_AUTO_REVIEW=0` tem que deixar o caminho do regex intocado."""
+def test_review_switched_off_schedules_nothing(tmp_path):
+    """`TA_AUTO_REVIEW=0` has to leave the regex path untouched."""
     app = create_app(
         Config(gemini_api_key="fake", auto_review=False),
         db_path=tmp_path / "t.db",
@@ -506,53 +508,53 @@ def test_revisao_desligada_nao_agenda_nada(tmp_path):
 
 
 
-async def test_evento_de_trabalho_vai_para_a_conta_de_trabalho(tmp_path):
-    """Roteava por `parent`, um hash opaco: tudo caía na mesma agenda, calado."""
-    app = _app_falso(
+async def test_a_work_event_goes_to_the_work_account(tmp_path):
+    """It routed by `parent`, an opaque hash: everything landed in one calendar, silently."""
+    app = _stub_app(
         tmp_path,
-        Revisao(is_event=True, title="1:1 com a lead", start="2026-08-11T14:00",
+        Review(is_event=True, title="1:1 com a lead", start="2026-08-11T14:00",
                 account="trabalho", confidence=0.95),
-        alvos=(PESSOAL, TRABALHO),
+        targets=(PERSONAL, WORK),
     )
-    nota = store.add_note(app.state.conn, "1:1 com a lead na terça às 14h")
+    note = store.add_note(app.state.conn, "1:1 com a lead na terça às 14h")
 
-    await _review_capture(app, nota.id)
+    await _review_capture(app, note.id)
 
     link = app.state.conn.execute("SELECT source_uid FROM calendar_links").fetchone()
     assert link["source_uid"] == "src-trabalho"
 
 
-async def test_evento_pessoal_vai_para_a_conta_pessoal(tmp_path):
-    app = _app_falso(
+async def test_a_personal_event_goes_to_the_personal_account(tmp_path):
+    app = _stub_app(
         tmp_path,
-        Revisao(is_event=True, title="nutricionista", start="2026-09-17T08:30",
+        Review(is_event=True, title="nutricionista", start="2026-09-17T08:30",
                 account="pessoal", confidence=0.95),
-        alvos=(TRABALHO, PESSOAL),   # ordem invertida: não pode ser "o primeiro"
+        targets=(WORK, PERSONAL),   # order reversed: it must not be "the first one"
         )
-    nota = store.add_note(app.state.conn, "nutricionista 17 de setembro às 8:30")
+    note = store.add_note(app.state.conn, "nutricionista 17 de setembro às 8:30")
 
-    await _review_capture(app, nota.id)
+    await _review_capture(app, note.id)
 
     link = app.state.conn.execute("SELECT source_uid FROM calendar_links").fetchone()
     assert link["source_uid"] == "src-pessoal"
 
 
-def test_review_all_enfileira_e_responde_quantas(client):
-    """O botão do mural bate aqui. Sem LLM configurada devolve 400 legível."""
+def test_review_all_queues_and_answers_how_many(client):
+    """The board's button hits this. With no LLM configured it returns a legible 400."""
     client.post("/notes", json={"text": "a"})
     client.post("/notes", json={"text": "b"})
     r = client.post("/review-all")
-    assert r.status_code == 400            # auto_review=False na fixture
+    assert r.status_code == 400            # auto_review=False in the fixture
     assert "TA_AUTO_REVIEW" in r.json()["error"]
 
 
-def test_review_status_conta_a_fila(client):
+def test_review_status_counts_the_queue(client):
     client.post("/notes", json={"text": "a"})
     body = client.get("/review-status").json()
     assert body == {"pending": 1, "running": 0}
 
 
-def test_review_all_sem_chave_do_gemini(tmp_path):
+def test_review_all_without_a_gemini_key(tmp_path):
     app = create_app(
         Config(),
         db_path=tmp_path / "t.db",
@@ -566,154 +568,154 @@ def test_review_all_sem_chave_do_gemini(tmp_path):
         assert "GEMINI_API_KEY" in r.json()["error"]
 
 
-async def test_revisao_em_voo_nao_e_enfileirada_duas_vezes(tmp_path):
-    """Quatro capturas seguidas revisavam a MESMA nota 4 vezes, com respostas
-    diferentes. `in_review` é a guarda."""
+async def test_a_review_in_flight_is_not_queued_twice(tmp_path):
+    """Four captures in a row reviewed the SAME note four times, with different
+    answers. `in_review` is the guard."""
     from ta.daemon import _schedule_review
 
     conn = db.connect(tmp_path / "t.db")
-    nota = store.add_note(conn, "x")
+    note = store.add_note(conn, "x")
     app = SimpleNamespace(
         state=SimpleNamespace(
             conn=conn,
             llm=SimpleNamespace(configured=True),
             auto_review=True,
             reviews=set(),
-            in_review={nota.id},        # já em voo
+            in_review={note.id},        # already in flight
         )
     )
-    _schedule_review(app, nota)
-    assert app.state.reviews == set()   # nada de novo foi criado
+    _schedule_review(app, note)
+    assert app.state.reviews == set()   # nothing new was created
 
 
-async def test_anotacao_nao_recebe_prioridade(tmp_path):
-    """Registro e ideia solta não são cobráveis: prioridade neles só suja o mural."""
-    app = _app_falso(tmp_path, Revisao(intent="anotacao", priority="alta", confidence=0.9))
-    nota = store.add_note(app.state.conn, "hoje descobri o bug do domínio")
+async def test_a_plain_note_gets_no_priority(tmp_path):
+    """A record or a loose idea is not chaseable: a priority on them only clutters the board."""
+    app = _stub_app(tmp_path, Review(intent="anotacao", priority="alta", confidence=0.9))
+    note = store.add_note(app.state.conn, "hoje descobri o bug do domínio")
 
-    await _review_capture(app, nota.id)
+    await _review_capture(app, note.id)
 
-    n = store.get_note(app.state.conn, nota.id)
+    n = store.get_note(app.state.conn, note.id)
     assert n.priority is None
     assert "anotacao" in n.tags
 
 
-async def test_anotacao_remove_prioridade_posta_por_maquina(tmp_path):
-    """Reclassificar para anotação tem que desfazer a prioridade da passada anterior."""
-    app = _app_falso(tmp_path, Revisao(intent="anotacao", confidence=0.9))
-    nota = store.add_note(app.state.conn, "x")
-    store.set_priority(app.state.conn, nota.id, "media")
+async def test_a_plain_note_removes_a_machine_set_priority(tmp_path):
+    """Reclassifying as a plain note has to undo the previous pass's priority."""
+    app = _stub_app(tmp_path, Review(intent="anotacao", confidence=0.9))
+    note = store.add_note(app.state.conn, "x")
+    store.set_priority(app.state.conn, note.id, "media")
 
-    await _review_capture(app, nota.id)
+    await _review_capture(app, note.id)
 
-    assert store.get_note(app.state.conn, nota.id).priority is None
-
-
-async def test_prioridade_digitada_pelo_usuario_e_intocavel(tmp_path):
-    """`!alta` é seu. Nem uma reclassificação para anotação o apaga."""
-    app = _app_falso(tmp_path, Revisao(intent="anotacao", priority="baixa", confidence=0.99))
-    nota = store.add_note(app.state.conn, "revisar isso !alta")
-    assert nota.priority_by_user
-
-    await _review_capture(app, nota.id)
-
-    assert store.get_note(app.state.conn, nota.id).priority == "high"
+    assert store.get_note(app.state.conn, note.id).priority is None
 
 
-async def test_tema_digitado_pelo_usuario_sobrevive_e_ganha_os_eixos(tmp_path):
-    """Tema é seu, eixo é estrutura.
+async def test_a_priority_typed_by_the_user_is_untouchable(tmp_path):
+    """`!alta` is yours. Not even a reclassification erases it."""
+    app = _stub_app(tmp_path, Review(intent="anotacao", priority="baixa", confidence=0.99))
+    note = store.add_note(app.state.conn, "revisar isso !alta")
+    assert note.priority_by_user
 
-    A primeira versão tratava suas tags como tudo-ou-nada: escrever `#app` fazia
-    a nota perder área e tipo, e ela desaparecia dos dois filtros do mural.
-    Aconteceu numa nota real.
+    await _review_capture(app, note.id)
+
+    assert store.get_note(app.state.conn, note.id).priority == "high"
+
+
+async def test_a_topic_typed_by_the_user_survives_and_gains_the_axes(tmp_path):
+    """A topic is yours, an axis is structure.
+
+    The first version treated your tags as all-or-nothing: writing `#app` made the
+    note lose its area and type, and it vanished from both board filters. It
+    happened to a real note.
     """
-    app = _app_falso(
+    app = _stub_app(
         tmp_path,
-        Revisao(intent="anotacao", account="pessoal", tags=["estudo"], confidence=0.99),
+        Review(intent="anotacao", account="pessoal", tags=["estudo"], confidence=0.99),
     )
-    nota = store.add_note(app.state.conn, "fiz um novo app hoje #app")
-    assert nota.tags_by_user and nota.tags == ["app"]
+    note = store.add_note(app.state.conn, "fiz um novo app hoje #app")
+    assert note.tags_by_user and note.tags == ["app"]
 
-    await _review_capture(app, nota.id)
+    await _review_capture(app, note.id)
 
-    tags = store.get_note(app.state.conn, nota.id).tags
-    assert "app" in tags                       # o seu tema fica
-    assert {"pessoal", "anotacao"} <= set(tags)  # e os eixos entram
-    assert "estudo" not in tags                # o tema do modelo NÃO substitui o seu
+    tags = store.get_note(app.state.conn, note.id).tags
+    assert "app" in tags                         # your topic stays
+    assert {"pessoal", "anotacao"} <= set(tags)  # and the axes come in
+    assert "estudo" not in tags                  # the model's topic does NOT replace yours
 
 
-async def test_area_e_tipo_entram_sempre_como_tag(tmp_path):
-    """Nota sem área nem tipo fica invisível nos filtros do mural."""
-    app = _app_falso(
+async def test_area_and_type_always_come_in_as_tags(tmp_path):
+    """A note with neither area nor type is invisible in the board filters."""
+    app = _stub_app(
         tmp_path,
-        Revisao(intent="tarefa", account="trabalho", tags=[], confidence=0.9),
+        Review(intent="tarefa", account="trabalho", tags=[], confidence=0.9),
     )
-    nota = store.add_note(app.state.conn, "revisar o PR")
+    note = store.add_note(app.state.conn, "revisar o PR")
 
-    await _review_capture(app, nota.id)
+    await _review_capture(app, note.id)
 
-    assert store.get_note(app.state.conn, nota.id).tags == ["tarefa", "trabalho"]
+    assert store.get_note(app.state.conn, note.id).tags == ["tarefa", "trabalho"]
 
 
-async def test_tema_inventado_pelo_modelo_e_descartado(tmp_path):
-    """Vocabulário fechado: 'profissional' e 'job' virariam sinônimos de trabalho."""
-    app = _app_falso(
+async def test_a_topic_invented_by_the_model_is_discarded(tmp_path):
+    """A closed vocabulary: "profissional" and "job" would become synonyms of "trabalho"."""
+    app = _stub_app(
         tmp_path,
-        Revisao(intent="tarefa", tags=["profissional", "job", "estudo"], confidence=0.9),
+        Review(intent="tarefa", tags=["profissional", "job", "estudo"], confidence=0.9),
     )
-    nota = store.add_note(app.state.conn, "x")
+    note = store.add_note(app.state.conn, "x")
 
-    await _review_capture(app, nota.id)
+    await _review_capture(app, note.id)
 
-    assert store.get_note(app.state.conn, nota.id).tags == ["estudo", "pessoal", "tarefa"]
+    assert store.get_note(app.state.conn, note.id).tags == ["estudo", "pessoal", "tarefa"]
 
 
-async def test_no_maximo_dois_temas_alem_dos_eixos(tmp_path):
-    app = _app_falso(
+async def test_at_most_two_topics_beyond_the_axes(tmp_path):
+    app = _stub_app(
         tmp_path,
-        Revisao(intent="tarefa", tags=["saude", "casa", "compras", "estudo"], confidence=0.9),
+        Review(intent="tarefa", tags=["saude", "casa", "compras", "estudo"], confidence=0.9),
     )
-    nota = store.add_note(app.state.conn, "x")
+    note = store.add_note(app.state.conn, "x")
 
-    await _review_capture(app, nota.id)
+    await _review_capture(app, note.id)
 
-    tags = store.get_note(app.state.conn, nota.id).tags
-    assert len(tags) == 4          # área + tipo + 2 temas
+    tags = store.get_note(app.state.conn, note.id).tags
+    assert len(tags) == 4          # area + type + 2 topics
     assert {"pessoal", "tarefa"} <= set(tags)
 
 
-async def test_revisao_nao_cria_evento_duplicado(tmp_path):
-    """Reetiquetar três vezes criou TRÊS compromissos idênticos na agenda: o
-    INSERT OR REPLACE trocava o vínculo e órfanava o evento anterior."""
-    app = _app_falso(
+async def test_the_review_creates_no_duplicate_event(tmp_path):
+    """Re-tagging three times created THREE identical calendar events: the
+    INSERT OR REPLACE swapped the link and orphaned the previous event."""
+    app = _stub_app(
         tmp_path,
-        Revisao(intent="compromisso", is_event=True, title="nutricionista",
+        Review(intent="compromisso", is_event=True, title="nutricionista",
                 start="2026-09-17T08:30", confidence=0.95),
-        alvos=(PESSOAL,),
+        targets=(PERSONAL,),
     )
-    nota = store.add_note(app.state.conn, "nutricionista 17 de setembro às 8:30")
+    note = store.add_note(app.state.conn, "nutricionista 17 de setembro às 8:30")
 
-    await _review_capture(app, nota.id)
-    await _review_capture(app, nota.id)      # segunda passada, como no `revisar tudo`
-    await _review_capture(app, nota.id)
+    await _review_capture(app, note.id)
+    await _review_capture(app, note.id)      # a second pass, as in "review all"
+    await _review_capture(app, note.id)
 
     n = app.state.conn.execute("SELECT COUNT(*) c FROM calendar_links").fetchone()["c"]
     assert n == 1
-    # E o aviso de "evento criado" sai uma vez só.
-    criados = [a for a in app.state.notify.avisos if "evento criado" in a[1]]
-    assert len(criados) == 1
+    # And the "event created" notice goes out exactly once.
+    created = [a for a in app.state.notify.warnings if t("review.event_created") in a[1]]
+    assert len(created) == 1
 
 
-def test_purge_recusa_nota_que_nao_esta_na_lixeira(client):
-    """409 em vez de apagar de surpresa algo que o usuário achava seguro."""
+def test_purge_refuses_a_note_that_is_not_in_the_trash(client):
+    """409 rather than surprise-deleting something the user thought was safe."""
     nid = client.post("/notes", json={"text": "viva"}).json()["id"]
     r = client.request("DELETE", f"/notes/{nid}/purge")
     assert r.status_code == 409
-    assert "não está na lixeira" in r.json()["error"]
+    assert t("api.note_not_in_trash", id=nid) == r.json()["error"]
     assert client.get("/notes").json()["notes"][0]["id"] == nid
 
 
-def test_purge_de_nota_na_lixeira_funciona(client):
+def test_purging_a_note_in_the_trash_works(client):
     nid = client.post("/notes", json={"text": "x"}).json()["id"]
     client.request("DELETE", f"/notes/{nid}")
     r = client.request("DELETE", f"/notes/{nid}/purge")
@@ -721,14 +723,14 @@ def test_purge_de_nota_na_lixeira_funciona(client):
     assert client.get("/notes?deleted=1").json()["notes"] == []
 
 
-def test_esvaziar_lixeira_exige_confirmacao(client):
+def test_emptying_the_trash_requires_confirmation(client):
     nid = client.post("/notes", json={"text": "x"}).json()["id"]
     client.request("DELETE", f"/notes/{nid}")
 
     r = client.request("DELETE", "/trash", json={})
     assert r.status_code == 400
-    assert "não tem volta" in r.json()["error"]
-    assert len(client.get("/notes?deleted=1").json()["notes"]) == 1   # nada foi apagado
+    assert r.json()["error"] == t("api.confirm_required")
+    assert len(client.get("/notes?deleted=1").json()["notes"]) == 1   # nothing was deleted
 
     r = client.request("DELETE", "/trash", json={"confirmed": True})
     assert r.json() == {"purged": 1}
