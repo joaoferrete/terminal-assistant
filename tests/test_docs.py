@@ -196,11 +196,11 @@ def test_toda_faixa_tem_rotulo_nos_dois_idiomas():
     Sem este pino, renomear ou acrescentar uma faixa no Python não quebra nada: a
     divisória simplesmente perde o rótulo, em silêncio, e só num idioma.
     """
-    from ta.i18n import LANGS, MENSAGENS
+    from ta.i18n import LANGS, MESSAGES
     from ta.store import HORIZONS
 
     for faixa in HORIZONS:
-        entrada = MENSAGENS.get(f"horizon.{faixa}")
+        entrada = MESSAGES.get(f"horizon.{faixa}")
         assert entrada, f"a faixa {faixa!r} não tem rótulo no catálogo"
         assert set(entrada) == set(LANGS), f"horizon.{faixa} não tem os dois idiomas"
 
@@ -226,17 +226,17 @@ def test_o_mural_avisa_quando_o_daemon_esta_velho():
     verdade. Sem harness de JS, este pino estático é o que impede a guarda de ser
     removida no próximo refactor.
     """
-    from ta.i18n import LANGS, MENSAGENS
+    from ta.i18n import LANGS, MESSAGES
 
     corpo = MURAL.read_text()
     assert '"horizon" in todas[0]' in corpo, "o mural perdeu a guarda de versão"
-    assert 'tr("daemon.desatualizado")' in corpo, "a guarda perdeu a mensagem"
+    assert 'tr("daemon.outdated")' in corpo, "a guarda perdeu a mensagem"
 
     # A mensagem migrou para o catálogo, então é lá que o comando do conserto tem
     # de estar — nos dois idiomas. Uma guarda que detecta e não diz o que fazer
     # deixa a pessoa exatamente onde estava.
     for lang in LANGS:
-        assert "systemctl --user restart ta" in MENSAGENS["daemon.desatualizado"][lang]
+        assert "systemctl --user restart ta" in MESSAGES["daemon.outdated"][lang]
 
 
 def test_o_aviso_fica_fora_do_quadro():

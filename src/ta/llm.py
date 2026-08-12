@@ -114,11 +114,11 @@ class LLM:
         if self._client is not None:
             return self._client
         if not self.api_key:
-            raise LLMUnavailable(i18n.t("ai.sem_chave"))
+            raise LLMUnavailable(i18n.t("ai.no_key"))
         try:
             from google import genai
         except ImportError as e:  # pragma: no cover - dependência declarada
-            raise LLMUnavailable(i18n.t("ai.sem_sdk")) from e
+            raise LLMUnavailable(i18n.t("ai.no_sdk")) from e
         self._client = genai.Client(api_key=self.api_key)
         return self._client
 
@@ -165,11 +165,11 @@ class LLM:
                 client.models.generate_content, model=self.model, contents=prompt, config=cfg
             )
         except Exception as e:
-            raise LLMUnavailable(i18n.t("ai.falhou", erro=e)) from e
+            raise LLMUnavailable(i18n.t("ai.failed", erro=e)) from e
 
         # `parsed` é a instância validada; o SDK a preenche quando há schema.
         if getattr(resp, "parsed", None) is None:
-            raise LLMUnavailable(i18n.t("ai.fora_do_schema"))
+            raise LLMUnavailable(i18n.t("ai.off_schema"))
         return resp.parsed
 
     async def list_models(self) -> list[str]:

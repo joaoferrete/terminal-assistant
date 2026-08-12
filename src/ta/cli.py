@@ -46,7 +46,7 @@ def _request(
     try:
         r = httpx.request(method, url, json=payload, timeout=timeout)
     except httpx.ConnectError as e:
-        raise Problem(f"{t('daemon.fora_do_ar')} ({cfg.base_url})") from e
+        raise Problem(f"{t('daemon.down')} ({cfg.base_url})") from e
     except httpx.TimeoutException as e:
         raise Problem(f"daemon não respondeu em {timeout:.0f}s ({cfg.base_url}).") from e
 
@@ -94,7 +94,7 @@ def cmd_list(cfg: Config, args) -> int:
     suffix = "?done=1" if args.all else ""
     notes = _request(cfg, "GET", f"/notes{suffix}").json()["notes"]
     if not notes:
-        print(t("cli.sem_notas"))
+        print(t("cli.no_notes"))
         return 0
     for n in notes:
         print(_fmt_note(n))
@@ -281,7 +281,7 @@ def cmd_rm(cfg: Config, args) -> int:
     if args.note_id is None:
         raise Problem("diga qual nota apagar, ou use `ta rm --list`.")
     n = _request(cfg, "DELETE", f"/notes/{args.note_id}").json()
-    print(f"{t('cli.apagada')}: #{n['id']} {n['text']}  (`ta restore {n['id']}` {t('cli.desfaz')})")
+    print(f"{t('cli.deleted')}: #{n['id']} {n['text']}  (`ta restore {n['id']}` {t('cli.undoes')})")
     return 0
 
 
@@ -352,20 +352,20 @@ def cmd_today(cfg: Config, args) -> int:
             print(f"    {quando:14} {e['summary']}")
 
     if not d["tasks"]:
-        print(f"  {t('cli.tarefas')}: {t('cli.nada_cobravel')}")
+        print(f"  {t('cli.tasks')}: {t('cli.nothing_due')}")
     else:
-        print(f"  {t('cli.tarefas')}:")
+        print(f"  {t('cli.tasks')}:")
         # O `ta` roda do mesmo source tree, então o CLI é sempre o código novo
         # enquanto o daemon é o do último restart. Sem esta linha, um daemon velho
         # daria KeyError em `horizon` — alto, mas inútil. Dizer o que fazer é
         # melhor que um traceback, e melhor que degradar calado.
         if "horizon" not in d["tasks"][0]:
-            print("    (" + t("daemon.desatualizado").replace("\n", " ") + ")")
+            print("    (" + t("daemon.outdated").replace("\n", " ") + ")")
         # Sem `sorted`: o daemon já devolve na ordem de exibição — atrasadas
         # primeiro, prioridade dentro da faixa (ADR 0010). O rótulo continua na
         # frente porque no fim da linha era fácil não ver.
         for n in d["tasks"]:
-            atraso = f"  {t('cli.atrasada')}" if n.get("horizon") == "overdue" else ""
+            atraso = f"  {t('cli.overdue')}" if n.get("horizon") == "overdue" else ""
             prio = PRIO_LABEL.get(n["priority"], "     ")   # 5 chars, sempre
             print(f"    {prio} #{n['id']} {n['text']}{atraso}")
     return 0

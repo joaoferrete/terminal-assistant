@@ -22,7 +22,7 @@
     background: var(--bg); color: var(--fg);
     font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
   }
-  body.view-geral {
+  body.view-board {
     background-image:
       linear-gradient(var(--grid) 1px, transparent 1px),
       linear-gradient(90deg, var(--grid) 1px, transparent 1px);
@@ -131,40 +131,40 @@
   /* Faixa no topo deixa óbvio que este mural não é o normal — sem ela, a
      lixeira parece o mural vazio e assusta. Os tons claros aqui são obrigatórios:
      na primeira versão o título ficou escuro sobre escuro e sumiu. */
-  body.lixeira header { background: #4a3b3b; }
-  body.lixeira header h1 { color: #ffe9e4; }
-  body.lixeira header h1::after { content: " · lixeira"; color: #ffb4a8; }
-  body.lixeira header .count { color: #d8c4c0; }
+  body.trash header { background: #4a3b3b; }
+  body.trash header h1 { color: #ffe9e4; }
+  body.trash header h1::after { content: " · trash"; color: #ffb4a8; }
+  body.trash header .count { color: #d8c4c0; }
   /* Restaurar é a ação principal desta tela, então não fica escondida como o
      `×` fica no mural. */
-  body.lixeira .note .del { opacity: 1; font-size: 1.05rem; font-weight: 700; }
-  body.lixeira .note .del:hover { color: #1e7a3c; }
+  body.trash .note .del { opacity: 1; font-size: 1.05rem; font-weight: 700; }
+  body.trash .note .del:hover { color: #1e7a3c; }
 
   /* ── Visão geral: posição livre ──────────────────────────────────────── */
-  #board.geral { position: relative; min-height: calc(100vh - 4rem); padding: 1rem; }
-  #board.geral .note { position: absolute; width: 15rem; min-height: 6.6rem; cursor: grab; transform: rotate(var(--tilt, -.4deg)); transition: box-shadow .15s, transform .15s; }
-  #board.geral .note:hover { box-shadow: 0 6px 18px var(--shadow); }
-  #board.geral .note.dragging { cursor: grabbing; z-index: 50; transform: rotate(0) scale(1.02); }
+  #board.board { position: relative; min-height: calc(100vh - 4rem); padding: 1rem; }
+  #board.board .note { position: absolute; width: 15rem; min-height: 6.6rem; cursor: grab; transform: rotate(var(--tilt, -.4deg)); transition: box-shadow .15s, transform .15s; }
+  #board.board .note:hover { box-shadow: 0 6px 18px var(--shadow); }
+  #board.board .note.dragging { cursor: grabbing; z-index: 50; transform: rotate(0) scale(1.02); }
 
   /* ── Visão lista ─────────────────────────────────────────────────────── */
-  #board.lista { display: flex; flex-direction: column; gap: .5rem; padding: 1rem; max-width: 56rem; margin: 0 auto; }
+  #board.list { display: flex; flex-direction: column; gap: .5rem; padding: 1rem; max-width: 56rem; margin: 0 auto; }
   /* Posição explícita para os três filhos: deixar qualquer um por auto-placement
      faz a barra cair na coluna 1 e empurrar o texto para baixo. */
-  #board.lista .note { padding: .55rem .7rem; display: grid; grid-template-columns: 1fr auto; gap: .2rem .8rem; }
-  #board.lista .note .text { grid-column: 1; grid-row: 1; }
-  #board.lista .note .meta { grid-column: 1; grid-row: 2; margin-top: 0; }
-  #board.lista .note .bar {
+  #board.list .note { padding: .55rem .7rem; display: grid; grid-template-columns: 1fr auto; gap: .2rem .8rem; }
+  #board.list .note .text { grid-column: 1; grid-row: 1; }
+  #board.list .note .meta { grid-column: 1; grid-row: 2; margin-top: 0; }
+  #board.list .note .bar {
     position: static; left: auto; right: auto; bottom: auto;
     grid-column: 2; grid-row: 1 / span 2; align-self: center;
   }
   /* Prioridade como borda colorida, não como texto. A primeira versão usava
      writing-mode vertical e ficava um borrão de três letras ilegível — e
      redundante, porque a prioridade já aparece como chip no meta. */
-  #board.lista .note { border-left: 4px solid var(--prio-color, transparent); }
-  #board.lista .note.p-high  { --prio-color: #c0392b; }
-  #board.lista .note.p-medium { --prio-color: #d68910; }
-  #board.lista .note.p-low   { --prio-color: #7f8c8d; }
-  #board.lista .divider { color: var(--muted); font-size: .8rem; padding: .6rem 0 .1rem; border-top: 1px solid var(--line); }
+  #board.list .note { border-left: 4px solid var(--prio-color, transparent); }
+  #board.list .note.p-high  { --prio-color: #c0392b; }
+  #board.list .note.p-medium { --prio-color: #d68910; }
+  #board.list .note.p-low   { --prio-color: #7f8c8d; }
+  #board.list .divider { color: var(--muted); font-size: .8rem; padding: .6rem 0 .1rem; border-top: 1px solid var(--line); }
 
   /* ── Visão kanban ────────────────────────────────────────────────────── */
   #board.kanban { display: flex; gap: .75rem; padding: 1rem; overflow-x: auto; align-items: flex-start; }
@@ -187,40 +187,40 @@
 
   @media (max-width: 720px) {
     /* Posição livre é hostil no celular: a visão geral cai para fluxo. */
-    #board.geral { display: flex; flex-direction: column; gap: .8rem; }
-    #board.geral .note { position: static !important; width: auto; cursor: default; transform: none; }
+    #board.board { display: flex; flex-direction: column; gap: .8rem; }
+    #board.board .note { position: static !important; width: auto; cursor: default; transform: none; }
   }
 </style>
 </head>
-<body class="view-geral">
+<body class="view-board">
 <header>
   <h1 id="titulo">Mural</h1>
   <div class="views" id="views">
-    <button data-view="geral"></button>
-    <button data-view="lista"></button>
+    <button data-view="board"></button>
+    <button data-view="list"></button>
     <button data-view="kanban"></button>
   </div>
   <div class="filtros">
-    <select id="fEixo" title="filtrar por área" aria-label="área">
-      <option value="" data-i18n="board.filtro.area"></option>
+    <select id="fEixo" title=""  data-i18n-title="board.title_filter_area" aria-label="área">
+      <option value="" data-i18n="board.filter.area"></option>
       <option value="trabalho">trabalho</option>
       <option value="pessoal">pessoal</option>
     </select>
     <select id="fTipo" title="filtrar por tipo" aria-label="tipo">
-      <option value="" data-i18n="board.filtro.tipo"></option>
+      <option value="" data-i18n="board.filter.type"></option>
       <option value="tarefa">tarefa</option>
       <option value="compromisso">compromisso</option>
       <option value="anotacao">anotação</option>
     </select>
     <select id="fTag" title="filtrar por tag" aria-label="tag">
-      <option value="" data-i18n="board.filtro.tag"></option>
+      <option value="" data-i18n="board.filter.tag"></option>
     </select>
   </div>
   <input id="capture">
   <button id="revisar" class="acao" title="pede à LLM para reetiquetar todas as notas abertas">
     </button>
   <button id="esvaziar" class="acao perigo" hidden
-    title="apaga em definitivo tudo que está na lixeira"></button>
+    data-i18n-title="board.title_empty_trash"></button>
   <span class="count" id="count"></span>
   <label class="hint" id="doneToggle"><input type="checkbox" id="showDone"> <span id="rotuloConcluidas"></span></label>
 </header>
@@ -229,7 +229,7 @@
      `position: absolute` dentro dele e cobririam o aviso. -->
 <div id="aviso" class="erro" hidden></div>
 
-<div id="board" class="geral"><div class="empty" id="carregando"></div></div>
+<div id="board" class="board"><div class="empty" id="carregando"></div></div>
 
 <script>
 // Paleta manual tirada do MESMO sistema das cores automáticas, para uma escolha
@@ -314,17 +314,20 @@ const tr = (chave) => I18N[chave] ?? chave;
 // Roda uma vez, antes do primeiro render. Se uma chave faltar, `tr` devolve a
 // própria chave: feio e visível, em vez de vazio e silencioso.
 (() => {
-  document.getElementById("titulo").textContent = tr("board.titulo");
-  document.getElementById("rotuloConcluidas").textContent = tr("board.concluidas");
-  document.getElementById("revisar").textContent = tr("board.revisar");
-  document.getElementById("esvaziar").textContent = tr("board.esvaziar");
+  document.getElementById("titulo").textContent = tr("board.title");
+  document.getElementById("rotuloConcluidas").textContent = tr("board.done");
+  document.getElementById("revisar").textContent = tr("board.review");
+  document.getElementById("esvaziar").textContent = tr("board.empty_trash");
   document.querySelectorAll("button[data-view]").forEach(b => {
     b.textContent = tr(`board.view.${b.dataset.view}`);
   });
   document.querySelectorAll("[data-i18n]").forEach(e => {
     e.textContent = tr(e.dataset.i18n);
   });
-  document.getElementById("capture").placeholder = tr("board.captura");
+  document.querySelectorAll("[data-i18n-title]").forEach(e => {
+    e.title = tr(e.dataset.i18nTitle);
+  });
+  document.getElementById("capture").placeholder = tr("board.capture");
 })();
 
 const LABEL = Object.fromEntries(
@@ -357,14 +360,14 @@ const btnRevisar = document.getElementById("revisar");
 const btnEsvaziar = document.getElementById("esvaziar");
 
 // A visão sobrevive ao reload: voltar sempre para "geral" seria irritante.
-let view = localStorage.getItem("ta.view") || "geral";
+let view = localStorage.getItem("ta.view") || "board";
 
-// Lixeira: ligada por `#lixeira` na URL, não por botão. Escondida de propósito —
+// Lixeira: ligada por `#trash` na URL, não por botão. Escondida de propósito —
 // é uma tela de recuperação, não parte do fluxo diário, e um botão permanente
 // para "ver o que apaguei" só ocuparia espaço no cabeçalho.
-let lixeira = location.hash === "#lixeira";
+let trash = location.hash === "#trash";
 window.addEventListener("hashchange", () => {
-  lixeira = location.hash === "#lixeira";
+  trash = location.hash === "#trash";
   load();
 });
 let todas = [];      // o que veio da API
@@ -378,7 +381,7 @@ let fTagV = localStorage.getItem("ta.filtro.tag") || "";
 // `no-store` e atualiza na hora, mas as rotas Python só depois de reiniciar. Uma
 // mensagem só, para as duas detecções (rota que não existe e campo que não existe)
 // nunca divergirem.
-const MSG_DESATUALIZADO = tr("daemon.desatualizado");
+const MSG_DESATUALIZADO = tr("daemon.outdated");
 
 /** Mostra o aviso acima do quadro, ou o esconde com `null`.
  *
@@ -423,7 +426,7 @@ const api = async (method, path, body) => {
     if (r.status === 401) {
       localStorage.removeItem(TOKEN_KEY);
       throw new Error(
-        tr("auth.mural")
+        tr("auth.board")
       );
     }
     // 404 numa rota que este HTML conhece quer dizer daemon velho. Aconteceu de
@@ -442,10 +445,10 @@ const api = async (method, path, body) => {
 
 // Lista e kanban precisam das terminais: a lista as mostra no fim, e o kanban
 // tem colunas para elas. Só a visão geral respeita o checkbox.
-const wantsAll = () => view !== "geral" || showDone.checked;
+const wantsAll = () => view !== "board" || showDone.checked;
 
 const load = async () => {
-  const q = lixeira ? "?deleted=1" : (wantsAll() ? "?done=1" : "");
+  const q = trash ? "?deleted=1" : (wantsAll() ? "?done=1" : "");
   todas = (await api("GET", `/notes${q}`)).notes;
   // A ordem das notas vem do servidor (ADR 0010). Contra um daemon velho ela vem
   // crua de `sort_key`, e o mural não teria como saber: desenharia ordem errada
@@ -467,9 +470,9 @@ const metaHTML = (n) => {
     // do navegador concordar com o do daemon.
     const late = n.horizon === "overdue" && !n.terminal;
     const quando = n.horizon === "today" && !n.terminal ? tr("horizon.today") : n.due;
-    bits.push(`<span class="${late ? "overdue" : ""}">${late ? tr("board.vencida") : tr("board.prazo")}${quando}</span>`);
+    bits.push(`<span class="${late ? "overdue" : ""}">${late ? tr("board.overdue") : tr("board.due")}${quando}</span>`);
   }
-  if (n.roles.reminder) bits.push(`<span>${tr("board.lembra")}${n.remind_at.slice(5, 16).replace("T", " ")}</span>`);
+  if (n.roles.reminder) bits.push(`<span>${tr("board.reminds")}${n.remind_at.slice(5, 16).replace("T", " ")}</span>`);
   if (n.priority) bits.push(`<span>${n.priority}</span>`);
   if (view !== "kanban" && n.status !== "todo") bits.push(`<span>${LABEL[n.status]}</span>`);
   n.tags.forEach(t => bits.push(`<span>#${t}</span>`));
@@ -493,7 +496,7 @@ const noteEl = (n, { withStatusSelect = false, withSwatches = true } = {}) => {
     : "";
   // O botão "auto" limpa a cor manual e devolve a nota ao padrão da prioridade.
   // Sem ele, um clique errado prenderia a cor para sempre.
-  const auto = `<button class="swatch auto" data-color="" title="cor automática (pela prioridade)"
+  const auto = `<button class="swatch auto" data-color="" title="${tr('board.title_auto_color')}"
       style="background:${corDe({ ...n, color: null })}"
       aria-pressed="${!n.color}">A</button>`;
   // Os swatches vão num grupo que não quebra internamente: sem isto a barra
@@ -508,9 +511,9 @@ const noteEl = (n, { withStatusSelect = false, withSwatches = true } = {}) => {
   // `×` para apagar, ou `↩` na lixeira. Último item da barra, depois do número:
   // é o canto mais longe do texto e do seletor de estado, e apagar por engano é
   // o risco que a posição tem que reduzir.
-  const acao = lixeira
-    ? `<button class="del" title="${tr("board.restaurar")}" data-restore="1">↩</button>`
-    : `<button class="del" title="apagar (reversível)">×</button>`;
+  const acao = trash
+    ? `<button class="del" title="${tr("board.restore")}" data-restore="1">↩</button>`
+    : `<button class="del" title="${tr('board.title_delete')}">×</button>`;
 
   el.innerHTML = `
     <div class="text"></div>
@@ -541,7 +544,7 @@ const noteEl = (n, { withStatusSelect = false, withSwatches = true } = {}) => {
       }
       if (Date.now() > armadoAte) {
         del.dataset.armado = "1";
-        del.textContent = tr("board.apagar");
+        del.textContent = tr("board.delete");
         del.title = "clique de novo para apagar";
         armadoAte = Date.now() + 4000;
         setTimeout(() => { if (Date.now() > armadoAte) desarmar(); }, 4050);
@@ -578,7 +581,7 @@ const fallbackPos = (i) => {
   return { x: 16 + (i % perRow) * 272, y: 16 + Math.floor(i / perRow) * 170 };
 };
 
-const renderGeral = () => {
+const renderBoard = () => {
   notes.forEach((n, i) => {
     const el = noteEl(n, { withStatusSelect: true });
     const p = n.pos ? { x: n.pos[0], y: n.pos[1] } : fallbackPos(i);
@@ -628,7 +631,7 @@ const divisoria = (texto) => {
   boardEl.appendChild(d);
 };
 
-const renderLista = () => {
+const renderList = () => {
   let faixa = null;
   let foraDaFilaPosto = false;
   notes.forEach(n => {
@@ -637,7 +640,7 @@ const renderLista = () => {
       // `hoje` não quer dizer nada — uma nota concluída não tem urgência.
       if (!foraDaFilaPosto) {
         foraDaFilaPosto = true;
-        divisoria(tr("board.fora_da_fila"));
+        divisoria(tr("board.out_of_queue"));
       }
     } else if (n.horizon !== faixa) {
       faixa = n.horizon;
@@ -748,7 +751,7 @@ const popularTags = () => {
   // Montado pelo DOM, não por innerHTML: tag é texto do usuário, e a regra
   // "nunca innerHTML para entrada do usuário" vale aqui como no post-it.
   fTag.replaceChildren();
-  const todasOpt = new Option(tr("board.filtro.tag"), "");
+  const todasOpt = new Option(tr("board.filter.tag"), "");
   fTag.add(todasOpt);
   presentes.forEach(x => fTag.add(new Option(`#${x}`, x)));
   fTag.value = fTagV;
@@ -797,14 +800,14 @@ const RESET_ARMADO_MS = 6000;
 
 const desarmar = () => {
   btnRevisar.dataset.armado = "0";
-  btnRevisar.textContent = tr("board.revisar");
+  btnRevisar.textContent = tr("board.review");
   armadoAte = 0;
 };
 
 btnRevisar.addEventListener("click", async () => {
   if (Date.now() > armadoAte) {
     btnRevisar.dataset.armado = "1";
-    btnRevisar.textContent = tr("board.confirmar") + " " + tr("board.revisar");
+    btnRevisar.textContent = tr("board.confirm") + " " + tr("board.review");
     armadoAte = Date.now() + RESET_ARMADO_MS;
     setTimeout(() => { if (Date.now() > armadoAte) desarmar(); }, RESET_ARMADO_MS + 50);
     return;
@@ -818,7 +821,7 @@ btnRevisar.addEventListener("click", async () => {
     btnRevisar.textContent = `${r.queued} na fila…`;
     acompanharRevisao();
   } catch (e) {
-    btnRevisar.textContent = tr("board.falhou");
+    btnRevisar.textContent = tr("board.failed");
     avisar(e.message);
     setTimeout(() => { btnRevisar.disabled = false; desarmar(); }, 2500);
   }
@@ -830,7 +833,7 @@ const acompanharRevisao = async () => {
     await new Promise(r => setTimeout(r, 2000));
     let s;
     try { s = await api("GET", "/review-status"); } catch { break; }
-    btnRevisar.textContent = s.pending ? `${s.pending}…` : tr("board.revisar");
+    btnRevisar.textContent = s.pending ? `${s.pending}…` : tr("board.review");
     await load();
     if (!s.pending && !s.running) break;
   }
@@ -846,7 +849,7 @@ const RESET_ESVAZIAR_MS = 8000;
 
 const desarmarEsvaziar = () => {
   btnEsvaziar.dataset.armado = "0";
-  btnEsvaziar.textContent = tr("board.esvaziar");
+  btnEsvaziar.textContent = tr("board.empty_trash");
   esvaziarAte = 0;
 };
 
@@ -866,7 +869,7 @@ btnEsvaziar.addEventListener("click", async () => {
     btnEsvaziar.textContent = `${r.purged} apagada(s)`;
     await load();
   } catch (e) {
-    btnEsvaziar.textContent = tr("board.falhou");
+    btnEsvaziar.textContent = tr("board.failed");
     // O motivo vai para a tela, não só para o console: quem clica é você.
     avisar(e.message);
   }
@@ -891,43 +894,43 @@ setInterval(() => {
 // ── Render ─────────────────────────────────────────────────────────────────
 const desenhar = () => {
   boardEl.className = view;
-  document.body.className = "view-" + view + (lixeira ? " lixeira" : "");
+  document.body.className = "view-" + view + (trash ? " trash" : "");
   boardEl.innerHTML = "";
-  doneToggle.style.display = (view === "geral" && !lixeira) ? "" : "none";
-  btnRevisar.style.display = lixeira ? "none" : "";
+  doneToggle.style.display = (view === "geral" && !trash) ? "" : "none";
+  btnRevisar.style.display = trash ? "none" : "";
   // Só aparece na lixeira, e só quando há algo para esvaziar.
-  btnEsvaziar.hidden = !lixeira || !todas.length;
+  btnEsvaziar.hidden = !trash || !todas.length;
   // Capturar dentro da lixeira criaria uma nota que você não veria: ela nasce
   // viva e esta tela só mostra apagadas.
-  capture.disabled = lixeira;
-  capture.placeholder = lixeira
-    ? tr("board.na_lixeira")
-    : tr("board.captura");
+  capture.disabled = trash;
+  capture.placeholder = trash
+    ? tr("board.in_trash")
+    : tr("board.capture");
   const filtrando = fEixoV || fTipoV || fTagV;
   countEl.textContent = notes.length
-    ? (filtrando ? `${notes.length} / ${todas.length}` : `${notes.length} ${tr("board.contador")}`)
+    ? (filtrando ? `${notes.length} / ${todas.length}` : `${notes.length} ${tr("board.counter")}`)
     : "";
   [...viewsEl.children].forEach(b => b.setAttribute("aria-pressed", b.dataset.view === view));
 
-  if (!notes.length && lixeira) {
-    boardEl.innerHTML = '<div class="empty">lixeira vazia. '
-      + '<a href="#">voltar ao mural</a></div>';
+  if (!notes.length && trash) {
+    boardEl.innerHTML = `<div class="empty">${tr("board.trash_empty")}`
+      + `<a href="#">${tr("board.back_to_board")}</a></div>`;
     return;
   }
   if (!notes.length) {
     // A mensagem tem que dizer QUAL dos dois vazios é este.
     boardEl.innerHTML = todas.length
-      ? '<div class="empty">nenhuma nota passa pelo filtro. <button id="limpar">limpar filtros</button></div>'
+      ? `<div class="empty">${tr("board.no_match")} <button id="limpar">${tr("board.clear_filters")}</button></div>`
       : '<div class="empty">nada aqui. Escreva algo acima, ou use <code>ta note</code>.</div>';
     const limpar = document.getElementById("limpar");
     if (limpar) limpar.onclick = limparFiltros;
     return;
   }
-  ({ geral: renderGeral, lista: renderLista, kanban: renderKanban })[view]();
+  ({ board: renderBoard, list: renderList, kanban: renderKanban })[view]();
 };
 
 /** `desenhar` tem três saídas que escrevem `boardEl.innerHTML` por conta própria
- * (lixeira vazia, sem notas, e o desenho normal). O aviso entra depois de todas,
+ * (trash vazia, sem notas, e o desenho normal). O aviso entra depois de todas,
  * num ponto só — e nenhum chamador de `render` precisa mudar.
  *
  * Não lançar exceção aqui: `load` é chamado de sete lugares e três não têm
@@ -955,7 +958,7 @@ capture.addEventListener("keydown", async (e) => {
     await load();
   } catch (err) {
     capture.value = text;   // não engolir o que a pessoa escreveu
-    alert("não deu para salvar: " + err.message);
+    alert(tr("board.save_failed") + err.message);
   }
 });
 
@@ -964,7 +967,7 @@ load().catch(e => {
   // Pelo `#aviso`, e não por `innerHTML` no quadro: a mensagem pode vir do
   // servidor (e `textContent` é o que impede injeção), e as de credencial e de
   // daemon velho têm duas linhas — o `.erro` tem `white-space: pre-line`.
-  boardEl.innerHTML = `<div class="empty">${tr("board.nao_carregou")}</div>`;
+  boardEl.innerHTML = `<div class="empty">${tr("board.load_failed")}</div>`;
   avisar(e.message);
 });
 </script>

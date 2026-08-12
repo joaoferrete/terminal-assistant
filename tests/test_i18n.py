@@ -55,7 +55,7 @@ def test_o_locale_do_sistema_vale_quando_nada_foi_configurado(monkeypatch, tmp_p
     config._user_config.cache_clear()
     i18n.reset_cache()
     assert i18n.lang() == "pt"
-    assert i18n.lang_source() == "locale do sistema"
+    assert i18n.lang_source() == "system locale"
 
 
 def test_locale_nao_suportado_cai_no_padrao(monkeypatch, tmp_path):
@@ -88,7 +88,7 @@ def test_os_dois_idiomas_tem_as_mesmas_chaves():
     que ninguém compara com a outra.
     """
     por_lang = {
-        lang: {k for k, v in i18n.MENSAGENS.items() if lang in v}
+        lang: {k for k, v in i18n.MESSAGES.items() if lang in v}
         for lang in i18n.LANGS
     }
     assert por_lang["pt"] == por_lang["en"]

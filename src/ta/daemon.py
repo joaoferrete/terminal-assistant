@@ -31,7 +31,7 @@ from .config import (
     LOOPBACK,
     Config,
     ConfigError,
-    _comandavel,
+    _commandable,
     config_dir,
     resolve_entity,
     resolve_targets,
@@ -776,7 +776,7 @@ async def home_off(request: Request) -> JSONResponse:
             entidades = [
                 e["entity_id"]
                 for e in await home.entities("light.", "switch.")
-                if e["state"] == "on" and _comandavel(e)
+                if e["state"] == "on" and _commandable(e)
             ]
         resultados = []
         for entity in entidades:
