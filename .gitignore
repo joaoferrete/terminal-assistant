@@ -14,3 +14,8 @@ docs/ROADMAP.md
 # Estado de sessão de ferramentas de IA. Ignorado globalmente nesta máquina, mas
 # explícito aqui para quem clonar não depender da config global de outra pessoa.
 .claude/
+
+# Backups do .env: o `.env` está coberto acima, mas `.env.bak-*` não estava, e
+# um `git add -A` levou credenciais reais para o histórico uma vez.
+.env.bak*
+.env.*.bak

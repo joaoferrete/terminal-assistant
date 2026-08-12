@@ -10,11 +10,67 @@ início do projeto e está registrado no ROADMAP.
 
 from __future__ import annotations
 
+import logging
 import os
+import tomllib
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 
-DEFAULT_HOST = "0.0.0.0"  # noqa: S104 — LAN de propósito: o mural abre no celular
+log = logging.getLogger("ta")
+
+# Loopback por padrão. O mural no celular continua possível, mas passou a exigir
+# dois atos deliberados — `TA_HOST` e `TA_TOKEN` —, porque o daemon expõe as notas
+# inteiras, o comando da casa e a chave do modelo, tudo sem credencial (ADR 0012).
+# Quem lê SECURITY.md já se preocupa; quem segue o passo a passo é quem não sabe
+# que devia.
+DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 7777
+
+# Endereços em que não há rede alheia alcançando o daemon. Fora desta lista,
+# `TA_TOKEN` é obrigatório e o daemon recusa subir sem ele.
+LOOPBACK = ("127.0.0.1", "::1", "localhost")
+
+
+class ConfigError(RuntimeError):
+    """Configuração que não dá para corrigir em runtime. O daemon não sobe."""
+
+
+def env_file() -> Path:
+    """O `.env` do projeto — o mesmo que o `EnvironmentFile` do systemd aponta."""
+    return Path(__file__).resolve().parents[2] / ".env"
+
+
+def load_env_file() -> Path | None:
+    """Carrega o `.env` no ambiente do processo, sem sobrescrever o que já existe.
+
+    O daemon **não** precisa disto: o systemd já lhe entrega o arquivo. Quem
+    precisa é o CLI, e o `ta doctor` em particular — sem isto ele reportava
+    `HA_TOKEN não está definido` numa máquina onde o token estava configurado e
+    funcionando, porque o processo do CLI simplesmente não enxerga o arquivo.
+
+    Falso negativo em diagnóstico é pior que diagnóstico nenhum: manda a pessoa
+    consertar o que não está quebrado.
+
+    Não sobrescrever o ambiente existente importa: `TA_LANG=en ta doctor` tem de
+    continuar valendo mais que a linha do arquivo.
+    """
+    caminho = env_file()
+    if not caminho.exists():
+        return None
+    try:
+        for linha in caminho.read_text().splitlines():
+            linha = linha.strip()
+            if not linha or linha.startswith("#") or "=" not in linha:
+                continue
+            chave, _, valor = linha.partition("=")
+            chave = chave.strip()
+            if chave and chave not in os.environ:
+                os.environ[chave] = valor.strip().strip("\"'")
+    except OSError as e:
+        log.warning("%s não pôde ser lido: %s", caminho, e)
+        return None
+    return caminho
 
 
 @dataclass(frozen=True)
@@ -24,6 +80,9 @@ class Config:
     ha_url: str = "http://localhost:8123"
     ha_token: str | None = None
     gemini_api_key: str | None = None
+    # Credencial do PRÓPRIO daemon, não de terceiro. Só é exigida quando o bind
+    # sai do loopback; em loopback fica None e nada muda no uso local.
+    token: str | None = None
     # Echo(s) para anúncio de voz. Vazio = ninguém para falar, e o Reminder
     # continua avisando na tela — o caminho confiável nunca depende disto.
     echo_entities: tuple[str, ...] = ()
@@ -41,6 +100,7 @@ class Config:
             ha_url=os.environ.get("HA_URL", "http://localhost:8123").rstrip("/"),
             ha_token=os.environ.get("HA_TOKEN") or None,
             gemini_api_key=os.environ.get("GEMINI_API_KEY") or None,
+            token=os.environ.get("TA_TOKEN") or None,
             auto_review=os.environ.get("TA_AUTO_REVIEW", "1") not in ("0", "false", "no"),
             echo_entities=tuple(
                 e.strip() for e in os.environ.get("TA_ECHOS", "").split(",") if e.strip()
@@ -53,24 +113,98 @@ class Config:
         host = "127.0.0.1" if self.host in ("0.0.0.0", "::") else self.host  # noqa: S104
         return f"http://{host}:{self.port}"
 
+    @property
+    def exposed(self) -> bool:
+        """Se o bind alcança outra máquina. `0.0.0.0` e um IP de LAN alcançam."""
+        return self.host not in LOOPBACK
 
-# Apelidos curtos para entity_id, para que a linha de comando não exija digitar
-# `light.lampada_do_quarto`. O inventário real está no README; estes apelidos são
-# conveniência de CLI, não modelo de domínio.
-ENTITY_ALIASES: dict[str, str] = {
-    "quarto": "light.lampada_do_quarto",
-    "ventilador": "switch.ventilador_socket_1",
-}
+    def check(self) -> None:
+        """Recusa uma configuração que exporia o daemon sem credencial.
+
+        Falha alto e cedo, com o conserto na mensagem — mesmo espírito do
+        `make check-gi`. Um daemon que sobe e só depois se descobre aberto é pior
+        que um que não sobe: ninguém vai reler o log de boot.
+        """
+        if self.exposed and not self.token:
+            raise ConfigError(
+                f"TA_HOST={self.host} expõe o daemon na rede, e ele não tem\n"
+                "autenticação própria: qualquer um na mesma rede leria suas notas,\n"
+                "comandaria a casa e gastaria sua chave de modelo.\n"
+                "\n"
+                "Para abrir com credencial, gere um token e reinicie:\n"
+                "\n"
+                "    echo \"TA_TOKEN=$(python3 -c 'import secrets;"
+                " print(secrets.token_urlsafe(32))')\" >> .env\n"
+                "    systemctl --user restart ta\n"
+                "\n"
+                "Para voltar ao acesso só local, remova TA_HOST do .env."
+            )
 
 
-# Grupos por domínio: `ta on luz` liga todas as luzes.
-GROUPS: dict[str, tuple[str, ...]] = {
+# ── Configuração do usuário ─────────────────────────────────────────────────
+# Apelidos e grupos moram em `~/.config/ta/config.toml`, e não aqui. Enquanto o
+# repositório foi de uma pessoa só, ter `quarto = light.abajur` fixo no
+# código-fonte era prático. Aberto, isso significaria que configurar a própria
+# casa exige editar o pacote instalado — mudança que se perde em toda
+# reinstalação (ADR 0014).
+#
+# O caminho segue o mesmo padrão de `db.default_db_path()`, que já estava certo.
+def config_dir() -> Path:
+    base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    return base / "ta"
+
+
+def config_file() -> Path:
+    return config_dir() / "config.toml"
+
+
+# Grupos por domínio: `ta on luz` liga todas as luzes. Diferente dos apelidos,
+# estes não são pessoais — valem para qualquer casa —, então vêm embutidos e o
+# arquivo do usuário só acrescenta.
+GRUPOS_PADRAO: dict[str, tuple[str, ...]] = {
     "luz": ("light.",),
     "luzes": ("light.",),
     "tomada": ("switch.",),
     "tomadas": ("switch.",),
     "tudo": ("light.", "switch."),
 }
+
+
+@lru_cache(maxsize=1)
+def _user_config() -> dict:
+    """Lê `config.toml` uma vez. Ausente ou ilegível não é erro.
+
+    Uma casa sem apelidos funciona: `ta on light.o_que_for` continua exato, e
+    `ta on quarto` casa por trecho do nome vindo do próprio Home Assistant. Falhar
+    o daemon por causa de um arquivo de conveniência seria desproporcional — mas
+    falhar **calado** por causa de TOML quebrado seria pior, então isso vira log.
+    """
+    caminho = config_file()
+    if not caminho.exists():
+        return {}
+    try:
+        with caminho.open("rb") as f:
+            return tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        log.warning("%s ignorado: %s", caminho, e)
+        return {}
+
+
+def entity_aliases() -> dict[str, str]:
+    """Apelidos curtos para `entity_id`, do arquivo do usuário. Pode ser vazio."""
+    bruto = _user_config().get("aliases", {})
+    return {str(k): str(v) for k, v in bruto.items()} if isinstance(bruto, dict) else {}
+
+
+def groups() -> dict[str, tuple[str, ...]]:
+    """Os grupos embutidos, mais os do usuário. O do usuário vence no conflito."""
+    do_usuario = _user_config().get("groups", {})
+    extras = (
+        {str(k): tuple(v) for k, v in do_usuario.items() if isinstance(v, list)}
+        if isinstance(do_usuario, dict)
+        else {}
+    )
+    return {**GRUPOS_PADRAO, **extras}
 
 
 def _sem_acento(s: str) -> str:
@@ -102,7 +236,7 @@ def resolve_entity(name: str) -> str:
     """Traduz apelido para entity_id. Um valor com ponto já é entity_id."""
     if "." in name:
         return name
-    return ENTITY_ALIASES.get(name, name)
+    return entity_aliases().get(name, name)
 
 
 def resolve_targets(term: str, entities: list[dict]) -> list[str]:
@@ -110,7 +244,7 @@ def resolve_targets(term: str, entities: list[dict]) -> list[str]:
 
     A ordem importa, do mais específico ao mais amplo:
 
-      1. `light.lampada_do_quarto` — já é entity_id
+      1. `light.abajur`          — já é entity_id
       2. `luz`, `tudo`            — grupo por domínio
       3. `quarto`                 — apelido explícito
       4. `sala`                   — ambiente, por trecho do nome
@@ -124,16 +258,18 @@ def resolve_targets(term: str, entities: list[dict]) -> list[str]:
 
     chave = _sem_acento(term)
 
-    if chave in GROUPS:
-        prefixos = GROUPS[chave]
+    grupos = groups()
+    if chave in grupos:
+        prefixos = grupos[chave]
         return [
             e["entity_id"]
             for e in entities
             if e["entity_id"].startswith(prefixos) and _comandavel(e)
         ]
 
-    if chave in ENTITY_ALIASES:
-        return [ENTITY_ALIASES[chave]]
+    apelidos = entity_aliases()
+    if chave in apelidos:
+        return [apelidos[chave]]
 
     def casa(e: dict, prefixo: str) -> bool:
         if not e["entity_id"].startswith(prefixo) or not _comandavel(e):

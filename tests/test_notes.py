@@ -1,5 +1,7 @@
 from datetime import date, datetime
 
+import pytest
+
 from ta.notes import parse
 
 # Segunda-feira, 10 de agosto de 2026, 09:00.
@@ -22,9 +24,47 @@ def test_extrai_tag_prioridade_e_prazo():
     n = p("ligar pro dentista #saude !alta @sexta")
     assert n.text == "ligar pro dentista"
     assert n.tags == ["saude"]
-    assert n.priority == "alta"
+    assert n.priority == "high"
     assert n.due == date(2026, 8, 14)  # sexta seguinte
     assert n.is_task
+
+
+# ── Prioridade: entrada nos dois idiomas, gravação num só ───────────────────
+@pytest.mark.parametrize(
+    ("marca", "canonico"),
+    [
+        ("!alta", "high"), ("!media", "medium"), ("!média", "medium"), ("!baixa", "low"),
+        ("!high", "high"), ("!medium", "medium"), ("!low", "low"),
+        ("!ALTA", "high"), ("!High", "high"),
+    ],
+)
+def test_a_marca_aceita_os_dois_idiomas_e_grava_um_so(marca, canonico):
+    """`!alta` foi a sintaxe por toda a vida do projeto e continua valendo.
+
+    Idioma é coisa de entrada e de exibição; o valor gravado é canônico, senão o
+    banco fica bilíngue e quem o lê precisa saber as duas línguas.
+    """
+    assert p(f"ligar dentista {marca}").priority == canonico
+
+
+def test_media_nao_engole_medium():
+    """`media` é prefixo de `medium`, e a alternância é ordenada por isso.
+
+    Sem a ordem, casar o prefixo e voltar depende de backtracking do motor de
+    regex — funciona, mas por acidente em vez de por escrito.
+    """
+    assert p("x !medium").priority == "medium"
+    assert p("x !medium").text == "x"
+
+
+def test_prioridade_desconhecida_nao_e_marca():
+    """`!urgente` não é prioridade, então volta para o texto em vez de virar erro.
+
+    Mesma disciplina do `@casa` que não é data.
+    """
+    n = p("resolver isso !urgente")
+    assert n.priority is None
+    assert n.text == "resolver isso !urgente"
 
 
 def test_reminder_nao_e_confundido_com_prioridade():
@@ -92,12 +132,12 @@ def test_nao_confunde_marca_colada_em_palavra():
 
 # ── Data e hora em português corrente (sem marca) ───────────────────────────
 def test_prazo_em_portugues_corrente():
-    """`Revisar o PR do Thi hoje` tem que virar tarefa de hoje, sem `@`."""
-    n = parse("Revisar o PR do Thi hoje", now=NOW)
+    """`Revisar o PR do Ana hoje` tem que virar tarefa de hoje, sem `@`."""
+    n = parse("Revisar o PR do Ana hoje", now=NOW)
     assert n.due == date(2026, 8, 10)
     assert n.is_task
     # O texto NÃO é mutilado: a palavra faz parte da frase.
-    assert n.text == "Revisar o PR do Thi hoje"
+    assert n.text == "Revisar o PR do Ana hoje"
 
 
 def test_dia_e_mes_com_hora_viram_prazo_e_lembrete():

@@ -9,21 +9,33 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hmac
+import json
 import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
-from . import engine, priorities, store
+from . import capabilities, engine, i18n, priorities, store
 from . import notes as notes_mod
 from .actuators.home import Home, HomeError, StateWatcher
 from .actuators.lighter import Lighter
 from .actuators.notify import Notifier
-from .config import Config, _comandavel, resolve_entity, resolve_targets
+from .config import (
+    LOOPBACK,
+    Config,
+    ConfigError,
+    _comandavel,
+    config_dir,
+    resolve_entity,
+    resolve_targets,
+)
 from .db import connect
 from .llm import LLM, LLMUnavailable
 from .scheduler import Scheduler, atraso_de, texto_de_atraso
@@ -38,15 +50,106 @@ log = logging.getLogger("ta")
 BRILHO_PADRAO = 100
 
 BOARD_HTML = Path(__file__).parent / "web" / "board.html"
-RULES_DIR = Path(__file__).resolve().parents[2] / "rules"
+
+# O marcador que a rota do mural troca pelo catálogo de mensagens. Escrito como
+# comentário JS para que o arquivo continue abrindo direto no navegador durante o
+# desenvolvimento, em vez de virar sintaxe inválida.
+MARCA_I18N = "/*__I18N__*/{}"
+
+# Regras de exemplo, versionadas como documentação. NÃO são carregadas: elas
+# miram o inventário de uma casa específica, e carregar isso no boot de outra
+# pessoa seria a regra falhando em silêncio contra uma entity inexistente.
+EXAMPLE_RULES = Path(__file__).resolve().parents[2] / "examples" / "rules"
 
 
-def _note_json(n: store.Note) -> dict:
+def user_rules_dir() -> Path:
+    """Onde as Rules do usuário moram: `~/.config/ta/rules/`.
+
+    O nome não é `rules_dir` porque `create_app` tem um parâmetro com esse nome,
+    e a sombra faria a chamada silenciosamente virar outra coisa.
+
+    Cai de volta para `<repo>/rules` quando o destino novo ainda não existe, e é
+    de propósito: quem já tinha regras ali não pode perdê-las por causa desta
+    mudança. `ta doctor` copia — nunca move — e a partir daí o XDG vence
+    (ADR 0014).
+    """
+    novo = config_dir() / "rules"
+    if novo.is_dir():
+        return novo
+    legado = Path(__file__).resolve().parents[2] / "rules"
+    if legado.is_dir():
+        log.info("regras lidas de %s (legado); `ta doctor` migra para %s", legado, novo)
+        return legado
+    return novo
+
+
+# Um socket IPv6 aceitando IPv4 reporta o par como `::ffff:127.0.0.1`. Sem isto,
+# o CLI local passaria a precisar de token só por causa da família do socket.
+LOOPBACK_PEERS = (*LOOPBACK, "::ffff:127.0.0.1")
+
+
+def _peer_local(request: Request) -> bool:
+    return bool(request.client) and request.client.host in LOOPBACK_PEERS
+
+
+class TokenAuth(BaseHTTPMiddleware):
+    """Exige `TA_TOKEN` de quem chega de outra máquina.
+
+    Cliente em loopback passa sem credencial, de propósito: quem já está nesta
+    máquina tem o `.env`, e exigir token dele faria `ta note` carregar segredo sem
+    ganhar segurança nenhuma. O que este middleware cobre é a **rede** — o caso em
+    que o daemon foi aberto com `TA_HOST` e um vizinho de wifi alcança as rotas.
+
+    Só é instalado quando há token. Em loopback puro o daemon não tem middleware
+    nenhum, e o caminho local segue exatamente como era (ADR 0012).
+
+    O token também é aceito na query, e não só no header, porque o mural precisa
+    bootar de algum jeito: `http://<ip>:7777/board?token=…` carrega o HTML, e daí
+    o JS guarda o valor e passa a mandá-lo no header.
+    """
+
+    def __init__(self, app, token: str) -> None:
+        super().__init__(app)
+        self._token = token
+
+    def _apresentado(self, request: Request) -> str:
+        cabecalho = request.headers.get("authorization", "")
+        if cabecalho.lower().startswith("bearer "):
+            return cabecalho[7:].strip()
+        return request.query_params.get("token", "")
+
+    async def dispatch(self, request: Request, call_next):
+        if not _peer_local(request):
+            # `compare_digest` em vez de `==`: comparação de segredo com saída
+            # antecipada vaza o prefixo correto pelo tempo de resposta.
+            enviado = self._apresentado(request)
+            if not enviado or not hmac.compare_digest(enviado, self._token):
+                log.warning(
+                    "401 de %s em %s", request.client.host if request.client else "?",
+                    request.url.path,
+                )
+                return JSONResponse(
+                    {"error": "credencial ausente ou inválida (TA_TOKEN)"},
+                    status_code=401,
+                )
+        return await call_next(request)
+
+
+def _note_json(n: store.Note, *, today: date | None = None) -> dict:
+    """Serializa uma Note para o cliente.
+
+    `horizon` vai junto e é derivado aqui, no servidor: ele depende do relógio, e
+    uma segunda definição de "próximos 7 dias" vivendo no JS do mural seria uma
+    definição que nenhum teste compara com esta (ADR 0010). Quem serializa uma
+    lista passa `today` calculado UMA vez, para um payload longo não atravessar a
+    meia-noite no meio dele.
+    """
     return {
         "id": n.id,
         "text": n.text,
         "created_at": n.created_at,
         "due": n.due,
+        "horizon": store.horizon(n.due, today=today),
         "remind_at": n.remind_at,
         "done": n.is_done,
         # O instante em que entrou em `done`. Distinto de `status`: estado e
@@ -118,9 +221,20 @@ async def health(request: Request) -> JSONResponse:
     """
     app = request.app
     cfg: Config = app.state.config
+    caps = capabilities.inspect(cfg)
     return JSONResponse(
         {
-            "ok": True,
+            # Era `True` literal. Um diagnóstico que responde "ok" mesmo com o
+            # núcleo quebrado não é diagnóstico — é decoração.
+            "ok": all(c.ok for c in caps if c.essential),
+            "lang": {"code": i18n.lang(), "source": i18n.lang_source()},
+            # `reason` e `fix` vão junto: o `Calendar` já calculava um motivo com
+            # o conserto embutido, e esta rota jogava fora, expondo só o booleano.
+            # Quem lê `available: false` fica sabendo o quê, não o que fazer.
+            "capabilities": [
+                {"key": c.key, "ok": c.ok, "reason": c.reason, "fix": c.fix}
+                for c in caps
+            ],
             "ha": {"url": cfg.ha_url, "token_configured": bool(cfg.ha_token)},
             "gemini": {
                 "key_configured": bool(cfg.gemini_api_key),
@@ -283,7 +397,15 @@ async def _revisar_uma(app: Starlette, note_id: int) -> None:
         # Anotação não tem prioridade, por definição: registro e ideia solta não
         # são cobráveis, e pedir urgência delas só suja o mural. Se havia
         # prioridade posta por máquina, ela sai.
-        nova = r.priority if (tipo != "anotacao" and r.priority in notes_mod.PRIORITIES) else None
+        #
+        # `resolve_priority` e não `in PRIORITIES`: o modelo pode devolver `alta`
+        # tanto quanto `high`, e as duas formas querem dizer a mesma coisa. Um
+        # valor que não é nem uma nem outra vira log — antes disso ele virava
+        # `None` calado, e o sintoma era a nota voltar da revisão sem prioridade
+        # sem que nada dissesse por quê.
+        nova = notes_mod.resolve_priority(r.priority) if tipo != "anotacao" else None
+        if r.priority and nova is None and tipo != "anotacao":
+            log.warning("revisão devolveu prioridade fora do enum: %r", r.priority)
         if nova != note.priority:
             store.set_priority(app.state.conn, note_id, nova)
             avisos.append(f"prioridade {nova}" if nova else "prioridade removida")
@@ -432,7 +554,12 @@ async def notes_list(request: Request) -> JSONResponse:
     notes = store.list_notes(
         request.app.state.conn, include_done=include_done, deleted=deleted
     )
-    return JSONResponse({"notes": [_note_json(n) for n in notes]})
+    # A ordem de exibição sai daqui, não do cliente: as três visões do mural, o
+    # `ta list` e qualquer outro consumidor recebem a mesma ordem sem cada um
+    # reimplementá-la (ADR 0010).
+    hoje = date.today()
+    notes = store.by_urgency(notes, today=hoje)
+    return JSONResponse({"notes": [_note_json(n, today=hoje) for n in notes]})
 
 
 async def notes_delete(request: Request) -> JSONResponse:
@@ -545,10 +672,17 @@ async def board(request: Request) -> HTMLResponse:
     no mural só aparecia depois de recarga forçada — e eu perdi tempo achando que
     o CSS estava errado quando era só cache.
     """
-    return HTMLResponse(
-        BOARD_HTML.read_text(encoding="utf-8"),
-        headers={"Cache-Control": "no-store, must-revalidate"},
+    # O catálogo é INJETADO no HTML, e não buscado por uma rota: o idioma não muda
+    # durante a vida da página, então uma segunda requisição só acrescentaria
+    # latência e um modo de falha (o mural desenhado antes de o catálogo chegar,
+    # mostrando chaves cruas por um instante).
+    #
+    # O JS não tem tabela paralela — mesma disciplina do `HORIZON_LABEL`. Uma
+    # segunda tradução vivendo no cliente seria uma que nenhum teste compara.
+    html = BOARD_HTML.read_text(encoding="utf-8").replace(
+        MARCA_I18N, json.dumps(i18n.catalogo(), ensure_ascii=False), 1
     )
+    return HTMLResponse(html, headers={"Cache-Control": "no-store, must-revalidate"})
 
 
 async def today(request: Request) -> JSONResponse:
@@ -571,7 +705,11 @@ async def today(request: Request) -> JSONResponse:
             await warm
 
     eventos = await asyncio.to_thread(app.state.calendar.today, dia)
-    tarefas = store.due_today(app.state.conn, today=dia)
+    # `dia` e não `date.today()`: com `--date`, a faixa tem de ser contada contra
+    # o dia pedido, senão tudo o que ele devolve vira `vencida`. Aqui só aparecem
+    # `vencida` e `hoje`, porque `due_today` filtra `due <= dia`.
+    hoje = dia or date.today()
+    tarefas = store.by_urgency(store.due_today(app.state.conn, today=dia), today=hoje)
     # Clima entra no Digest porque foi pedido, e degrada a None em silêncio: o
     # Digest não deve falhar porque o HA está fora do ar.
     clima = None
@@ -579,13 +717,13 @@ async def today(request: Request) -> JSONResponse:
         clima = (await app.state.home.sensors())["weather"]
     return JSONResponse(
         {
-            "date": (dia or date.today()).isoformat(),
+            "date": hoje.isoformat(),
             "weather": clima,
             "calendar_available": app.state.calendar.available,
             "calendar_error": app.state.calendar.error,
             "calendar_warming": aquecendo,
             "events": [_event_json(e) for e in eventos],
-            "tasks": [_note_json(n) for n in tarefas],
+            "tasks": [_note_json(n, today=hoje) for n in tarefas],
         }
     )
 
@@ -727,15 +865,22 @@ async def organize(request: Request) -> JSONResponse:
 
     Abrir o mural depois nunca chama o modelo, e o que foi arrastado à mão não é
     desfeito (ADR 0003).
+
+    Desde o ADR 0010 o prazo não é mais assunto do modelo: a faixa de horizonte é
+    derivada do relógio e vem na frente de tudo na exibição. O que o `organize`
+    grava em `sort_key` refina a ordem **dentro** da faixa.
     """
     app = request.app
     conn = app.state.conn
+    # De propósito na ordem GRAVADA, sem `by_urgency`: é o que o modelo tem de
+    # ver para refinar, e é a ordem que ele vai reescrever.
     notes = store.list_notes(conn)
     if not notes:
         return JSONResponse({"placed": 0, "groups": []})
+    hoje = date.today()
     try:
         res = await app.state.llm.organize(
-            [_note_json(n) for n in notes], priorities.current(conn) or ""
+            [_note_json(n, today=hoje) for n in notes], priorities.current(conn) or ""
         )
     except LLMUnavailable as e:
         return JSONResponse({"error": str(e)}, status_code=503)
@@ -849,10 +994,11 @@ async def digest_prose(request: Request) -> JSONResponse:
     """A prosa do dia. Enfeite opcional — a listagem é o padrão (ADR 0003)."""
     app = request.app
     eventos = await asyncio.to_thread(app.state.calendar.today)
-    tarefas = store.due_today(app.state.conn)
+    hoje = date.today()
+    tarefas = store.by_urgency(store.due_today(app.state.conn), today=hoje)
     try:
         texto = await app.state.llm.digest_prose(
-            [_event_json(e) for e in eventos], [_note_json(n) for n in tarefas]
+            [_event_json(e) for e in eventos], [_note_json(n, today=hoje) for n in tarefas]
         )
     except LLMUnavailable as e:
         return JSONResponse({"error": str(e)}, status_code=503)
@@ -871,7 +1017,7 @@ async def rules_route(request: Request) -> JSONResponse:
     app = request.app
     return JSONResponse(
         {
-            "dir": str(RULES_DIR),
+            "dir": str(user_rules_dir()),
             "rules": [
                 {"name": r.name, "on": [str(t) for t in r.on], "source": r.source}
                 for r in app.state.rules
@@ -945,7 +1091,11 @@ def create_app(
     aquecimento das fontes. Teste não deve tocar o ambiente do usuário.
     """
     cfg = config or Config.from_env()
-    rules_path = Path(rules_dir) if rules_dir else RULES_DIR
+    # Antes de qualquer outra coisa: um bind que alcança a rede sem credencial não
+    # sobe. Fica aqui e não no `main()` para valer também para quem monta o app
+    # por conta própria.
+    cfg.check()
+    rules_path = Path(rules_dir) if rules_dir else user_rules_dir()
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette):
@@ -1014,6 +1164,8 @@ def create_app(
 
     return Starlette(
         lifespan=lifespan,
+        # Sem token não há middleware: o caminho local fica idêntico ao que era.
+        middleware=[Middleware(TokenAuth, token=cfg.token)] if cfg.token else [],
         routes=[
             Route("/", board),
             Route("/board", board),
@@ -1049,11 +1201,22 @@ def create_app(
 
 
 def main() -> None:
+    import sys
+
     import uvicorn
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = Config.from_env()
-    uvicorn.run(create_app(cfg), host=cfg.host, port=cfg.port, log_level="warning")
+    try:
+        app = create_app(cfg)
+    except ConfigError as e:
+        # A mensagem já traz o conserto; um traceback só a esconderia.
+        print(f"\n{e}\n", file=sys.stderr)
+        raise SystemExit(2) from None
+
+    if cfg.exposed:
+        log.warning("daemon aberto em %s — protegido por TA_TOKEN", cfg.host)
+    uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="warning")
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ from datetime import date
 
 from pydantic import BaseModel, Field
 
+from . import i18n
 from .notes import TAGS_SUGERIDAS
 
 log = logging.getLogger("ta.llm")
@@ -42,7 +43,7 @@ class NotePlacement(BaseModel):
 class OrganizeResult(BaseModel):
     placements: list[NotePlacement]
     groups_in_order: list[str] = Field(
-        description="os grupos, do mais urgente para o menos urgente"
+        description="os grupos, do que merece atenção primeiro para o que pode esperar"
     )
 
 
@@ -75,8 +76,10 @@ class CaptureReview(BaseModel):
     remind_at: str = Field(
         default="", description="lembrete correto em ISO (2026-08-14T08:30), ou vazio para NENHUM"
     )
+    # Valor canônico, independente do idioma da resposta: é campo estruturado que
+    # vai para o banco, não texto para o usuário ler (emenda do ADR 0006).
     priority: str = Field(
-        default="", description="'alta', 'media', 'baixa', ou vazio se não der para dizer"
+        default="", description="'high', 'medium', 'low', ou vazio se não der para dizer"
     )
     tags: list[str] = Field(
         default_factory=list, description="1 a 2 temas, SOMENTE da lista oferecida"
@@ -88,7 +91,7 @@ class CaptureReview(BaseModel):
     account: str = Field(default="pessoal", description="'pessoal' ou 'trabalho'")
     confidence: float = Field(default=0.0, description="0 a 1")
     reason: str = Field(
-        default="", description="uma frase curta em português dizendo o que mudou e por quê"
+        default="", description="uma frase curta dizendo o que mudou e por quê"
     )
 
 
@@ -111,16 +114,39 @@ class LLM:
         if self._client is not None:
             return self._client
         if not self.api_key:
-            raise LLMUnavailable(
-                "GEMINI_API_KEY não está configurada. Confira o .env e "
-                "`curl localhost:7777/health`."
-            )
+            raise LLMUnavailable(i18n.t("ai.sem_chave"))
         try:
             from google import genai
         except ImportError as e:  # pragma: no cover - dependência declarada
-            raise LLMUnavailable("SDK google-genai não está instalado.") from e
+            raise LLMUnavailable(i18n.t("ai.sem_sdk")) from e
         self._client = genai.Client(api_key=self.api_key)
         return self._client
+
+    # ── Idioma de saída ─────────────────────────────────────────────────────
+    # O corpo dos prompts segue em português — é a fonte, e reescrevê-los mudaria
+    # o comportamento do modelo sem que eu tenha como comparar antes e depois sem
+    # queimar chamadas. O que muda com `TA_LANG` é o idioma em que ele RESPONDE,
+    # e isso cabe numa instrução de sistema, num lugar só.
+    #
+    # Só a prosa é traduzida. Campo estruturado (`priority`, `status`) é canônico:
+    # sem essa distinção, a revisão devolveria "alta" sob `TA_LANG=pt`, a
+    # validação recusaria por não estar no enum, e a prioridade sumiria em
+    # silêncio (emenda do ADR 0006).
+    IDIOMA_DE_SAIDA = {
+        "pt": "Escreva todo texto livre em português do Brasil.",
+        "en": "Write all free text in English.",
+    }
+
+    def _sistema(self, system: str = "") -> str:
+        from .i18n import lang
+
+        regra = (
+            f"{self.IDIOMA_DE_SAIDA[lang()]} "
+            "Isso vale para prosa e para nomes de grupo, NUNCA para campos de "
+            "valor fixo como prioridade ou status, que têm um vocabulário próprio "
+            "definido no schema."
+        )
+        return f"{system}\n\n{regra}".strip()
 
     async def _structured(self, prompt: str, schema: type[BaseModel], system: str = ""):
         """Uma chamada com saída validada contra o schema."""
@@ -132,18 +158,18 @@ class LLM:
         cfg = types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=schema,
-            system_instruction=system or None,
+            system_instruction=self._sistema(system),
         )
         try:
             resp = await asyncio.to_thread(
                 client.models.generate_content, model=self.model, contents=prompt, config=cfg
             )
         except Exception as e:
-            raise LLMUnavailable(f"Gemini falhou: {e}") from e
+            raise LLMUnavailable(i18n.t("ai.falhou", erro=e)) from e
 
         # `parsed` é a instância validada; o SDK a preenche quando há schema.
         if getattr(resp, "parsed", None) is None:
-            raise LLMUnavailable("Gemini respondeu fora do schema pedido.")
+            raise LLMUnavailable(i18n.t("ai.fora_do_schema"))
         return resp.parsed
 
     async def list_models(self) -> list[str]:
@@ -159,10 +185,18 @@ class LLM:
 
     # ── As três chamadas ────────────────────────────────────────────────────
     async def organize(self, notes: list[dict], priorities: str) -> OrganizeResult:
-        """Agrupa e ordena. O resultado é GRAVADO pelo chamador (ADR 0003)."""
+        """Agrupa e ordena. O resultado é GRAVADO pelo chamador (ADR 0003).
+
+        O prazo **não** é assunto desta chamada. A faixa de horizonte é derivada
+        do relógio e vem na frente de tudo na exibição (ADR 0010), então pedir
+        urgência ao modelo era pedir que ele competisse com uma regra que sempre
+        ganha dele. O que sobra é o que só ele sabe fazer: agrupar por tema e ver
+        o que desbloqueia o quê.
+        """
         linhas = "\n".join(
             f"- id={n['id']} | {n['text']}"
             f"{' | prazo ' + n['due'] if n.get('due') else ''}"
+            f"{' | faixa ' + n['horizon'] if n.get('horizon') else ''}"
             f"{' | prio ' + n['priority'] if n.get('priority') else ''}"
             f"{' | tags ' + ','.join(n['tags']) if n.get('tags') else ''}"
             f"{' | fixada pelo usuário' if n.get('pinned_by_user') else ''}"
@@ -173,8 +207,12 @@ class LLM:
                 f"Hoje é {date.today().isoformat()}.\n\n"
                 f"O que importa para esta pessoa:\n{priorities or '(não informado)'}\n\n"
                 f"Notas:\n{linhas}\n\n"
-                "Agrupe por tema e ordene por urgência real, considerando prazo, "
-                "prioridade declarada e o que a pessoa disse que importa. "
+                "Agrupe por tema. **Não ordene por prazo**: a faixa de cada nota "
+                "(vencida, hoje, semana, depois) já está resolvida e vem antes da "
+                "sua ordem na hora de mostrar — ordenar por prazo aqui não muda "
+                "nada. Ordene pelo que a sua ordem decide de fato: o que desbloqueia "
+                "outra coisa vem antes do que não desbloqueia nada, e o que a pessoa "
+                "disse que importa vem antes do que ela disse que costuma adiar. "
                 "Notas marcadas como fixadas pelo usuário devem manter a posição "
                 "relativa que já têm — a mão dela vence a sua."
             ),
@@ -257,7 +295,7 @@ class LLM:
             ),
             schema=CaptureReview,
             system=(
-                "Você revisa anotações soltas em português. Preserve o que o parser "
+                "Você revisa anotações soltas escritas pelo usuário. Preserve o que o parser "
                 "acertou e corrija só o que está errado. Na dúvida sobre data, hora ou "
                 "intenção, devolva confidence baixa em vez de adivinhar — uma correção "
                 "errada é pior que nenhuma."
@@ -271,7 +309,7 @@ class LLM:
         r = await self._structured(
             prompt=(
                 f"Compromissos de hoje:\n{ev}\n\nTarefas cobráveis:\n{tk}\n\n"
-                "Escreva 2 a 4 frases sobre como o dia se apresenta, em português, "
+                "Escreva 2 a 4 frases sobre como o dia se apresenta, "
                 "direto ao ponto. Aponte o aperto se houver — reuniões coladas, "
                 "tarefa vencida. Sem saudação e sem lista."
             ),

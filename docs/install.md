@@ -1,0 +1,285 @@
+# Installing
+
+Installation here is a **tree, not a line**. The core needs nothing; each
+integration is a separate decision with its own requirements. So this page is
+written in layers: take Layer 0, then only the ones you actually want.
+
+Every layer ends with *how to know it worked*, and the answer is almost always
+`ta doctor`.
+
+> Every environment variable mentioned here is documented in full in
+> [configuration.md](configuration.md). When something breaks,
+> [troubleshooting.md](troubleshooting.md) is organised by symptom.
+
+---
+
+## Layer 0 — The core
+
+**You need this one.** Notes, the board, the trigger engine, the scheduler, the
+export. Requires Python 3.12+ and somewhere to write a file. Nothing else.
+
+```bash
+git clone https://github.com/joaoferrete/terminal-assistant
+cd terminal-assistant
+make install
+```
+
+`make install` creates a virtualenv and installs the package in editable mode. It
+uses **the system Python on purpose** (`/usr/bin/python3`), with
+`--system-site-packages`. If you never plan to use the calendar, that does not
+matter and any Python 3.12+ works. If you might, it matters a lot — see
+[Layer 3](#layer-3--calendar).
+
+Not using `make`? The equivalent is:
+
+```bash
+/usr/bin/python3 -m venv --system-site-packages .venv
+.venv/bin/pip install -e ".[dev]"
+```
+
+### Did it work?
+
+```bash
+ta doctor
+```
+
+You want `ok` on the **Notes** line. Everything else can say `—`; that is the
+normal state of a fresh clone, and `ta doctor` exits `0` anyway because only the
+core is essential.
+
+`ta doctor` also creates `~/.config/ta/` on its first run — your config file and
+your rules directory. It copies, never moves, and never overwrites.
+
+Then actually use it:
+
+```bash
+ta note "my first note @tomorrow !high"
+ta list
+```
+
+If `ta` is not found, the package installed but the venv is not on your `PATH`.
+See [Layer 1](#layer-1--the-service-and-the-path) — this is the single most
+common stumble, and it has nothing to do with the code.
+
+---
+
+## Layer 1 — The service, and the `PATH`
+
+**Take this if** you want reminders to fire, automations to run, or the board to
+be there when you open it. Without a running daemon, `ta note` has nothing to
+talk to.
+
+### The daemon
+
+```bash
+make install-service
+```
+
+That writes a systemd **user** unit (not system — it needs your session bus and
+your home directory), enables it, and starts it. Check:
+
+```bash
+systemctl --user status ta
+journalctl --user -u ta -f          # the only place to look, on purpose
+```
+
+### The `PATH`
+
+The binary lives in the venv. Add it to your shell so `ta` works from anywhere:
+
+```bash
+echo 'export PATH="$HOME/terminal-assistant/.venv/bin:$PATH"' >> ~/.zshrc
+# or ~/.bashrc, and adjust the path to wherever you cloned it
+```
+
+Skipping this step produces a very confusing failure: everything is installed and
+working, and nothing responds. It happened to the author.
+
+### Did it work?
+
+```bash
+systemctl --user is-active ta       # active
+ta board                            # opens your browser
+```
+
+---
+
+## Layer 2 — Home Assistant
+
+**Take this if** you want to control lights, plugs and sensors, or write rules
+that act on your house.
+
+This one has enough detail to deserve its own page:
+**[home-assistant.md](home-assistant.md)** — getting a token, finding your
+`entity_id`s, setting up aliases and groups, and the two traps that cost the
+author real time.
+
+The short version:
+
+```bash
+cp .env.example .env
+# put HA_TOKEN and HA_URL in it
+systemctl --user restart ta
+```
+
+### Did it work?
+
+```bash
+ta doctor          # Home Assistant: ok
+ta entities        # your real inventory, from your HA
+```
+
+---
+
+## Layer 3 — Calendar
+
+**Take this if** you want `ta today` to show your actual day, or rules that know
+which meeting you are in.
+
+This reads your local Evolution Data Server through PyGObject. Nothing is fetched
+over the network by this project — GNOME already syncs it, and this just reads
+what is on disk ([ADR 0004](adr/0004-calendar-through-gnome-online-accounts.md)).
+
+```bash
+sudo apt install gir1.2-ecal-2.0 gir1.2-edataserver-1.2
+```
+
+Then connect your accounts in **Settings → Online Accounts**. GNOME handles
+OAuth and token renewal; this project never sees a credential.
+
+**The venv must have been created with `--system-site-packages`.** PyGObject is
+installed by `apt`, outside your venv, and that flag is what lets the venv see
+it. If you created the venv another way, delete it and run `make install` again.
+
+Optionally, create a calendar named `Terminal Assistant` in your provider. It is
+where detected events get written — a separate, disposable layer, so a wrong
+guess is never mixed into your real calendar
+([ADR 0007](adr/0007-propose-and-confirm-before-writing-to-the-calendar.md)).
+
+### Did it work?
+
+```bash
+make check-gi      # ECal OK, EDataServer OK
+ta doctor          # Calendar: ok
+ta today
+```
+
+The **first** `ta today` after a restart takes a few seconds and tells you it is
+warming up. That is expected: each cloud calendar pays a fixed connection
+timeout, and the result is cached. Subsequent calls take milliseconds.
+
+If `ta doctor` says something about D-Bus, you are in a session without a user
+bus — SSH without a graphical session, or a container. The calendar cannot work
+there, and nothing else is affected.
+
+---
+
+## Layer 4 — AI
+
+**Take this if** you want the second pass over captures, `ta organize`,
+`ta today` in prose, or event detection.
+
+It is **optional in the strong sense**: nothing you rely on stops working without
+it, and nothing calls a model unless you ask. See [ai.md](ai.md) for what each
+feature costs in model calls.
+
+```bash
+# get a key at https://aistudio.google.com/apikey
+echo "GEMINI_API_KEY=your-key" >> .env
+systemctl --user restart ta
+```
+
+To keep the key but stop the automatic second pass over every capture:
+`TA_AUTO_REVIEW=0`.
+
+### Did it work?
+
+```bash
+ta doctor          # AI (Gemini): ok
+ta init            # the priorities interview
+```
+
+---
+
+## Layer 5 — The desktop extras
+
+Global keyboard shortcuts, the quick-capture popup, and the ringlight.
+
+See **[shortcuts.md](shortcuts.md)** for the keybindings, including a GNOME trap
+that will silently eat your existing shortcuts if you are not careful.
+
+The ringlight is the [Lighter][lighter] GNOME extension, by the same author.
+Install it from its own repository; this project drives it through `gsettings`
+and does nothing if it is absent.
+
+---
+
+## Optional: the board on your phone
+
+By default the daemon listens on `127.0.0.1` only. Opening it to your network
+takes **two** deliberate steps, because it exposes every note you have written
+and the token that controls your house
+([ADR 0012](adr/0012-loopback-by-default-and-a-token-to-leave-it.md)):
+
+```bash
+echo "TA_HOST=0.0.0.0" >> .env
+echo "TA_TOKEN=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" >> .env
+systemctl --user restart ta
+```
+
+Without `TA_TOKEN` the daemon **refuses to start** on a non-loopback address, and
+tells you this. Then open, once:
+
+```
+http://<your-machine-ip>:7777/board?token=<the-token>
+```
+
+The token is stored in the browser and stripped from the address bar, so it does
+not end up in your history. Read [`SECURITY.md`](../SECURITY.md) before doing
+this on a network you do not control.
+
+---
+
+## Choosing a language
+
+The tool follows your system locale, so there is usually nothing to do. To
+override:
+
+```bash
+ta lang            # shows the language and where it came from
+ta lang en
+systemctl --user restart ta
+```
+
+The language is a property of the **installation**, not of each command:
+`TA_LANG=en ta note …` will not change how the note is parsed, because the daemon
+does the parsing. This is deliberate
+([ADR 0013](adr/0013-one-language-at-a-time.md)) — if it varied per call, two notes
+captured on the same day would read `@03/04` as different dates.
+
+## Updating
+
+```bash
+git pull
+make install
+systemctl --user restart ta
+```
+
+Your configuration and rules live in `~/.config/ta/`, and your notes in
+`~/.local/share/ta/`, so nothing you own is inside the repository and `git pull`
+never conflicts with your setup. Database migrations run automatically on start,
+and a copy of the database is made before any migration that changes data.
+
+## Uninstalling
+
+```bash
+systemctl --user disable --now ta
+rm ~/.config/systemd/user/ta.service
+rm -rf ~/.config/ta ~/.local/share/ta     # your config and your notes
+rm -rf <the clone>
+```
+
+Export first if you want to keep anything: `ta export > notes.md`. That escape
+hatch is the reason the storage is a plain SQLite file.
+
+[lighter]: https://github.com/joaoferrete/Lighter

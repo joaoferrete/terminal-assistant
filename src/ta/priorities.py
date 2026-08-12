@@ -18,7 +18,7 @@ from .db import transaction
 # As perguntas da primeira execução. Poucas de propósito: um questionário longo
 # não é respondido.
 PERGUNTAS = [
-    ("trabalho", "O que você faz, e em que contexto? (ex: backend numa empresa de telemetria)"),
+    ("trabalho", "O que você faz, e em que contexto? (ex: backend numa fintech)"),
     ("importa", "O que você não pode deixar cair, mesmo numa semana ruim?"),
     ("adia", "O que costuma ficar para depois e você preferia que não ficasse?"),
     ("ritmo", "Como é o seu dia típico? Muitas reuniões, blocos longos, plantão?"),

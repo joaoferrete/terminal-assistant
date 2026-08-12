@@ -2,11 +2,34 @@
 name = "terminal-assistant"
 version = "0.1.0"
 description = "Assistente pessoal de terminal: casa inteligente e notas, sob um motor de gatilhos"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12"
+readme = "README.md"
 
-# 3.12 é o Python do sistema, e o pin é intencional: PyGObject (`gi`) só existe
-# em /usr/bin/python3, e é ele quem fala com o Evolution Data Server.
-# Ver docs/adr/0005-python-do-sistema-por-causa-do-pygobject.md
+# Forma clássica de propósito: a `license = "Apache-2.0"` do PEP 639 exige
+# setuptools >= 77, e a venv desta máquina está na 68. Trocar forçaria o pip a
+# buscar um setuptools novo no build isolado — mudança de rede num `make install`
+# que hoje funciona. Migrar quando a base subir.
+license = { text = "Apache-2.0" }
+authors = [{ name = "Joao Ferrete" }]
+keywords = ["automation", "home-assistant", "notes", "tasks", "cli", "gnome"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Home Automation",
+    "Topic :: Office/Business :: Scheduling",
+    "Operating System :: POSIX :: Linux",
+]
+
+# O teto `<3.13` saiu: ele descrevia o Python do sistema de UMA máquina, não uma
+# restrição do código. O núcleo — notas, mural, motor de gatilhos — não importa
+# `gi` em lugar nenhum, e a suíte inteira passa com ele bloqueado.
+#
+# A regra continua valendo onde ela é verdade: se você quer a integração de
+# AGENDA, a venv tem que ser criada com o Python do sistema, porque é lá que o
+# PyGObject vive. Numa máquina cujo Python de sistema é 3.13, o `gi` está lá para
+# o 3.13. Ver docs/adr/0005-the-system-python-because-of-pygobject.md
 
 dependencies = [
     "starlette>=0.40",

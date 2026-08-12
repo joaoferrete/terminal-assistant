@@ -106,9 +106,26 @@ class Calendar:
 
             self._registry = EDataServer.SourceRegistry.new_sync(None)
         except (ImportError, ValueError) as e:
+            # Falta a biblioteca ou o typelib: o conserto é `apt`.
             self._erro = (
                 f"agenda indisponível: {e}. "
                 "Rode `make check-gi` — provavelmente faltam os typelibs do apt."
+            )
+            log.warning("%s", self._erro)
+        except Exception as e:  # noqa: BLE001
+            # Os typelibs existem, mas não há barramento para falar com o
+            # Evolution: `GLib.GError: Cannot autolaunch D-Bus without X11
+            # $DISPLAY`. Acontece em servidor, container, SSH sem sessão gráfica
+            # e no CI — e antes disto **estourava**, derrubando `ta doctor` e
+            # `ta --help` justamente onde eles mais precisam responder.
+            #
+            # `Exception` largo de propósito: qualquer falha em alcançar o EDS
+            # significa a mesma coisa para quem usa, que é "não tem agenda aqui",
+            # e a alternativa é enumerar tipos de erro de uma pilha C.
+            self._erro = (
+                f"agenda indisponível: {e}. "
+                "É esperado sem sessão gráfica — a agenda precisa do barramento "
+                "do usuário. O resto do Terminal Assistant funciona sem ela."
             )
             log.warning("%s", self._erro)
         return self._registry
