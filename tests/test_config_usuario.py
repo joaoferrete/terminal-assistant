@@ -121,9 +121,18 @@ def test_o_codigo_nao_carrega_o_inventario_de_ninguem():
     aparece — e o modo de falha que isso causa (editar o pacote instalado, perder
     na reinstalação) é invisível até acontecer com outra pessoa.
     """
-    fonte = (REPO / "src" / "ta" / "config.py").read_text()
-    assert "lampada_do_quarto" not in fonte
-    assert "ventilador_socket" not in fonte
+    # O `src/` INTEIRO, não só `config.py`. A primeira versão deste teste olhava
+    # um arquivo só, e por isso não viu os oito `entity_id` fixos em
+    # `actuators/home.py` que alimentavam `ta temp` e `ta router` — para qualquer
+    # casa que não a do autor, os dois comandos devolviam nulo em silêncio.
+    suspeitos = []
+    for arq in (REPO / "src").rglob("*.py"):
+        corpo = arq.read_text()
+        for marca in ("lampada_do_quarto", "ventilador_socket", "ventilador_energia",
+                      "forecast_casa", "sensor.s7_"):
+            if marca in corpo:
+                suspeitos.append(f"{arq.relative_to(REPO)}: {marca}")
+    assert not suspeitos, f"entity_id de uma casa específica no código: {suspeitos}"
 
 
 def test_as_regras_de_exemplo_nao_sao_carregadas_no_boot():

@@ -203,6 +203,27 @@ def groups() -> dict[str, tuple[str, ...]]:
     return {**DEFAULT_GROUPS, **extras}
 
 
+# Quais `entity_id` alimentam `ta temp` e `ta router`. Estavam FIXOS em
+# `actuators/home.py` — oito ids de uma casa específica —, o que o ADR 0014 já
+# tinha proibido para os apelidos e não pegou aqui. Para qualquer outra pessoa,
+# os dois comandos devolviam tudo nulo, em silêncio.
+#
+# Vazio é o padrão e é um estado válido: sem isto configurado, `ta temp` diz que
+# não há sensor em vez de mentir com brancos.
+SENSOR_ROLES = (
+    "weather", "external_ip", "download", "upload",
+    "outlet", "watts", "volts", "amps", "kwh_total",
+)
+
+
+def sensors() -> dict[str, str]:
+    """De papel de sensor para `entity_id`, do arquivo do usuário."""
+    raw = _user_config().get("sensors", {})
+    if not isinstance(raw, dict):
+        return {}
+    return {k: str(v) for k, v in raw.items() if k in SENSOR_ROLES and v}
+
+
 def _strip_accents(s: str) -> str:
     import unicodedata
 

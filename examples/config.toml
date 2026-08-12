@@ -26,3 +26,18 @@
 # O valor é uma lista de prefixos de domínio. Um nome repetido substitui o embutido.
 [groups]
 # escritorio = ["light.", "switch."]
+
+# ── Sensores ────────────────────────────────────────────────────────────────
+# Quais entity_id alimentam `ta temp` e `ta router`. Sem isto os dois comandos
+# não têm o que mostrar, e dizem isso em vez de imprimir brancos.
+# Use `ta entities` para descobrir os seus.
+[sensors]
+# weather = "weather.forecast_home"
+# external_ip = "sensor.router_external_ip"
+# download = "sensor.router_download_speed"
+# upload = "sensor.router_upload_speed"
+# outlet = "switch.fan_socket_1"
+# watts = "sensor.fan_power"
+# volts = "sensor.fan_voltage"
+# amps = "sensor.fan_current"
+# kwh_total = "sensor.fan_energy_total"
