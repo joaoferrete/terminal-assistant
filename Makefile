@@ -6,7 +6,7 @@ VENV       = .venv
 PY         = $(VENV)/bin/python
 PIP        = $(VENV)/bin/pip
 
-.PHONY: help venv install check-gi lint test run demo install-service clean
+.PHONY: help venv install check-gi lint test run demo install-service install-server-service clean
 
 help:
 	@echo "make venv            cria a venv no python do sistema"
@@ -17,6 +17,7 @@ help:
 	@echo "make run             sobe o daemon em primeiro plano (dev)"
 	@echo "make demo            daemon isolado com dados ficticios, na porta 7778"
 	@echo "make install-service instala e habilita o systemd user unit"
+	@echo "make install-server-service  o mesmo, como servico de sistema (servidor)"
 
 # --system-site-packages nao e opcional: e o que faz a venv enxergar o
 # python3-gi instalado pelo apt em /usr/lib/python3/dist-packages.
@@ -71,6 +72,19 @@ install-service:
 	systemctl --user daemon-reload
 	systemctl --user enable --now ta
 	@echo "servico de pe. logs: journalctl --user -u ta -f"
+
+# Num servidor o daemon vira servico de SISTEMA, gerado do mesmo unit. O unit e
+# --user por causa da sessao de desktop (notificacao, Lighter, agenda), que num
+# servidor nao existe; e o DietPi vem sem systemd-logind nem D-Bus de sistema, de
+# modo que `systemctl --user` e o linger falham com "Failed to connect to bus".
+install-server-service:
+	sed -e "s|@@PROJECT_DIR@@|$(CURDIR)|g" \
+	    -e "s|^WantedBy=default.target|WantedBy=multi-user.target|" \
+	    -e "/^\[Service\]/a User=$(shell id -un)" systemd/ta.service \
+		| sudo tee /etc/systemd/system/ta.service > /dev/null
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now ta
+	@echo "servico de pe. logs: journalctl -u ta -f"
 
 clean:
 	rm -rf $(VENV) .pytest_cache .ruff_cache src/*.egg-info

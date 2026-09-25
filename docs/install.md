@@ -240,6 +240,111 @@ this on a network you do not control.
 
 ---
 
+## Alternative: on a home server
+
+**Take this if** you have an always-on box at home — an old PC, a mini PC — and
+you want `ta` to keep running with your laptop closed. It is optional. The
+single-machine install above is still the default and still complete.
+
+On a server you get the notes, the board, the rules, the scheduler, Home Assistant
+and the AI. You do not get the desktop-shaped parts: the calendar (it reads your
+GNOME session), meeting detection (your laptop's microphone), the ringlight and
+desktop notifications. The plan to bring those back from the laptop is the
+*Satellite* in [PLAN.md](PLAN.md); until it lands, **the CLI on another machine
+cannot reach the server**, so you use the board from the browser.
+
+This was written from a real migration onto DietPi (Debian 12). Other Debian-like
+systems behave the same.
+
+### Python 3.12 without upgrading the system
+
+Debian 12 ships Python 3.11, and the project needs 3.12+. A server does not need
+the system Python — that rule exists for the calendar's PyGObject
+([ADR 0005](adr/0005-the-system-python-because-of-pygobject.md)), and the calendar
+does not run there. So take a standalone Python from `uv`, which installs into
+your home and touches no system package:
+
+```bash
+sudo apt install git make curl
+curl -LsSf https://astral.sh/uv/install.sh | sh
+~/.local/bin/uv python install 3.12
+
+git clone https://github.com/joaoferrete/terminal-assistant
+cd terminal-assistant
+make install SYS_PYTHON="$(~/.local/bin/uv python find 3.12)"
+```
+
+On a system whose own Python is already 3.12+, plain `make install` is fine.
+
+### A system service, not a user one
+
+```bash
+make install-server-service
+journalctl -u ta -f
+```
+
+The desktop install uses a systemd **user** unit because the daemon needs your
+session. A server has no session to need, and DietPi ships without
+`systemd-logind` and without a system D-Bus, so `systemctl --user` and
+`loginctl enable-linger` fail with *Failed to connect to bus*. This target
+generates a system unit from the same file, running as whoever runs `make`.
+
+### Open it to the network
+
+A server is reached from other machines, so it needs both `TA_HOST` and
+`TA_TOKEN` in `.env` — see [the board on your phone](#optional-the-board-on-your-phone).
+Then restart with `sudo systemctl restart ta`.
+
+### Home Assistant next to it
+
+If Home Assistant runs on the same box (a container with `--network host` is the
+simplest), point `HA_URL` at it locally:
+
+```bash
+HA_URL=http://localhost:8123
+```
+
+Moving an existing Home Assistant container is a matter of stopping the old one,
+copying its whole config directory (`.storage/` belongs to root, so use `sudo`),
+and starting the **same image version** on the new box. The long-lived token
+travels inside the config, so `HA_TOKEN` keeps working. Do not keep both running:
+two instances will fight over the same devices. Update the version afterwards,
+separately.
+
+### Moving an existing installation
+
+Stop the old daemon first, then copy the database with SQLite's backup API rather
+than as a raw file. A raw copy of a database in WAL mode can leave the last writes
+behind:
+
+```bash
+systemctl --user disable --now ta                    # on the old machine
+python3 -c "import sqlite3; s=sqlite3.connect('$HOME/.local/share/ta/ta.db'); \
+d=sqlite3.connect('/tmp/ta.db'); s.backup(d); d.close()"
+```
+
+Then move `/tmp/ta.db` to `~/.local/share/ta/ta.db` on the server, and
+`~/.config/ta/` and `.env` alongside. On a DietPi box, **`scp` fails** with
+*Connection closed*: its SSH server is Dropbear, which has no `sftp-server`, and
+modern `scp` speaks SFTP. Copy through `ssh` instead:
+
+```bash
+ssh you@server 'mkdir -p ~/.local/share/ta && cat > ~/.local/share/ta/ta.db' < /tmp/ta.db
+tar -C ~/.config -cz ta | ssh you@server 'tar -C ~/.config -xz'
+```
+
+### Did it work?
+
+```bash
+ta doctor                    # on the server: notes and home ok; calendar,
+                             # microphone and ringlight unavailable, with reasons
+```
+
+And open `http://<server-ip>:7777/board?token=<the-token>` from any machine on
+your network.
+
+---
+
 ## Choosing a language
 
 The tool follows your system locale, so there is usually nothing to do. To

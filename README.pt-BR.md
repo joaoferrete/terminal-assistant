@@ -32,6 +32,11 @@ ta board                                     # o mural, no navegador
 `ta doctor` é o comando que responde tudo: quais integrações estão vivas aqui, por
 que as outras não estão, e o comando exato para consertar cada uma.
 
+Também dá para rodar num **servidor doméstico** sempre ligado, com o notebook
+fechado. Nesse caso você abre mão da agenda, do microfone e da ringlight, que
+dependem do desktop. O passo a passo está em
+[Install → on a home server](docs/install.md#alternative-on-a-home-server).
+
 ## Idioma
 
 A ferramenta segue o locale do sistema, então numa máquina em português ela já

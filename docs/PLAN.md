@@ -23,14 +23,13 @@ reverse are also ADRs, linked where they apply.
 
 ## Now
 
-- **Phase:** F0 — server ready, **in progress**. The user runs it; the cutover
-  (T0.3) was chosen *now*, accepting the laptop gap logged in Discoveries.
-- **State:** a one-off F0 wizard was handed to the user. It lives outside the
-  repository on purpose (it hard-codes one laptop's paths). If it is lost,
-  regenerate it from T0.1–T0.3 with the `wizard` skill.
-- **Next agent action:** once the user reports F0 done, tick T0.1–T0.3, then
-  write T0.4 (server install docs) from what the run actually needed, then start
-  F1 on a branch.
+- **Phase:** F0 is **done** (2026-09-25). Home Assistant and `ta` run on the
+  server (HA in Docker, `ta` as a system unit), and the laptop daemon is disabled.
+  The laptop has no `ta` and no meeting Rule until F6. The user accepted that.
+- **Next agent action:** start **F1** on a new branch, beginning with T1.1 (the
+  provider interface). F1 needs a DeepSeek API key and a Telegram bot token from
+  the user. Ask for them when T1.3/T1.4 need them, and store them only in the
+  server's `.env`.
 - **Rule:** never run a command on the server without the user's yes, read-only
   ones included.
 
@@ -244,17 +243,17 @@ how `ta` is installed, configured or used also updates the README,
 
 ### F0 — Server ready *(manual, user)*
 
-- [ ] **T0.1 Walkthrough.** With the `wizard` skill: Docker on DietPi, HA Container
+- [x] **T0.1 Walkthrough.** With the `wizard` skill: Docker on DietPi, HA Container
       restored from a backup of the current HA, integrations checked one by one.
       *Done when* `curl` to `/api/` on the server's port 8123, with the token,
       returns 200 and a light answers `ta on`.
-- [ ] **T0.2 `ta` on the server.** Debian's Python ≥ 3.12, **without** `gi` (the
+- [x] **T0.2 `ta` on the server.** Debian's Python ≥ 3.12, **without** `gi` (the
       calendar moves in F5). systemd user service. *Done when* `ta doctor` on the
       server shows notes and home alive, and the calendar reported unavailable
       with its reason.
-- [ ] **T0.3 Data cutover.** Copy `ta.db` and the rules to the server; stop the
+- [x] **T0.3 Data cutover.** Copy `ta.db` and the rules to the server; stop the
       laptop daemon. **The user's call and the user's hands** ([AGENTS §6](../AGENTS.md#6-dont-touch-the-authors-running-installation)).
-- [ ] **T0.4 Document the server install.** The README says, near the top, that
+- [x] **T0.4 Document the server install.** The README says, near the top, that
       `ta` runs either on one machine (as today) or on a home server with
       Satellites, and that the server is optional. [`install.md`](install.md) gains a
       *Server* layer written from what F0 actually took: prerequisites, Docker and
