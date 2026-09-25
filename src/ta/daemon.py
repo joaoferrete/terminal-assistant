@@ -41,11 +41,12 @@ from .config import (
     resolve_targets,
     telegram_owner,
 )
-from .db import connect
+from .db import connect, default_db_path
 from .llm import LLM, LLMUnavailable
 from .scheduler import Scheduler, lateness_label, lateness_of
 from .sensors.calendar import Calendar
 from .sensors.mic import MicWatcher
+from .speech import Transcriber
 
 log = logging.getLogger("ta")
 
@@ -1213,6 +1214,9 @@ def create_app(
         app.state.in_review = set()
         app.state.review_sem = asyncio.Semaphore(CONCURRENT_REVIEWS)
         app.state.conn = connect(db_path)
+        # Untranscribed audio lives next to the database: same owner, same
+        # backup, and a test's temporary database takes its audio with it.
+        db_path_resolved = Path(db_path) if db_path else default_db_path()
         app.state.home = Home(cfg.ha_url, cfg.ha_token)
         # `lighter` is injectable for the same reason as `calendar`: without it,
         # every test that boots the app runs a real `gsettings` and changes the
@@ -1236,6 +1240,8 @@ def create_app(
             capture=lambda raw: _capture(app, raw),
             owner_username=telegram_owner(),
             board_link=lambda: _board_link(app, cfg),
+            transcriber=Transcriber(),
+            audio_dir=db_path_resolved.parent / "audio",
         )
 
         report = engine.load_rules(rules_path)

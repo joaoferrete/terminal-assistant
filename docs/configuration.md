@@ -61,6 +61,9 @@ See [ai.md](ai.md) for what each feature costs in model calls.
 
 | Variable | Default | What it does |
 |---|---|---|
+| `TA_WHISPER_MODEL` | `small` | The faster-whisper model for voice notes. `base` is faster and worse; `medium` needs more RAM than a small server has to spare |
+| `TA_WHISPER_COMPUTE` | `int8` | Its precision on the CPU. `int8` is what keeps `small` near a gigabyte |
+| `TA_WHISPER_MAX_SECONDS` | `600` | Longer audio is kept and captured as a placeholder instead of transcribed, so one long recording cannot hold the only transcription slot |
 | `TELEGRAM_BOT_TOKEN` | *(none)* | The token @BotFather gives you. The bot also needs an owner in `config.toml` (below); with only one of the two it does not poll at all |
 
 Which provider answers which task is set in `config.toml` (below). A provider

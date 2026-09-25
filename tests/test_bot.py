@@ -160,9 +160,14 @@ def test_an_update_becomes_an_inbound():
         "1001", "555", "30", "comprar leite", True)
 
 
-def test_a_voice_note_is_unsupported_not_invisible():
-    m = TelegramChannel.parse(update(3, None, voice={"file_id": "abc"}))
-    assert m.unsupported and m.text == ""
+def test_a_voice_note_carries_its_file_and_length():
+    m = TelegramChannel.parse(update(3, None, voice={"file_id": "abc", "duration": 12}))
+    assert (m.voice_file_id, m.voice_seconds, m.unsupported) == ("abc", 12, False)
+
+
+def test_a_photo_with_no_caption_is_unsupported_not_invisible():
+    m = TelegramChannel.parse(update(3, None, photo=[{"file_id": "p"}]))
+    assert m.unsupported and m.voice_file_id is None
 
 
 def test_other_bots_and_non_messages_are_skipped():

@@ -36,10 +36,12 @@ reverse are also ADRs, linked where they apply.
   4. `feat/telegram-channel` — T1.3, T1.4, T1.5
   5. `feat/board-link` — T1.7
   6. `docs/chatbot-guardrails` — D25–D33, ADR 0019, and F1 closed
+  7. `feat/voice` — T2.1, T2.2
   The next task branches from the top of this list and is appended to it.
-- **Next agent action:** F2, voice. Start with T2.1 (`faster-whisper` as an
-  optional extra, plus the `whisper` Capability) on a new branch at the top of
-  the stack.
+- **Next agent action:** T2.3, on the server, with the user's yes. Deploy
+  `feat/voice`, install the `[voice]` extra there, send a real voice note, and
+  record latency and peak RAM in Discoveries and the hardware budget. After that,
+  F3.
 - **Pending, the user's call (deferred on 2026-09-25):** rotate the Telegram bot
   token. One line in the server's journal holds it, from before the httpx fix. The
   steps: `/revoke` at @BotFather, update the laptop `.env`, then copy that one line
@@ -394,9 +396,9 @@ how `ta` is installed, configured or used also updates the README,
 
 ### F2 — Voice
 
-- [ ] **T2.1** `faster-whisper` as an optional extra, plus a `whisper` Capability;
+- [x] **T2.1** `faster-whisper` as an optional extra, plus a `whisper` Capability;
       model and compute type in config.
-- [ ] **T2.2** Telegram voice (OGG/Opus) → transcription in a worker thread → the
+- [x] **T2.2** Telegram voice (OGG/Opus) → transcription in a worker thread → the
       same capture path; the transcript is stored with the Note. On failure the
       audio file is kept and the reply says so (invariant 1).
 - [ ] **T2.3** Measure the latency and peak RAM on the server; record them in
@@ -530,3 +532,5 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-25 | T1.5 | Two things the plan did not say: Telegram sends `/start` when a chat opens, and a text starting with `/` can be a mistyped command | `/start` greets and is never captured. Any other `/word` is answered as an unknown command rather than captured. That still meets invariant 1, because the message was answered |
 | 2026-09-25 | T1.7 | A `SameSite=Strict` cookie would 401 the first load. The link is opened from the Telegram app, a cross-site navigation, and a Strict cookie is withheld from the redirect that follows it | `SameSite=Lax`. It still refuses cross-site POSTs, which is what matters for the board's writes |
 | 2026-09-25 | T1.4 | On the first deploy the bot token would still reach the journal. httpx logs every request at INFO with the full URL, and the daemon logs at INFO. The test that guarded the token only looked at WARNING, pytest's default capture level, so it never saw httpx's lines | httpx is set to WARNING when the Telegram module loads, and the test captures INFO. It was confirmed to fail without the fix. The server's journal had no such line yet, because the first poll had not completed |
+| 2026-09-25 | T2.2 | Transcription inside `Bot.handle` would block the Channel's loop: a minute of audio takes seconds on this CPU, and every text behind it would wait | Voice runs as a background task, and `handle` returns at once. A test proves a text sent after a slow voice note is captured first |
+| 2026-09-25 | T2.1 | The Capability is named `voice`, not `whisper` as T2.1 said. It names what the user gets, as every other Capability does, not the library | Recorded here so the plan and `ta doctor` stay aligned |

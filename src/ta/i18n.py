@@ -372,6 +372,24 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "The board only opens on this machine: the daemon is on loopback. "
               "To open it on a phone, see TA_HOST and TA_TOKEN.",
     },
+    "bot.voice_listening": {"pt": "Ouvindo…", "en": "Listening…"},
+    "bot.voice_captured": {"pt": "Anotado · #{id}\n“{text}”", "en": "Noted · #{id}\n“{text}”"},
+    "bot.voice_placeholder": {
+        "pt": "🎤 áudio sem transcrição ({reason}) · arquivo: {path}",
+        "en": "🎤 untranscribed audio ({reason}) · file: {path}",
+    },
+    "bot.voice_kept": {
+        "pt": "Não consegui transcrever ({reason}). Guardei o áudio e deixei a nota #{id} "
+              "para você não perder.",
+        "en": "I couldn't transcribe it ({reason}). I kept the audio and left note #{id} "
+              "so it isn't lost.",
+    },
+    "bot.voice_download": {"pt": "não consegui baixar o áudio", "en": "could not download it"},
+    "bot.voice_unavailable": {
+        "pt": "transcrição não instalada no servidor", "en": "transcription is not installed",
+    },
+    "bot.voice_too_long": {"pt": "áudio longo demais", "en": "the audio is too long"},
+    "bot.voice_failed": {"pt": "a transcrição falhou", "en": "transcription failed"},
     "bot.hello": {
         "pt": "Oi! Tudo o que você mandar aqui vira nota.",
         "en": "Hi! Everything you send here becomes a note.",
@@ -427,6 +445,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     "cap.lighter": {"pt": "Lighter (ringlight)", "en": "Lighter (ringlight)"},
     "cap.ai": {"pt": "IA", "en": "AI"},
     "cap.telegram": {"pt": "Telegram (bot)", "en": "Telegram (bot)"},
+    "cap.voice": {"pt": "Voz (transcrição)", "en": "Voice (transcription)"},
     "cli.doctor_summary": {
         "pt": "{live}/{total} disponíveis. O que está marcado com — é opcional.",
         "en": "{live}/{total} available. Anything marked with — is optional.",

@@ -99,6 +99,9 @@ class TelegramChannel:
             return None
         chat = msg.get("chat") or {}
         text = msg.get("text") or msg.get("caption") or ""
+        # `voice` is a note recorded in Telegram; `audio` is a file someone sent.
+        # Both are speech to transcribe as far as capture is concerned.
+        sound = msg.get("voice") or msg.get("audio") or {}
         return Inbound(
             channel="telegram",
             conversation_id=str(chat.get("id", "")),
@@ -107,7 +110,9 @@ class TelegramChannel:
             sender_username=sender.get("username"),
             private=chat.get("type") == "private",
             text=text,
-            unsupported=not text,
+            unsupported=not text and not sound,
+            voice_file_id=sound.get("file_id"),
+            voice_seconds=int(sound.get("duration") or 0),
         )
 
     async def run(self, handler: Handler) -> None:
@@ -139,6 +144,20 @@ class TelegramChannel:
                     await handler(inbound)
                 except Exception:
                     log.exception("the handler failed on a telegram message")
+
+    async def download(self, file_id: str) -> bytes:
+        info = await self._call("getFile", {"file_id": file_id})
+        path = (info or {}).get("file_path")
+        if not path:
+            raise ChannelError("telegram getFile: no file_path")
+        # Files live under /file/bot<token>/, outside the method base URL — and
+        # the token is in this URL too, so errors are scrubbed the same way.
+        try:
+            r = await self._http().get(f"{self.base_url}/file/bot{self.token}/{path}")
+            r.raise_for_status()
+        except httpx.HTTPError as e:
+            raise ChannelError(f"telegram download: {type(e).__name__}") from None
+        return r.content
 
     async def reply(self, to: Inbound, text: str) -> None:
         payload = {"chat_id": to.conversation_id, "text": text}

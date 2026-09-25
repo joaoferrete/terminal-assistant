@@ -180,7 +180,20 @@ def _telegram(cfg: Config) -> Capability:
     return Capability(key="telegram", label=t("cap.telegram"), ok=ok, reason=reason, fix=fix)
 
 
-PROBES = (_notes, _calendar, _mic, _home, _lighter, _ai, _telegram)
+def _voice(_: Config) -> Capability:
+    from .speech import available
+
+    ok = available()
+    return Capability(
+        key="voice",
+        label=t("cap.voice"),
+        ok=ok,
+        reason="" if ok else "faster-whisper is not installed",
+        fix="" if ok else 'optional. To transcribe voice notes: pip install -e ".[voice]"',
+    )
+
+
+PROBES = (_notes, _calendar, _mic, _home, _lighter, _ai, _telegram, _voice)
 
 
 def inspect(cfg: Config | None = None) -> list[Capability]:

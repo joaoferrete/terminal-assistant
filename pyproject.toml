@@ -41,6 +41,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "ruff>=0.6"]
+# Speech to text for voice notes (F2). Optional: it pulls in CTranslate2 and PyAV,
+# which a machine that only types notes does not need.
+voice = ["faster-whisper>=1.0"]
 
 [project.scripts]
 ta = "ta.cli:main"

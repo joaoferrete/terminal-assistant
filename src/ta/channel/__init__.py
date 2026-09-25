@@ -28,9 +28,13 @@ class Inbound:
     sender_username: str | None
     private: bool
     text: str = ""
-    # Something we cannot read yet (voice before F2, a photo, a sticker). Kept so
-    # the bot can say so instead of pretending nothing arrived.
+    # Something we cannot read (a photo, a sticker). Kept so the bot can say so
+    # instead of pretending nothing arrived.
     unsupported: bool = False
+    # A voice note or audio file, fetched later with `Channel.download`: the
+    # bytes are not worth holding for messages the bot will ignore.
+    voice_file_id: str | None = None
+    voice_seconds: int = 0
 
 
 Handler = Callable[[Inbound], Awaitable[None]]
@@ -51,3 +55,5 @@ class Channel(Protocol):
         on a transient failure: it waits and tries again."""
 
     async def reply(self, to: Inbound, text: str) -> None: ...
+
+    async def download(self, file_id: str) -> bytes: ...

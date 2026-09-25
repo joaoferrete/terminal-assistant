@@ -230,10 +230,24 @@ silence. Your username is only used for that first pairing. After it, the bot
 recognises your account by its numeric id, so someone who later takes your old
 username is still a stranger.
 
+### Voice notes
+
+Send the bot a voice note and it is transcribed **on your machine** — the audio
+never leaves the house — and captured like text. It needs the optional extra:
+
+```bash
+.venv/bin/pip install -e ".[voice]"
+```
+
+The first voice note downloads the model (a few hundred MB, into the Hugging Face
+cache) and takes a while; the next ones take a fraction of their length. If
+transcription fails, or the extra is missing, the audio is kept next to the
+database and a Note says where, so nothing you said is lost.
+
 ### Did it work?
 
 ```bash
-ta doctor          # Telegram (bot): ok
+ta doctor          # Telegram (bot): ok · Voice (transcription): ok
 ```
 
 Then send the bot a message, and look for it on the board.

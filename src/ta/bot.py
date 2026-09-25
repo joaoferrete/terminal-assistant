@@ -16,13 +16,17 @@ Two rules from the plan already hold here:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 
-from .channel import Channel, Inbound
+from . import i18n
+from .channel import Channel, ChannelError, Inbound
 from .i18n import t
+from .speech import Transcriber, TranscriptionFailed
 
 log = logging.getLogger("ta.bot")
 
@@ -59,6 +63,8 @@ class Bot:
         capture: Callable[[str], object],
         owner_username: str | None,
         board_link: Callable[[], str | None] = lambda: None,
+        transcriber: Transcriber | None = None,
+        audio_dir: Path | None = None,
     ) -> None:
         self.conn = conn
         self.channel = channel
@@ -68,6 +74,14 @@ class Bot:
         self.owner_username = owner_username
         # Issues a one-time code each call, so it is a function, not a string.
         self.board_link = board_link
+        self.transcriber = transcriber
+        # Where audio that could not be transcribed is kept, so nothing said is
+        # lost (invariant 1). None keeps nothing, which is what tests want.
+        self.audio_dir = audio_dir
+        # Voice notes are handled off the Channel's loop: a minute of audio takes
+        # seconds to transcribe, and every text behind it would wait. The set
+        # holds the tasks so the GC does not collect one mid-flight.
+        self._voice_tasks: set[asyncio.Task] = set()
 
     def _recognise(self, msg: Inbound) -> tuple[str | None, bool]:
         """(role, just paired). None is a stranger, answered with silence (D8)."""
@@ -100,6 +114,12 @@ class Bot:
             if (url := self.board_link()) is not None:
                 await self.channel.reply(msg, t("bot.board_link", url=url))
 
+        if msg.voice_file_id:
+            task = asyncio.create_task(self._voice(msg))
+            self._voice_tasks.add(task)
+            task.add_done_callback(self._voice_tasks.discard)
+            return
+
         if msg.unsupported:
             await self.channel.reply(msg, t("bot.unsupported"))
             return
@@ -126,3 +146,50 @@ class Bot:
             msg,
             t("bot.captured_due", id=note.id, due=due) if due else t("bot.captured", id=note.id),
         )
+
+    # ── Voice (F2) ──────────────────────────────────────────────────────────
+    async def _voice(self, msg: Inbound) -> None:
+        """Download, transcribe, capture — and when any step fails, still capture.
+
+        Invariant 1: a voice note is handled or becomes a Note. A failure keeps
+        the audio on disk and captures a placeholder that says where it is, so
+        what was said is in the queue even when nobody could read it.
+        """
+        try:
+            audio = await self.channel.download(msg.voice_file_id)
+        except ChannelError as e:
+            log.warning("could not download a voice note: %s", e)
+            await self._capture_placeholder(msg, None, "download")
+            return
+
+        transcriber = self.transcriber
+        if transcriber is None or not transcriber.available:
+            reason = "unavailable"
+        elif msg.voice_seconds > transcriber.max_seconds:
+            reason = "too_long"
+        else:
+            await self.channel.reply(msg, t("bot.voice_listening"))
+            try:
+                text = await transcriber.transcribe(audio, language=i18n.lang())
+            except TranscriptionFailed as e:
+                log.warning("transcription failed: %s", e)
+                reason = "failed"
+            else:
+                note = self.capture(text)
+                await self.channel.reply(msg, t("bot.voice_captured", id=note.id, text=text))
+                return
+
+        await self._capture_placeholder(msg, self._keep(msg, audio), reason)
+
+    def _keep(self, msg: Inbound, audio: bytes) -> Path | None:
+        if self.audio_dir is None:
+            return None
+        self.audio_dir.mkdir(parents=True, exist_ok=True)
+        path = self.audio_dir / f"{msg.channel}-{msg.conversation_id}-{msg.message_id}.ogg"
+        path.write_bytes(audio)
+        return path
+
+    async def _capture_placeholder(self, msg: Inbound, path: Path | None, reason: str) -> None:
+        why = t(f"bot.voice_{reason}")
+        note = self.capture(t("bot.voice_placeholder", reason=why, path=str(path) if path else "—"))
+        await self.channel.reply(msg, t("bot.voice_kept", id=note.id, reason=why))
