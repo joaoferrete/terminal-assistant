@@ -126,6 +126,18 @@ What was said in one conversation, kept so the bot can search it later — and o
 from within that same conversation.
 _Avoid_: history, context, memory (on its own)
 
+**Taint**:
+The mark a turn of conversation carries once the agent has read content its asker
+did not write — a web result, a group's history, another Member's Note. It is set
+by the code, never by the model, and a tainted turn changes nothing without the
+asker's confirmation.
+_Avoid_: untrusted, dirty, flagged
+
+**House rules**:
+The Owner's own words about what the bot should avoid or how it should behave. A
+soft guardrail: it shapes answers, and nothing depends on it for safety.
+_Avoid_: policy, filter, moderation
+
 **Receipt**:
 The record of what the bot did because of one message: which message, what changed,
 and how to undo it.
