@@ -149,6 +149,8 @@ cookie for that Member. Satellites get a per-Member token the same way. *Why:* t
 Channel already proves identity, and Notes are now private, so the board must know
 who is looking. Amends ADR 0012: the single token goes away, and loopback on the
 server no longer means "the owner".
+*Pulled forward (user, 2026-09-25):* the bot sends the link on first contact and
+on `/board` from F1 onwards (T1.7), before Members exist.
 
 **D22 — One Language per installation; Priorities per Member.** [ADR 0013](adr/0013-one-language-at-a-time.md)
 stands. Persona changes the name and the tone, never the language. Each Member has
@@ -286,6 +288,15 @@ how `ta` is installed, configured or used also updates the README,
 - [ ] **T1.5 Owner capture.** `[channel.telegram] owner = "@…"`, bound to the user
       id on first contact (the seed of D21). Text → `notes.py` parser → `store.py`
       capture → confirmation reply; the asynchronous review as today.
+- [ ] **T1.7 Board link from the bot** (D20, pulled forward). On the Owner's first
+      contact, and on `/board`, the bot replies privately with
+      `/board?code=<one-time code>`. The code is valid for 5 minutes and is
+      consumed on first use. The board trades it for the credential it keeps in
+      `localStorage`. `TA_TOKEN` itself never goes through the Channel, because a
+      chat is stored on the Channel's servers and that token controls the house.
+      F6 replaces what the code is traded for (a per-Member session) without
+      changing the flow. *Done when* a test proves a code works once, fails after
+      5 minutes, and fails the second time.
 - [ ] **T1.6 Strings.** Every string the bot sends lives in `i18n.py` ([AGENTS §1](../AGENTS.md#1-never-write-a-user-visible-string-in-english-or-in-portuguese)).
 - **F1 is done when** a message sent from the phone appears on the board (open it and
   look — [AGENTS §5](../AGENTS.md#5-returns-200-and-contains-the-string-is-not-interface-verification)),
