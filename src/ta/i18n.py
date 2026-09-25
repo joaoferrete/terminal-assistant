@@ -110,9 +110,9 @@ def reset_cache() -> None:
 MESSAGES: dict[str, dict[str, str]] = {
     # ── Erros de configuração e de disponibilidade ──────────────────────────
     "ai.no_key": {
-        "pt": "A IA não está configurada. Defina GEMINI_API_KEY no .env — "
+        "pt": "A IA não está configurada. Defina DEEPSEEK_API_KEY ou GEMINI_API_KEY no .env — "
               "ou siga sem ela: captura, mural e automações não dependem de IA.",
-        "en": "AI is not configured. Set GEMINI_API_KEY in your .env — "
+        "en": "AI is not configured. Set DEEPSEEK_API_KEY or GEMINI_API_KEY in your .env — "
               "or carry on without it: capture, board and automations never need AI.",
     },
     "ai.no_sdk": {
@@ -155,7 +155,8 @@ MESSAGES: dict[str, dict[str, str]] = {
     },
     "api.empty_text": {"pt": "texto vazio", "en": "empty text"},
     "api.ai_not_configured": {
-        "pt": "GEMINI_API_KEY não configurada", "en": "GEMINI_API_KEY is not configured",
+        "pt": "nem DEEPSEEK_API_KEY nem GEMINI_API_KEY configuradas",
+        "en": "neither DEEPSEEK_API_KEY nor GEMINI_API_KEY is configured",
     },
     "api.review_off": {
         "pt": "revisão desligada (TA_AUTO_REVIEW=0)",
@@ -389,7 +390,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     "cap.mic": {"pt": "Microfone", "en": "Microphone"},
     "cap.home": {"pt": "Home Assistant", "en": "Home Assistant"},
     "cap.lighter": {"pt": "Lighter (ringlight)", "en": "Lighter (ringlight)"},
-    "cap.ai": {"pt": "IA (Gemini)", "en": "AI (Gemini)"},
+    "cap.ai": {"pt": "IA", "en": "AI"},
     "cli.doctor_summary": {
         "pt": "{live}/{total} disponíveis. O que está marcado com — é opcional.",
         "en": "{live}/{total} available. Anything marked with — is optional.",

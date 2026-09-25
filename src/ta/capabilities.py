@@ -148,16 +148,17 @@ def _lighter(_: Config) -> Capability:
 
 
 def _ai(cfg: Config) -> Capability:
-    ok = bool(cfg.gemini_api_key)
+    # Either provider is enough: the routing skips whichever has no key (ADR 0018).
+    ok = bool(cfg.deepseek_api_key or cfg.gemini_api_key)
     return Capability(
         key="ai",
         label=t("cap.ai"),
         ok=ok,
-        reason="" if ok else "GEMINI_API_KEY is not set",
+        reason="" if ok else "neither DEEPSEEK_API_KEY nor GEMINI_API_KEY is set",
         # The sentence says it is optional on purpose: without that, a red line
         # in the table reads as a broken install — and it is not. Almost
         # everything works without it.
-        fix="" if ok else "optional. To enable it: GEMINI_API_KEY in .env",
+        fix="" if ok else "optional. To enable it: DEEPSEEK_API_KEY or GEMINI_API_KEY in .env",
         commands=("init", "priorities", "organize", "prose", "revise", "event"),
     )
 

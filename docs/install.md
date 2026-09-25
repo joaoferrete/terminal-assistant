@@ -184,8 +184,9 @@ it, and nothing calls a model unless you ask. See [ai.md](ai.md) for what each
 feature costs in model calls.
 
 ```bash
-# get a key at https://aistudio.google.com/apikey
-echo "GEMINI_API_KEY=your-key" >> .env
+# either one is enough; with both, DeepSeek answers and Gemini is the fallback
+echo "DEEPSEEK_API_KEY=your-key" >> .env    # https://platform.deepseek.com/api_keys
+echo "GEMINI_API_KEY=your-key" >> .env      # https://aistudio.google.com/apikey
 systemctl --user restart ta
 ```
 
@@ -195,7 +196,7 @@ To keep the key but stop the automatic second pass over every capture:
 ### Did it work?
 
 ```bash
-ta doctor          # AI (Gemini): ok
+ta doctor          # AI: ok
 ta init            # the priorities interview
 ```
 

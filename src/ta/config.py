@@ -80,6 +80,7 @@ class Config:
     ha_url: str = "http://localhost:8123"
     ha_token: str | None = None
     gemini_api_key: str | None = None
+    deepseek_api_key: str | None = None
     # The daemon's OWN credential, not a third party's. Only required when the
     # bind leaves loopback; on loopback it stays None and local use is unchanged.
     token: str | None = None
@@ -100,6 +101,7 @@ class Config:
             ha_url=os.environ.get("HA_URL", "http://localhost:8123").rstrip("/"),
             ha_token=os.environ.get("HA_TOKEN") or None,
             gemini_api_key=os.environ.get("GEMINI_API_KEY") or None,
+            deepseek_api_key=os.environ.get("DEEPSEEK_API_KEY") or None,
             token=os.environ.get("TA_TOKEN") or None,
             auto_review=os.environ.get("TA_AUTO_REVIEW", "1") not in ("0", "false", "no"),
             echo_entities=tuple(
@@ -300,3 +302,49 @@ def resolve_targets(term: str, entities: list[dict]) -> list[str]:
     if lights:
         return lights
     return [e["entity_id"] for e in entities if matches(e, "switch.")]
+
+
+# Which provider answers each LLM task (ADR 0018). DeepSeek is the default
+# because it is cheaper, Gemini the fallback; `config.toml` can change both and
+# route single tasks elsewhere:
+#
+#     [llm]
+#     default = "deepseek"
+#     fallback = "gemini"
+#     [llm.tasks]
+#     organize = "gemini"
+DEFAULT_LLM_ROUTING = ("deepseek", "gemini")
+
+
+def llm_routing() -> tuple[str, str | None, dict[str, str]]:
+    """(default, fallback, per-task routes), with unknown names dropped loudly.
+
+    A typo such as `deepseak` would otherwise route the task to a provider that
+    does not exist, which the chain skips — and the task would quietly run on the
+    fallback forever, with nobody knowing the setting was ignored.
+    """
+    from .providers import PROVIDER_NAMES
+
+    raw = _user_config().get("llm", {})
+    raw = raw if isinstance(raw, dict) else {}
+
+    def known(value, where: str) -> str | None:
+        if value in PROVIDER_NAMES:
+            return value
+        log.warning("config.toml: %s = %r is not a provider %s; ignored", where, value,
+                    PROVIDER_NAMES)
+        return None
+
+    default = DEFAULT_LLM_ROUTING[0]
+    if "default" in raw:
+        default = known(raw["default"], "llm.default") or default
+    fallback: str | None = DEFAULT_LLM_ROUTING[1]
+    if "fallback" in raw:
+        fallback = known(raw["fallback"], "llm.fallback") if raw["fallback"] else None
+
+    tasks = raw.get("tasks", {})
+    routes = {}
+    for task, value in (tasks.items() if isinstance(tasks, dict) else ()):
+        if (name := known(value, f"llm.tasks.{task}")) is not None:
+            routes[str(task)] = name
+    return default, fallback, routes

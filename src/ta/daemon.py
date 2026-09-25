@@ -255,6 +255,7 @@ async def health(request: Request) -> JSONResponse:
                 "key_configured": bool(cfg.gemini_api_key),
                 "model": app.state.llm.model,
             },
+            "deepseek": {"key_configured": bool(cfg.deepseek_api_key)},
             "calendar": {"available": app.state.calendar.available},
             "mic": {"available": app.state.mic.available, "active": app.state.mic.active},
             "lighter": {"available": app.state.lighter.available},
@@ -1142,7 +1143,7 @@ def create_app(
         app.state.lighter = lighter if lighter is not None else Lighter()
         app.state.notify = Notifier()
         app.state.calendar = calendar if calendar is not None else Calendar()
-        app.state.llm = LLM(cfg.gemini_api_key)
+        app.state.llm = LLM.from_config(cfg)
         app.state.cal_adapter = CalendarAdapter(app.state.calendar)
 
         report = engine.load_rules(rules_path)

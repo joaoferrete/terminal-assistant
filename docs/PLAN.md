@@ -23,13 +23,13 @@ reverse are also ADRs, linked where they apply.
 
 ## Now
 
-- **Phase:** F0 is **done** (2026-09-25). Home Assistant and `ta` run on the
-  server (HA in Docker, `ta` as a system unit), and the laptop daemon is disabled.
-  The laptop has no `ta` and no meeting Rule until F6. The user accepted that.
-- **Next agent action:** start **F1** on a new branch, beginning with T1.1 (the
-  provider interface). F1 needs a DeepSeek API key and a Telegram bot token from
-  the user. Ask for them when T1.3/T1.4 need them, and store them only in the
-  server's `.env`.
+- **Phase:** F1, on branch `feat/llm-providers` (stacked on `docs/v2-plan`).
+  T1.1 is done. F0 was finished on 2026-09-25.
+- **Next agent action:** T1.2, usage accounting. `LLM.on_usage` already reports
+  `(provider, task, Usage)` after every answered call; T1.2 adds the migration
+  and points the hook at it in `daemon.create_app`.
+- **Waiting on the user:** a DeepSeek API key and a Telegram bot token, needed from
+  T1.4 on. They go straight into the server's `.env`, never into the chat.
 - **Rule:** never run a command on the server without the user's yes, read-only
   ones included.
 
@@ -265,7 +265,7 @@ how `ta` is installed, configured or used also updates the README,
 
 ### F1 — Owner-only Telegram capture, and LLM providers
 
-- [ ] **T1.1 Provider interface.** `src/ta/llm.py` becomes a package: a `Provider`
+- [x] **T1.1 Provider interface.** *(Landed as `src/ta/providers.py` beside `llm.py`, not a package: see Discoveries.)* `src/ta/llm.py` becomes a package: a `Provider`
       protocol (`complete_json(prompt, schema) -> BaseModel`, `complete_text`),
       `GeminiProvider` (today's code, moved), `DeepSeekProvider` (OpenAI-compatible
       over `httpx`; JSON mode, Pydantic validation, one retry). `LLM` keeps its
@@ -295,8 +295,11 @@ how `ta` is installed, configured or used also updates the README,
       `localStorage`. `TA_TOKEN` itself never goes through the Channel, because a
       chat is stored on the Channel's servers and that token controls the house.
       F6 replaces what the code is traded for (a per-Member session) without
-      changing the flow. *Done when* a test proves a code works once, fails after
-      5 minutes, and fails the second time.
+      changing the flow. The trade answers with an **HttpOnly, SameSite=Strict
+      session cookie** that `TokenAuth` accepts, because a reload cannot send what
+      is in `localStorage` (see Discoveries). *Done when* a test proves a code works
+      once, fails after 5 minutes, and fails the second time, and another proves a
+      reload of `/board` with the cookie and no query answers 200.
 - [ ] **T1.6 Strings.** Every string the bot sends lives in `i18n.py` ([AGENTS §1](../AGENTS.md#1-never-write-a-user-visible-string-in-english-or-in-portuguese)).
 - **F1 is done when** a message sent from the phone appears on the board (open it and
   look — [AGENTS §5](../AGENTS.md#5-returns-200-and-contains-the-string-is-not-interface-verification)),
@@ -380,6 +383,30 @@ how `ta` is installed, configured or used also updates the README,
 
 ### F7 — RAG over Satellite folders *(future, deliberately unplanned)*
 
+### F8 — Web configuration *(requested 2026-09-25, not yet designed)*
+
+The user asked for a web page to change the configuration, locked behind a login
+and password. If handling the password properly is hard, a credential defined in
+`.env` is acceptable to them.
+
+What is settled: it is a web page, and it has its own login. It is **not**
+cryptographically hard. The password is stored as a salted hash (`hashlib.scrypt`,
+standard library), never encrypted and never in plain text, so the hash can live in
+`.env` (`TA_ADMIN_PASSWORD_HASH`, set by a CLI command that prompts for the
+password).
+
+**Open, and to be asked of the user before designing:**
+1. What it edits: everything in `config.toml` (aliases, groups, Grants, Members,
+   LLM routes, Digest schedule), or only part of it. Secrets in `.env` stay out of
+   the page either way, which is the proposal.
+2. Who logs in: only the Owner, or any Member whose Grant says admin.
+3. How it relates to D20. The board is entered by magic link from the Channel.
+   Should the config page reuse that session and ask for the password on top
+   (proposed: two factors for the part that controls permissions), or stand on
+   its own?
+4. Whether it writes `config.toml` in place, which loses the comments in it, or
+   keeps settings in the database with `config.toml` as seed.
+
 ## Discoveries
 
 What contradicted the plan, as it happened. Decide per row whether it becomes an
@@ -393,3 +420,7 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-25 | T0.2 | The server runs Debian 12 (Bookworm), with no Python at all, and Bookworm's Python is 3.11, below `requires-python` | The user chose a uv-managed Python 3.12 in `~/.local`, installed with `make install SYS_PYTHON=…`, over a distribution upgrade of the box that serves the house DNS. The server needs no `gi`, so ADR 0005's reason for the system Python does not apply there. T0.4 must document it |
 | 2026-09-25 | T0.1 | DietPi ships Dropbear as its SSH server, with no `sftp-server`, so modern `scp` (which speaks SFTP) fails with "Connection closed" | The wizard copies over `ssh` with `cat`/`tar`. T0.4 must not tell people to `scp` to a DietPi box |
 | 2026-09-25 | T0.2 | `loginctl enable-linger` fails with "Failed to connect to bus": DietPi ships without `systemd-logind` and without a system D-Bus, so there is no `systemctl --user` on it | On the server `ta` runs as a **system** unit generated from `systemd/ta.service` (`User=` added, `WantedBy=multi-user.target`). The user unit exists for the desktop session (notifications, Lighter, calendar), none of which exists on a server. A `make install-server-service` target and T0.4 should make this the documented path |
+| 2026-09-25 | T1.7 | On a phone the board 401s on every reload. `TokenAuth` guards `/board` itself, the board strips `?token=` from the address bar (ADR 0012), and a page load cannot send the header the JS builds from `localStorage`. `test_security.py` pins the 401 on a bare `/board` | T1.7's code exchange sets a session cookie, so the credential travels with the page load. The alternative, serving the HTML with no credential because it holds no data, was left for the user to weigh if the cookie proves awkward |
+| 2026-09-25 | T1.1 | The plan said `llm.py` would become a package. Tests subclass `LLM` and override `_structured(prompt, schema, system)`, so the task could not be a new argument | Providers went to `src/ta/providers.py`, and `LLM`'s public surface is unchanged: every pre-existing test passed untouched. The task travels in a `ContextVar`, set by a decorator on each task method and by `for_task()` in `priorities.py` |
+| 2026-09-25 | T1.1 | DeepSeek's current model is `deepseek-flash`, not the `deepseek-chat` older examples use. Its JSON mode needs the word "json" in the prompt, and its docs warn the content can come back empty | Default `deepseek-flash`, pinnable with `TA_DEEPSEEK_MODEL`. The schema is sent in the system prompt, and an empty answer counts as one more invalid attempt |
+| 2026-09-25 | T1.3 | With DeepSeek as the default, the `ai` Capability still only looked at `GEMINI_API_KEY` | Folded into T1.1: `ai` is alive with either key. T1.3 keeps the `telegram` Capability |

@@ -48,7 +48,7 @@ flowchart TB
         HOME["actuators/home<br/><i>REST → Home Assistant</i>"]
         LIT["actuators/lighter<br/><i>gsettings → GNOME</i>"]
         NOT["actuators/notify<br/><i>notify-send</i>"]
-        LLM["llm.py<br/><i>Gemini</i>"]
+        LLM["llm.py + providers.py<br/><i>DeepSeek, Gemini</i>"]
     end
 
     MIC --> E

@@ -85,21 +85,22 @@ async def rewrite(conn: sqlite3.Connection, llm, instruction: str) -> str:
     A new version is stored; the previous one stays in the history. It is the
     "editable by prompt" that was asked for, without becoming destructive.
     """
-    from .llm import Prose
+    from .llm import Prose, for_task
 
     existing = current(conn) or "# Prioridades\n\n(vazio)\n"
-    updated = await llm._structured(
-        prompt=(
-            f"Documento atual de prioridades:\n\n{existing}\n\n"
-            f"Instrução da pessoa: {instruction}\n\n"
-            "Devolva o documento inteiro reescrito em markdown, aplicando a "
-            "instrução e preservando tudo que ela não pediu para mudar."
-        ),
-        schema=Prose,
-        system=(
-            "Você mantém o documento de prioridades de alguém. Edite com "
-            "parcimônia: aplique o que foi pedido e não reescreva o resto."
-        ),
-    )
+    with for_task("priorities"):
+        updated = await llm._structured(
+            prompt=(
+                f"Documento atual de prioridades:\n\n{existing}\n\n"
+                f"Instrução da pessoa: {instruction}\n\n"
+                "Devolva o documento inteiro reescrito em markdown, aplicando a "
+                "instrução e preservando tudo que ela não pediu para mudar."
+            ),
+            schema=Prose,
+            system=(
+                "Você mantém o documento de prioridades de alguém. Edite com "
+                "parcimônia: aplique o que foi pedido e não reescreva o resto."
+            ),
+        )
     save(conn, updated.text)
     return updated.text

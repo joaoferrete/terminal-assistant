@@ -1,15 +1,15 @@
-"""Gemini: the project's three LLM calls.
+"""The project's LLM tasks: what to ask the model, and which model is asked.
 
 All of them off the critical path (ADR 0003). Note capture, the board and the
 Digest never come through here; with no key or no network, all of that is intact.
 
-The model is chosen from `client.models.list()` on the machine, not from memory.
-`gemini-flash-latest` is an **alias** that follows the current flash — it does not
-go stale, at the cost of being able to change behaviour on its own. To pin it,
-`TA_GEMINI_MODEL=gemini-3.6-flash` in `.env`, one line.
+Each task is routed to a provider in `providers.py` — DeepSeek by default, Gemini
+as the fallback, either overridable per task in `config.toml` (ADR 0018). The
+tasks are written once and do not know which vendor answers them.
 
-Structured output through `response_schema` with Pydantic models, checked against
-the installed SDK rather than assumed.
+`gemini-flash-latest` is an **alias** that follows the current flash — it does not
+go stale, at the cost of being able to change behaviour on its own. To pin a
+model, `TA_GEMINI_MODEL` or `TA_DEEPSEEK_MODEL` in `.env`, one line each.
 
 NOTE ON LANGUAGE: the prompt bodies and the `description=` of every schema field
 stay in Portuguese, and that is deliberate (ADR 0013). They are not code — they
@@ -20,22 +20,62 @@ the language the model **answers** in, through a system instruction in one place
 
 from __future__ import annotations
 
+import contextlib
+import functools
 import logging
 import os
+from collections.abc import Callable, Iterator
+from contextvars import ContextVar
 from datetime import date
 
 from pydantic import BaseModel, Field
 
 from . import i18n
 from .notes import SUGGESTED_TAGS
+from .providers import (
+    GEMINI_DEFAULT_MODEL,
+    DeepSeekProvider,
+    GeminiProvider,
+    LLMUnavailable,
+    Provider,
+    Usage,
+)
 
 log = logging.getLogger("ta.llm")
 
-DEFAULT_MODEL = "gemini-flash-latest"
+# Kept for whoever imported it when this module was Gemini only.
+DEFAULT_MODEL = GEMINI_DEFAULT_MODEL
+
+# The routable tasks, as `config.toml` names them under `[llm.tasks]`.
+TASKS = ("review_capture", "organize", "detect_event", "digest_prose", "priorities")
+
+# Which task the current call belongs to. A context variable rather than an
+# argument to `_structured`, because tests subclass `LLM` and override
+# `_structured(prompt, schema, system)` — a new parameter would break every one of
+# them. Each asyncio task gets its own copy, so concurrent reviews do not mix.
+_TASK: ContextVar[str | None] = ContextVar("ta_llm_task", default=None)
 
 
-class LLMUnavailable(RuntimeError):
-    """No key, no SDK or no network. The message is for a human to read."""
+@contextlib.contextmanager
+def for_task(name: str) -> Iterator[None]:
+    """Route the model calls made inside the block as task `name`."""
+    token = _TASK.set(name)
+    try:
+        yield
+    finally:
+        _TASK.reset(token)
+
+
+def _task(name: str):
+    def deco(fn):
+        @functools.wraps(fn)
+        async def wrapper(*args, **kwargs):
+            with for_task(name):
+                return await fn(*args, **kwargs)
+
+        return wrapper
+
+    return deco
 
 
 # ── Output schemas ──────────────────────────────────────────────────────────
@@ -108,26 +148,76 @@ class Prose(BaseModel):
 
 # ── Client ──────────────────────────────────────────────────────────────────
 class LLM:
-    def __init__(self, api_key: str | None, model: str | None = None) -> None:
-        self.api_key = api_key
-        self.model = model or os.environ.get("TA_GEMINI_MODEL", DEFAULT_MODEL)
-        self._client = None
+    """The tasks, routed to providers.
+
+    `LLM(api_key)` is the old Gemini-only shape and still works — the tests build
+    it that way. The daemon uses `LLM.from_config`, which is where DeepSeek, the
+    fallback and the per-task routes come in.
+    """
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+        *,
+        providers: dict[str, Provider] | None = None,
+        default: str = "gemini",
+        fallback: str | None = None,
+        routes: dict[str, str] | None = None,
+    ) -> None:
+        if providers is None:
+            providers = {
+                "gemini": GeminiProvider(api_key, model or os.environ.get("TA_GEMINI_MODEL"))
+            }
+        self.providers = providers
+        self.default = default
+        self.fallback = fallback
+        self.routes = routes or {}
+        # Called with (provider, task, Usage) after every answered call. The
+        # daemon points it at the usage table; nothing else needs to know.
+        self.on_usage: Callable[[str, str, Usage], None] | None = None
+
+    @classmethod
+    def from_config(cls, cfg) -> LLM:
+        from .config import llm_routing
+
+        default, fallback, routes = llm_routing()
+        return cls(
+            providers={
+                "deepseek": DeepSeekProvider(
+                    cfg.deepseek_api_key, os.environ.get("TA_DEEPSEEK_MODEL")
+                ),
+                "gemini": GeminiProvider(cfg.gemini_api_key, os.environ.get("TA_GEMINI_MODEL")),
+            },
+            default=default,
+            fallback=fallback,
+            routes=routes,
+        )
+
+    def chain(self, task: str | None = None) -> list[Provider]:
+        """The providers that would be tried for `task`, in order.
+
+        An unconfigured provider is skipped rather than failed: with only
+        `GEMINI_API_KEY` set — every installation before DeepSeek existed — the
+        DeepSeek default is passed over and Gemini answers, as it always did.
+        """
+        names = [self.routes.get(task or "", self.default), self.fallback]
+        seen: list[Provider] = []
+        for n in names:
+            p = self.providers.get(n) if n else None
+            if p is not None and p.configured and p not in seen:
+                seen.append(p)
+        return seen
 
     @property
     def configured(self) -> bool:
-        return bool(self.api_key)
+        return any(p.configured for p in self.providers.values())
 
-    def _get(self):
-        if self._client is not None:
-            return self._client
-        if not self.api_key:
-            raise LLMUnavailable(i18n.t("ai.no_key"))
-        try:
-            from google import genai
-        except ImportError as e:  # pragma: no cover - dependência declarada
-            raise LLMUnavailable(i18n.t("ai.no_sdk")) from e
-        self._client = genai.Client(api_key=self.api_key)
-        return self._client
+    @property
+    def model(self) -> str:
+        """The model a task with no route of its own would use. For display."""
+        chain = self.chain()
+        return chain[0].model if chain else ""
 
     # ── Output language ─────────────────────────────────────────────────────
     # What changes with `TA_LANG` is the language the model ANSWERS in, and that
@@ -155,41 +245,34 @@ class LLM:
         return f"{system}\n\n{rule}".strip()
 
     async def _structured(self, prompt: str, schema: type[BaseModel], system: str = ""):
-        """One call with output validated against the schema."""
-        import asyncio
+        """One call with output validated against the schema, falling back on failure."""
+        task = _TASK.get()
+        chain = self.chain(task)
+        if not chain:
+            raise LLMUnavailable(i18n.t("ai.no_key"))
 
-        from google.genai import types
-
-        client = self._get()
-        cfg = types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=schema,
-            system_instruction=self._system(system),
-        )
-        try:
-            resp = await asyncio.to_thread(
-                client.models.generate_content, model=self.model, contents=prompt, config=cfg
-            )
-        except Exception as e:
-            raise LLMUnavailable(i18n.t("ai.failed", erro=e)) from e
-
-        # `parsed` is the validated instance; the SDK fills it when there is a schema.
-        if getattr(resp, "parsed", None) is None:
-            raise LLMUnavailable(i18n.t("ai.off_schema"))
-        return resp.parsed
+        failure: LLMUnavailable | None = None
+        for provider in chain:
+            try:
+                value, usage = await provider.structured(prompt, schema, self._system(system))
+            except LLMUnavailable as e:
+                log.warning("%s failed on %s: %s", provider.name, task or "?", e)
+                failure = e
+                continue
+            if self.on_usage is not None:
+                self.on_usage(provider.name, task or "other", usage)
+            return value
+        assert failure is not None
+        raise failure
 
     async def list_models(self) -> list[str]:
-        import asyncio
-
-        client = self._get()
-        models = await asyncio.to_thread(lambda: list(client.models.list()))
-        return [
-            m.name.replace("models/", "")
-            for m in models
-            if "generateContent" in (m.supported_actions or [])
-        ]
+        chain = self.chain()
+        if not chain:
+            raise LLMUnavailable(i18n.t("ai.no_key"))
+        return await chain[0].list_models()
 
     # ── The three calls ─────────────────────────────────────────────────────
+    @_task("organize")
     async def organize(self, notes: list[dict], priorities: str) -> OrganizeResult:
         """Group and order. The result is STORED by the caller (ADR 0003).
 
@@ -229,6 +312,7 @@ class LLM:
             ),
         )
 
+    @_task("detect_event")
     async def detect_event(self, text: str) -> EventCandidate:
         """Extract an event candidate. It never creates anything — the user decides."""
         return await self._structured(
@@ -248,6 +332,7 @@ class LLM:
             ),
         )
 
+    @_task("review_capture")
     async def review_capture(
         self,
         text: str,
@@ -311,6 +396,7 @@ class LLM:
             ),
         )
 
+    @_task("digest_prose")
     async def digest_prose(self, events: list[dict], tasks: list[dict]) -> str:
         """Prosa do dia. Enfeite opcional: a listagem determinística é o padrão."""
         ev = "\n".join(f"- {e['start'][11:]} {e['summary']}" for e in events) or "(nada)"

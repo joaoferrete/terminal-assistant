@@ -48,7 +48,7 @@ general:
 | **Lights, plugs, sensors** | a Home Assistant + token | the `home` commands say so and exit |
 | **Calendar, `ta today` events** | GNOME Online Accounts + Evolution | the digest still lists your tasks |
 | **Ringlight** | the [Lighter][lighter] GNOME extension | that action does nothing |
-| **AI features** | a Gemini API key | capture, board and rules are untouched |
+| **AI features** | a DeepSeek or Gemini API key | capture, board and rules are untouched |
 
 The AI is genuinely optional, not nominally: **no feature you rely on depends on
 it**, nothing calls a model unless you ask, and opening the board never costs

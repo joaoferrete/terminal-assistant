@@ -48,11 +48,17 @@ load it. That cost an afternoon once.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `GEMINI_API_KEY` | *(none)* | Enables the AI features. Without it they fail with a message saying so, and everything else is unaffected |
+| `DEEPSEEK_API_KEY` | *(none)* | Enables DeepSeek, the default provider for every AI task |
+| `TA_DEEPSEEK_MODEL` | `deepseek-flash` | Pins a DeepSeek model |
+| `GEMINI_API_KEY` | *(none)* | Enables Gemini, the fallback provider. Either key alone is enough to turn the AI features on; without both they fail with a message saying so, and everything else is unaffected |
 | `TA_GEMINI_MODEL` | `gemini-flash-latest` | Pins a specific model. The default is a moving alias — it never goes stale, at the cost of being able to change behaviour on its own |
 | `TA_AUTO_REVIEW` | `1` | `0` keeps the key but stops the automatic second pass over each capture |
 
 See [ai.md](ai.md) for what each feature costs in model calls.
+
+Which provider answers which task is set in `config.toml` (below). A provider
+with no key is skipped, not failed, so a Gemini-only installation keeps working
+exactly as before ([ADR 0018](adr/0018-llm-providers-routed-per-task.md)).
 
 ## `~/.config/ta/config.toml`
 
@@ -75,7 +81,21 @@ office = ["light.", "switch."]
 
 # Overridden by TA_LANG if that is set. `ta lang en` writes this line for you.
 lang = "en"
+
+# Which AI provider answers. These are the defaults; you only need the section
+# to change them. `fallback = ""` turns the fallback off.
+[llm]
+default = "deepseek"
+fallback = "gemini"
+
+# Per task, overriding the default. The tasks: review_capture (the second pass
+# over each capture), organize, detect_event, digest_prose, priorities.
+[llm.tasks]
+organize = "gemini"
 ```
+
+A provider name that does not exist is ignored with a warning in the log, rather
+than quietly sending that task to the fallback forever.
 
 **No secrets here.** This file is not committed, but it is not treated as
 sensitive either — it exists to be readable and edited by hand.
