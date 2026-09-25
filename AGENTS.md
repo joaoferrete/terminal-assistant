@@ -8,6 +8,17 @@ owner rather than restating it.
 What is here is the short list of things an agent gets wrong on this codebase
 specifically — collected from the times one did.
 
+## V2 work resumes from `docs/PLAN.md`
+
+[`docs/PLAN.md`](docs/PLAN.md) is the plan for turning `ta` into a household
+assistant, and the handover between sessions. Read its **Now** section before
+touching V2 code: it names the next task. Its decisions are settled; reopening one
+is a question to the user.
+
+Close every iteration in the same commit as the code: tick the task, rewrite
+**Now** to name the next one, and add anything that contradicted the plan to
+**Discoveries**. The next session knows only what that file says.
+
 ## Before you finish, run these three
 
 ```bash

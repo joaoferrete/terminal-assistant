@@ -28,3 +28,20 @@ client is already verified, and Online Accounts renews the token itself.
 - The app depends on the user having connected the accounts in GNOME. Without
   that there is no calendar, and the failure has to be stated clearly rather than
   looking like a bug.
+
+## Amendment, 2026-09-25: on the server, the calendar is the Google Calendar API
+
+The core moved to a home server ([ADR 0015](0015-a-server-and-its-satellites.md)).
+That server runs no GNOME session, and the other Members of the household have no
+Online Accounts on the Owner's laptop. So on the server the calendar comes from the
+Google Calendar API, with our own OAuth client and one authorisation per Member,
+completed through the Channel.
+
+The seven-day expiry described above belongs to the *Testing* publishing status. The
+client is published to *Production*, which removes the expiry and costs an
+"unverified app" warning on the consent screen.
+
+The Workspace risk recorded above is still open. A work account whose admin blocks
+unverified apps will refuse the consent. It is the first thing to check when this is
+built, and if it happens, the choice between verifying the app and reading that
+calendar through the Owner's Satellite goes back to the user.
