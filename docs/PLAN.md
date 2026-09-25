@@ -40,6 +40,11 @@ reverse are also ADRs, linked where they apply.
   close F1. T1.6 is ticked then.
 - **Waiting on the user:** the Telegram bot token and their Telegram username. The
   AI keys are already in the laptop's `.env`.
+- **Pending, the user's call (deferred on 2026-09-25):** rotate the Telegram bot
+  token. One line in the server's journal holds it, from before the httpx fix. The
+  steps: `/revoke` at @BotFather, update the laptop `.env`, then copy that one line
+  to the server and restart, with the user's yes. Pairing survives, because it is
+  bound to the user's id.
 - **Rule:** never run a command on the server without the user's yes, read-only
   ones included.
 
