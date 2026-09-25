@@ -23,11 +23,16 @@ reverse are also ADRs, linked where they apply.
 
 ## Now
 
-- **Phase:** F0 — server ready. It is manual and belongs to the user.
-- **Next agent action:** when the user asks, produce the F0 walkthrough (T0.1) with
-  the `wizard` skill.
-- **Blocked on:** nothing in code. F1 can start in parallel on a branch, but its
-  acceptance needs the server from F0.
+- **Phase:** F0 — server ready, **in progress**. The user runs it; the cutover
+  (T0.3) was chosen *now*, accepting the laptop gap logged in Discoveries.
+- **State:** a one-off F0 wizard was handed to the user. It lives outside the
+  repository on purpose (it hard-codes one laptop's paths). If it is lost,
+  regenerate it from T0.1–T0.3 with the `wizard` skill.
+- **Next agent action:** once the user reports F0 done, tick T0.1–T0.3, then
+  write T0.4 (server install docs) from what the run actually needed, then start
+  F1 on a branch.
+- **Rule:** never run a command on the server without the user's yes, read-only
+  ones included.
 
 ## Decisions
 
@@ -233,6 +238,10 @@ LLMs are remote. The estimates are unmeasured; T2.3 replaces them with numbers.
 Order is dependency order. `[ ]` pending, `[x]` done. Each task names where it lands
 and when it is done.
 
+Documentation is part of every task, not a phase at the end. A task that changes
+how `ta` is installed, configured or used also updates the README,
+[`install.md`](install.md) or [`configuration.md`](configuration.md).
+
 ### F0 — Server ready *(manual, user)*
 
 - [ ] **T0.1 Walkthrough.** With the `wizard` skill: Docker on DietPi, HA Container
@@ -245,6 +254,13 @@ and when it is done.
       with its reason.
 - [ ] **T0.3 Data cutover.** Copy `ta.db` and the rules to the server; stop the
       laptop daemon. **The user's call and the user's hands** ([AGENTS §6](../AGENTS.md#6-dont-touch-the-authors-running-installation)).
+- [ ] **T0.4 Document the server install.** The README says, near the top, that
+      `ta` runs either on one machine (as today) or on a home server with
+      Satellites, and that the server is optional. [`install.md`](install.md) gains a
+      *Server* layer written from what F0 actually took: prerequisites, Docker and
+      Home Assistant, the service with lingering, `TA_HOST`/`TA_TOKEN`, and moving
+      an existing database. It is a guide for a stranger, not a copy of the wizard.
+      *Done when* someone with a Debian box can follow it without this conversation.
 
 ### F1 — Owner-only Telegram capture, and LLM providers
 
@@ -347,6 +363,10 @@ and when it is done.
       outbound connection receives local actions (Lighter, notification). The
       meeting Rule works again, running on the server.
 - [ ] **T6.4** Magic link for the board (D20).
+- [ ] **T6.5 Document Satellites.** In [`install.md`](install.md) and the README:
+      what a Satellite is, how to add a computer (install, get the token from the
+      Channel, point it at the server), what works offline, and how to remove one.
+      Update [`configuration.md`](configuration.md) with every new variable.
 
 ### F7 — RAG over Satellite folders *(future, deliberately unplanned)*
 
@@ -359,3 +379,4 @@ ADR amendment, a new decision (ask the user), or just a note.
 |---|---|---|---|
 | 2026-09-25 | D14 | Google's device authorisation flow does not allow Calendar scopes | OAuth by pasting back the `localhost` redirect; the app must be in Production, or refresh tokens expire in seven days |
 | 2026-09-25 | D14 | ADR 0004 had already rejected our own OAuth, partly because a Workspace admin may block an unverified app on the work account | Recorded as an open risk on D14, and T5.1 checks the work account before anything else |
+| 2026-09-25 | T0.3 | The CLI cannot reach a remote daemon: `Config.base_url` always resolves to this machine, and the CLI sends no `TA_TOKEN` | The user accepted losing `ta` on the laptop, and the meeting Rule, from the cutover until F6. Pulling T6.1's CLI half forward into F1 is cheap if that loss starts to hurt |
