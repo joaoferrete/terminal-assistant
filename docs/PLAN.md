@@ -509,9 +509,15 @@ standard library), never encrypted and never in plain text, so the hash can live
 password).
 
 **Open, and to be asked of the user before designing:**
-1. What it edits: everything in `config.toml` (aliases, groups, Grants, Members,
-   LLM routes, Digest schedule), or only part of it. Secrets in `.env` stay out of
-   the page either way, which is the proposal.
+1. ~~What it edits.~~ **Answered (user, 2026-09-25): everything `ta` can be
+   configured with**, served by the daemon. That covers all of `config.toml`
+   (aliases, groups, Lists, Members, Grants, LLM routes and prices, house rules,
+   cost ceilings, Digest schedule, the Telegram owner, the language) and the
+   non-secret `.env` settings (`TA_HOST`, `TA_PUBLIC_URL`, the whisper and model
+   settings). Still open: **secrets** (`HA_TOKEN`, the API keys, the bot token).
+   The proposal is that the page can *replace* a secret but never *show* one: it
+   shows only "set" or "not set", as `/health` does. Settings that only apply on a
+   restart say so, and the page offers the restart.
 2. Who logs in: only the Owner, or any Member whose Grant says admin.
 3. How it relates to D20. The board is entered by magic link from the Channel.
    Should the config page reuse that session and ask for the password on top
