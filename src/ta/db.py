@@ -20,7 +20,7 @@ from pathlib import Path
 
 log = logging.getLogger("ta")
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 # The states of a Note. Stored in English because the rest of the vocabulary is
 # (see CONTEXT.md); the translated labels live in the interface.
@@ -238,6 +238,60 @@ MIGRATIONS: list[tuple[int, str]] = [
 
         CREATE UNIQUE INDEX idx_one_owner_per_channel
             ON channel_identities(channel) WHERE role = 'owner';
+        """,
+    ),
+    (
+        9,
+        """
+        -- The people of the household (D6, D12). A Member exists whether or
+        -- not they have paired on a Channel: the Owner is born here, with id 1,
+        -- so every Note already written has somebody to belong to.
+        --
+        -- `handle` is how the Owner named them in config.toml — the invite, not
+        -- the identity. The identity per Channel stays in `channel_identities`,
+        -- which gains the link to the Member it proves.
+        CREATE TABLE members (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            handle      TEXT    NOT NULL UNIQUE,
+            is_owner    INTEGER NOT NULL DEFAULT 0,
+            persona     TEXT,             -- JSON: name to use, tone (D13)
+            created_at  TEXT    NOT NULL
+        );
+        CREATE UNIQUE INDEX idx_one_owner ON members(is_owner) WHERE is_owner = 1;
+
+        INSERT INTO members (id, handle, is_owner, created_at)
+        VALUES (1, 'owner', 1, strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'));
+
+        ALTER TABLE channel_identities ADD COLUMN member_id INTEGER REFERENCES members(id);
+        UPDATE channel_identities SET member_id = 1 WHERE role = 'owner';
+
+        -- A Note belongs to whoever wrote it. The column cannot be NOT NULL:
+        -- SQLite refuses a REFERENCES column with a non-NULL default in ALTER
+        -- TABLE while foreign keys are on. So the backfill is here and the
+        -- store always writes it; NULL never appears after this migration.
+        ALTER TABLE notes ADD COLUMN owner_id INTEGER REFERENCES members(id);
+        UPDATE notes SET owner_id = 1;
+        CREATE INDEX idx_notes_owner ON notes(owner_id);
+
+        -- A named collection with a scope (D7). The List, not the Note, decides
+        -- who sees its items: a household List is seen by every Member.
+        CREATE TABLE lists (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT    NOT NULL,
+            scope       TEXT    NOT NULL CHECK (scope IN ('household', 'personal')),
+            owner_id    INTEGER NOT NULL REFERENCES members(id),
+            created_at  TEXT    NOT NULL,
+            UNIQUE (name, owner_id)
+        );
+        ALTER TABLE notes ADD COLUMN list_id INTEGER REFERENCES lists(id) ON DELETE SET NULL;
+        -- Who put it in that List: typed/dragged locks it, a model's choice is
+        -- revisable — the same rule as `tags_by_user`.
+        ALTER TABLE notes ADD COLUMN list_by_user INTEGER NOT NULL DEFAULT 0;
+        CREATE INDEX idx_notes_list ON notes(list_id);
+
+        -- Priorities are one person's description of what matters to them.
+        ALTER TABLE priorities ADD COLUMN member_id INTEGER REFERENCES members(id);
+        UPDATE priorities SET member_id = 1;
         """,
     ),
 ]

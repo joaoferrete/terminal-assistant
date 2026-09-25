@@ -43,6 +43,7 @@ from .config import (
 )
 from .db import connect, default_db_path
 from .llm import LLM, LLMUnavailable
+from .members import OWNER, OWNER_ID, SYSTEM, Viewer
 from .scheduler import Scheduler, lateness_label, lateness_of
 from .sensors.calendar import Calendar
 from .sensors.mic import MicWatcher
@@ -126,22 +127,27 @@ class TokenAuth(BaseHTTPMiddleware):
             return header[7:].strip()
         return request.query_params.get("token", "")
 
-    def _authorised(self, request: Request) -> bool:
+    def _member(self, request: Request) -> int | None:
+        """Who this request speaks for, or None if it proves nobody."""
+        # A session cookie first: it is the only credential that names a Member
+        # other than the Owner, and it is what survives a reload (T1.7).
+        cookie = request.cookies.get(board_access.COOKIE)
+        if cookie and (member := board_access.session_member(self._token, cookie)):
+            return member
         # `compare_digest` instead of `==`: comparing a secret with an early
         # exit leaks the correct prefix through response timing.
         presented = self._presented(request)
         if presented and hmac.compare_digest(presented, self._token):
-            return True
-        # The session cookie the bot's link sets: it is what survives a reload,
-        # which a header built by JavaScript cannot (board_access.py).
-        cookie = request.cookies.get(board_access.COOKIE)
-        return bool(cookie) and board_access.session_valid(self._token, cookie)
+            return OWNER_ID   # TA_TOKEN is the Owner's own credential
+        return OWNER_ID if _peer_local(request) else None
 
     async def dispatch(self, request: Request, call_next):
         code = request.query_params.get("code")
         if request.url.path == "/board" and code:
             return self._redeem(request, code)
-        if not _peer_local(request) and not self._authorised(request):
+        member = self._member(request)
+        request.state.viewer = Viewer(member) if member is not None else None
+        if member is None:
             log.warning(
                 "401 from %s on %s", request.client.host if request.client else "?",
                 request.url.path,
@@ -154,13 +160,14 @@ class TokenAuth(BaseHTTPMiddleware):
 
     def _redeem(self, request: Request, code: str):
         """Trade a one-time code from the bot for a session cookie (T1.7)."""
-        if not request.app.state.board_codes.redeem(code):
+        member = request.app.state.board_codes.redeem(code)
+        if member is None:
             return JSONResponse({"error": i18n.t("auth.code_used")}, status_code=401)
         # A redirect, so the code leaves the address bar and the history.
         resp = RedirectResponse("/board", status_code=303)
         resp.set_cookie(
             board_access.COOKIE,
-            board_access.session_cookie(self._token),
+            board_access.session_cookie(self._token, member),
             max_age=int(board_access.SESSION_TTL.total_seconds()),
             httponly=True,
             # Lax, not Strict. The link is opened from the Telegram app, a
@@ -171,6 +178,26 @@ class TokenAuth(BaseHTTPMiddleware):
             path="/",
         )
         return resp
+
+
+def _viewer(request: Request) -> Viewer:
+    """Who this request speaks for. With no `TA_TOKEN` there is no middleware,
+    and the daemon is on loopback: whoever reaches it is on this machine, the
+    Owner's (ADR 0012)."""
+    return getattr(request.state, "viewer", None) or OWNER
+
+
+def _visible(request: Request, note_id: int) -> store.Note | JSONResponse:
+    """The Note, if this viewer may see it; otherwise the 404 to return.
+
+    Every route that changes a Note goes through here FIRST. Three of them
+    (move, done, status) used to write before checking anything — a 500 on an
+    unknown id, and with Members, a way to edit somebody else's Note by id.
+    """
+    try:
+        return store.get_note(request.app.state.conn, note_id, viewer=_viewer(request))
+    except KeyError:
+        return JSONResponse({"error": i18n.t("api.note_missing", id=note_id)}, status_code=404)
 
 
 def _note_json(n: store.Note, *, today: date | None = None) -> dict:
@@ -329,14 +356,14 @@ def _board_link(app: Starlette, cfg: Config) -> str | None:
     return f"{base.rstrip('/')}/board?code={app.state.board_codes.issue()}"
 
 
-def _capture(app: Starlette, raw: str) -> store.Note:
+def _capture(app: Starlette, raw: str, *, owner_id: int = OWNER_ID) -> store.Note:
     """Capture a Note: the one path shared by `POST /notes` and the bot.
 
     Review goes out in the background and the Note comes back now: capture never
     waits for the network (ADR 0003). Whatever it changes shows up on the board
     at the next reload.
     """
-    note = store.add_note(app.state.conn, raw)
+    note = store.add_note(app.state.conn, raw, owner_id=owner_id)
     _schedule_review(app, note)
     return note
 
@@ -406,7 +433,7 @@ async def _review_capture(app: Starlette, note_id: int) -> None:
 
 async def _review_one(app: Starlette, note_id: int) -> None:
     try:
-        note = store.get_note(app.state.conn, note_id)
+        note = store.get_note(app.state.conn, note_id, viewer=SYSTEM)
     except KeyError:
         return  # deleted before review got to it
 
@@ -614,7 +641,7 @@ async def review_all(request: Request) -> JSONResponse:
             {"error": i18n.t("api.review_off")}, status_code=400
         )
 
-    n = store.queue_all_for_review(app.state.conn)
+    n = store.queue_all_for_review(app.state.conn, viewer=_viewer(request))
     _schedule_review(app, limite=200)
     return JSONResponse({"queued": n, "running": len(app.state.in_review)})
 
@@ -637,7 +664,8 @@ async def notes_list(request: Request) -> JSONResponse:
     # `deleted=1` returns ONLY the deleted ones: it is the trash, not an "also include".
     deleted = request.query_params.get("deleted") == "1"
     notes = store.list_notes(
-        request.app.state.conn, include_done=include_done, deleted=deleted
+        request.app.state.conn, viewer=_viewer(request), include_done=include_done,
+        deleted=deleted,
     )
     # Display order comes from here, not from the client: the board's three
     # views, `ta list` and any other consumer get the same order without each
@@ -655,12 +683,10 @@ async def notes_delete(request: Request) -> JSONResponse:
     """
     note_id = int(request.path_params["note_id"])
     conn = request.app.state.conn
-    try:
-        store.get_note(conn, note_id)
-    except KeyError:
-        return JSONResponse({"error": i18n.t("api.note_missing", id=note_id)}, status_code=404)
+    if isinstance(found := _visible(request, note_id), JSONResponse):
+        return found
     store.soft_delete(conn, note_id)
-    return JSONResponse(_note_json(store.get_note(conn, note_id)))
+    return JSONResponse(_note_json(store.get_note(conn, note_id, viewer=_viewer(request))))
 
 
 async def notes_purge(request: Request) -> JSONResponse:
@@ -671,10 +697,8 @@ async def notes_purge(request: Request) -> JSONResponse:
     """
     note_id = int(request.path_params["note_id"])
     conn = request.app.state.conn
-    try:
-        nota = store.get_note(conn, note_id)
-    except KeyError:
-        return JSONResponse({"error": i18n.t("api.note_missing", id=note_id)}, status_code=404)
+    if isinstance(nota := _visible(request, note_id), JSONResponse):
+        return nota
     if not nota.is_deleted:
         return JSONResponse(
             {"error": i18n.t("api.note_not_in_trash", id=note_id)},
@@ -692,24 +716,24 @@ async def trash_purge(request: Request) -> JSONResponse:
             {"error": i18n.t("api.confirm_required")},
             status_code=400,
         )
-    n = store.purge_all(request.app.state.conn)
+    n = store.purge_all(request.app.state.conn, viewer=_viewer(request))
     return JSONResponse({"purged": n})
 
 
 async def notes_restore(request: Request) -> JSONResponse:
     note_id = int(request.path_params["note_id"])
     conn = request.app.state.conn
-    try:
-        store.get_note(conn, note_id)
-    except KeyError:
-        return JSONResponse({"error": i18n.t("api.note_missing", id=note_id)}, status_code=404)
+    if isinstance(found := _visible(request, note_id), JSONResponse):
+        return found
     store.restore(conn, note_id)
-    return JSONResponse(_note_json(store.get_note(conn, note_id)))
+    return JSONResponse(_note_json(store.get_note(conn, note_id, viewer=_viewer(request))))
 
 
 async def notes_move(request: Request) -> JSONResponse:
     note_id = int(request.path_params["note_id"])
     body = await request.json()
+    if isinstance(found := _visible(request, note_id), JSONResponse):
+        return found
     store.move_note(
         request.app.state.conn,
         note_id,
@@ -719,7 +743,9 @@ async def notes_move(request: Request) -> JSONResponse:
         group_name=body.get("group"),
         color=body.get("color"),
     )
-    return JSONResponse(_note_json(store.get_note(request.app.state.conn, note_id)))
+    return JSONResponse(
+        _note_json(store.get_note(request.app.state.conn, note_id, viewer=_viewer(request)))
+    )
 
 
 async def notes_done(request: Request) -> JSONResponse:
@@ -729,8 +755,10 @@ async def notes_done(request: Request) -> JSONResponse:
     if await request.body():
         done = bool((await request.json()).get("done", True))
     conn = request.app.state.conn
+    if isinstance(found := _visible(request, note_id), JSONResponse):
+        return found
     store.mark_done(conn, note_id) if done else store.mark_undone(conn, note_id)
-    return JSONResponse(_note_json(store.get_note(conn, note_id)))
+    return JSONResponse(_note_json(store.get_note(conn, note_id, viewer=_viewer(request))))
 
 
 async def notes_status(request: Request) -> JSONResponse:
@@ -738,15 +766,19 @@ async def notes_status(request: Request) -> JSONResponse:
     note_id = int(request.path_params["note_id"])
     status = (await request.json()).get("status", "")
     conn = request.app.state.conn
+    if isinstance(found := _visible(request, note_id), JSONResponse):
+        return found
     try:
         store.set_status(conn, note_id, status)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
-    return JSONResponse(_note_json(store.get_note(conn, note_id)))
+    return JSONResponse(_note_json(store.get_note(conn, note_id, viewer=_viewer(request))))
 
 
 async def export(request: Request) -> PlainTextResponse:
-    return PlainTextResponse(store.export_markdown(request.app.state.conn))
+    return PlainTextResponse(
+        store.export_markdown(request.app.state.conn, viewer=_viewer(request))
+    )
 
 
 async def board(request: Request) -> HTMLResponse:
@@ -795,7 +827,9 @@ async def today(request: Request) -> JSONResponse:
     # `overdue`. Only `overdue` and `today` appear here, because `due_today`
     # filters `due <= day`.
     reference_day = day or date.today()
-    tasks = store.by_urgency(store.due_today(app.state.conn, today=day), today=reference_day)
+    tasks = store.by_urgency(
+        store.due_today(app.state.conn, viewer=_viewer(request), today=day), today=reference_day
+    )
     # The weather goes into the Digest because it was asked for, and degrades to
     # None silently: the Digest must not fail because Home Assistant is down.
     weather = None
@@ -960,7 +994,7 @@ async def organize(request: Request) -> JSONResponse:
     conn = app.state.conn
     # Deliberately in STORED order, without `by_urgency`: it is what the model
     # has to see in order to refine, and it is the order it will rewrite.
-    notes = store.list_notes(conn)
+    notes = store.list_notes(conn, viewer=_viewer(request))
     if not notes:
         return JSONResponse({"placed": 0, "groups": []})
     reference_day = date.today()
@@ -1000,7 +1034,9 @@ async def detect_event(request: Request) -> JSONResponse:
     note_id = body.get("note_id")
     text = body.get("text")
     if note_id is not None:
-        text = store.get_note(app.state.conn, int(note_id)).text
+        if isinstance(found := _visible(request, int(note_id)), JSONResponse):
+            return found
+        text = found.text
     if not text:
         return JSONResponse({"error": "falta text ou note_id"}, status_code=400)
     try:
@@ -1081,7 +1117,9 @@ async def digest_prose(request: Request) -> JSONResponse:
     app = request.app
     events = await asyncio.to_thread(app.state.calendar.today)
     reference_day = date.today()
-    tasks = store.by_urgency(store.due_today(app.state.conn), today=reference_day)
+    tasks = store.by_urgency(
+        store.due_today(app.state.conn, viewer=_viewer(request)), today=reference_day
+    )
     try:
         text = await app.state.llm.digest_prose(
             [_event_json(e) for e in events], [_note_json(n, today=reference_day) for n in tasks]

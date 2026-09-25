@@ -356,6 +356,7 @@ from types import SimpleNamespace  # noqa: E402
 
 from ta import db, store  # noqa: E402
 from ta.daemon import _review_capture  # noqa: E402
+from ta.members import SYSTEM  # noqa: E402
 
 
 class StubLLMReview:
@@ -432,7 +433,7 @@ async def test_the_review_removes_a_deadline_the_regex_invented(tmp_path):
 
     await _review_capture(app, note.id)
 
-    assert store.get_note(app.state.conn, note.id).due is None
+    assert store.get_note(app.state.conn, note.id, viewer=SYSTEM).due is None
     assert t("review.due_removed") in app.state.notify.warnings[0][1]
 
 
@@ -444,7 +445,7 @@ async def test_a_low_confidence_review_touches_nothing(tmp_path):
 
     await _review_capture(app, note.id)
 
-    assert store.get_note(app.state.conn, note.id).due == before
+    assert store.get_note(app.state.conn, note.id, viewer=SYSTEM).due == before
     assert app.state.notify.warnings == []
 
 
@@ -595,7 +596,7 @@ async def test_a_plain_note_gets_no_priority(tmp_path):
 
     await _review_capture(app, note.id)
 
-    n = store.get_note(app.state.conn, note.id)
+    n = store.get_note(app.state.conn, note.id, viewer=SYSTEM)
     assert n.priority is None
     assert "anotacao" in n.tags
 
@@ -608,7 +609,7 @@ async def test_a_plain_note_removes_a_machine_set_priority(tmp_path):
 
     await _review_capture(app, note.id)
 
-    assert store.get_note(app.state.conn, note.id).priority is None
+    assert store.get_note(app.state.conn, note.id, viewer=SYSTEM).priority is None
 
 
 async def test_a_priority_typed_by_the_user_is_untouchable(tmp_path):
@@ -619,7 +620,7 @@ async def test_a_priority_typed_by_the_user_is_untouchable(tmp_path):
 
     await _review_capture(app, note.id)
 
-    assert store.get_note(app.state.conn, note.id).priority == "high"
+    assert store.get_note(app.state.conn, note.id, viewer=SYSTEM).priority == "high"
 
 
 async def test_a_topic_typed_by_the_user_survives_and_gains_the_axes(tmp_path):
@@ -638,7 +639,7 @@ async def test_a_topic_typed_by_the_user_survives_and_gains_the_axes(tmp_path):
 
     await _review_capture(app, note.id)
 
-    tags = store.get_note(app.state.conn, note.id).tags
+    tags = store.get_note(app.state.conn, note.id, viewer=SYSTEM).tags
     assert "app" in tags                         # your topic stays
     assert {"pessoal", "anotacao"} <= set(tags)  # and the axes come in
     assert "estudo" not in tags                  # the model's topic does NOT replace yours
@@ -654,7 +655,7 @@ async def test_area_and_type_always_come_in_as_tags(tmp_path):
 
     await _review_capture(app, note.id)
 
-    assert store.get_note(app.state.conn, note.id).tags == ["tarefa", "trabalho"]
+    assert store.get_note(app.state.conn, note.id, viewer=SYSTEM).tags == ["tarefa", "trabalho"]
 
 
 async def test_a_topic_invented_by_the_model_is_discarded(tmp_path):
@@ -667,7 +668,8 @@ async def test_a_topic_invented_by_the_model_is_discarded(tmp_path):
 
     await _review_capture(app, note.id)
 
-    assert store.get_note(app.state.conn, note.id).tags == ["estudo", "pessoal", "tarefa"]
+    tags = store.get_note(app.state.conn, note.id, viewer=SYSTEM).tags
+    assert tags == ["estudo", "pessoal", "tarefa"]
 
 
 async def test_at_most_two_topics_beyond_the_axes(tmp_path):
@@ -679,7 +681,7 @@ async def test_at_most_two_topics_beyond_the_axes(tmp_path):
 
     await _review_capture(app, note.id)
 
-    tags = store.get_note(app.state.conn, note.id).tags
+    tags = store.get_note(app.state.conn, note.id, viewer=SYSTEM).tags
     assert len(tags) == 4          # area + type + 2 topics
     assert {"pessoal", "tarefa"} <= set(tags)
 

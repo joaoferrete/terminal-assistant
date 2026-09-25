@@ -4,6 +4,7 @@ import pytest
 
 from ta import db, store
 from ta.i18n import t
+from ta.members import SYSTEM
 
 NOW = datetime(2026, 8, 10, 9, 0)
 
@@ -40,7 +41,7 @@ def test_dragging_marks_pinned_by_user(conn):
     n = store.add_note(conn, "x", now=NOW)
     assert not n.pinned_by_user
     store.move_note(conn, n.id, sort_key=0.5, pos_x=120, pos_y=40)
-    moved = store.get_note(conn, n.id)
+    moved = store.get_note(conn, n.id, viewer=SYSTEM)
     assert moved.pinned_by_user
     assert (moved.sort_key, moved.pos_x, moved.pos_y) == (0.5, 120, 40)
 
@@ -49,8 +50,8 @@ def test_list_hides_finished_notes_by_default(conn):
     a = store.add_note(conn, "aberta", now=NOW)
     b = store.add_note(conn, "fechada", now=NOW)
     store.mark_done(conn, b.id, now=NOW)
-    assert [n.id for n in store.list_notes(conn)] == [a.id]
-    assert len(store.list_notes(conn, include_done=True)) == 2
+    assert [n.id for n in store.list_notes(conn, viewer=SYSTEM)] == [a.id]
+    assert len(store.list_notes(conn, viewer=SYSTEM, include_done=True)) == 2
 
 
 def test_due_today_includes_overdue(conn):
@@ -58,7 +59,7 @@ def test_due_today_includes_overdue(conn):
     store.add_note(conn, "hoje @hoje", now=NOW)
     store.add_note(conn, "futura @2026-12-25", now=NOW)
     store.add_note(conn, "sem prazo", now=NOW)
-    due = store.due_today(conn, today=date(2026, 8, 10))
+    due = store.due_today(conn, viewer=SYSTEM, today=date(2026, 8, 10))
     assert [n.text for n in due] == ["atrasada", "hoje"]
 
 
@@ -79,7 +80,7 @@ def test_export_markdown(conn):
     store.add_note(conn, "ligar dentista @sexta #saude", now=NOW)
     b = store.add_note(conn, "feita", now=NOW)
     store.mark_done(conn, b.id, now=NOW)
-    out = store.export_markdown(conn)
+    out = store.export_markdown(conn, viewer=SYSTEM)
     assert "- [ ] ligar dentista" in out
     assert f"{t('export.due')} 2026-08-14" in out
     assert "#saude" in out
@@ -90,7 +91,7 @@ def test_tags_without_an_n_plus_one(conn):
     """list_notes has to fetch tags in a single query."""
     for i in range(5):
         store.add_note(conn, f"n{i} #a #b", now=NOW)
-    notes = store.list_notes(conn)
+    notes = store.list_notes(conn, viewer=SYSTEM)
     assert all(n.tags == ["a", "b"] for n in notes)
 
 
@@ -108,13 +109,13 @@ def test_done_at_is_a_timestamp_not_a_state(conn):
     """Entering done stamps the instant; leaving clears it; cancelling never stamps."""
     n = store.add_note(conn, "x", now=NOW)
     store.set_status(conn, n.id, "done", now=NOW)
-    assert store.get_note(conn, n.id).done_at == "2026-08-10T09:00:00"
+    assert store.get_note(conn, n.id, viewer=SYSTEM).done_at == "2026-08-10T09:00:00"
 
     store.set_status(conn, n.id, "doing")
-    assert store.get_note(conn, n.id).done_at is None
+    assert store.get_note(conn, n.id, viewer=SYSTEM).done_at is None
 
     store.set_status(conn, n.id, "cancelled")
-    got = store.get_note(conn, n.id)
+    got = store.get_note(conn, n.id, viewer=SYSTEM)
     assert got.done_at is None          # cancelled was not done
     assert got.is_terminal              # but it left the queue
     assert not got.is_done
@@ -129,14 +130,14 @@ def test_terminal_notes_leave_the_list_by_default(conn):
     store.set_status(conn, c.id, "cancelled")
     store.set_status(conn, d.id, "doing")
     # doing and hold stay in the queue; done and cancelled leave.
-    assert sorted(n.id for n in store.list_notes(conn)) == sorted([a.id, d.id])
-    assert len(store.list_notes(conn, include_done=True)) == 4
+    assert sorted(n.id for n in store.list_notes(conn, viewer=SYSTEM)) == sorted([a.id, d.id])
+    assert len(store.list_notes(conn, viewer=SYSTEM, include_done=True)) == 4
 
 
 def test_due_today_ignores_cancelled_notes(conn):
     n = store.add_note(conn, "cancelada @hoje", now=NOW)
     store.set_status(conn, n.id, "cancelled")
-    assert store.due_today(conn, today=date(2026, 8, 10)) == []
+    assert store.due_today(conn, viewer=SYSTEM, today=date(2026, 8, 10)) == []
 
 
 # ── Display order: horizon, and priority within it (ADR 0010) ───────────────
@@ -149,7 +150,7 @@ def _order(conn, *, include_done=False):
     return [
         n.text
         for n in store.by_urgency(
-            store.list_notes(conn, include_done=include_done), today=TODAY
+            store.list_notes(conn, viewer=SYSTEM, include_done=include_done), today=TODAY
         )
     ]
 
@@ -246,7 +247,7 @@ def test_export_shows_non_binary_state(conn):
     b = store.add_note(conn, "cancelada", now=NOW)
     store.set_status(conn, a.id, "doing")
     store.set_status(conn, b.id, "cancelled")
-    out = store.export_markdown(conn)
+    out = store.export_markdown(conn, viewer=SYSTEM)
     assert "[~] andando" in out
     assert "[/] cancelada" in out
 
@@ -255,13 +256,13 @@ def test_an_empty_colour_returns_to_the_priority_default(conn):
     """`color=""` clears; `color=None` leaves it alone. They are different requests."""
     nid = store.add_note(conn, "x !alta", now=NOW).id
     store.move_note(conn, nid, color="#bfdcf5")
-    assert store.get_note(conn, nid).color == "#bfdcf5"
+    assert store.get_note(conn, nid, viewer=SYSTEM).color == "#bfdcf5"
 
     store.move_note(conn, nid, pos_x=10)          # a None colour does not erase it
-    assert store.get_note(conn, nid).color == "#bfdcf5"
+    assert store.get_note(conn, nid, viewer=SYSTEM).color == "#bfdcf5"
 
     store.move_note(conn, nid, color="")          # now it does
-    assert store.get_note(conn, nid).color is None
+    assert store.get_note(conn, nid, viewer=SYSTEM).color is None
 
 
 # ── The review queue ────────────────────────────────────────────────────────
@@ -300,7 +301,7 @@ def test_review_all_takes_open_notes_and_ignores_terminal_ones(conn):
     store.set_status(conn, finished, "done", now=NOW)
     store.set_status(conn, cancelled_, "cancelled", now=NOW)
 
-    assert store.queue_all_for_review(conn) == 1
+    assert store.queue_all_for_review(conn, viewer=SYSTEM) == 1
     assert store.pending_review(conn) == [open_]
 
 
@@ -311,16 +312,16 @@ def test_review_all_resets_the_attempts(conn):
         store.count_review_attempt(conn, nid)
     store.mark_reviewed(conn, nid, now=NOW)
 
-    store.queue_all_for_review(conn)
+    store.queue_all_for_review(conn, viewer=SYSTEM)
     assert store.pending_review(conn, max_attempts=5) == [nid]
 
 
 def test_set_tags_replaces_and_deduplicates(conn):
     nid = store.add_note(conn, "x", now=NOW).id
     store.set_tags(conn, nid, ["trabalho", "estudo", "trabalho"])
-    assert store.get_note(conn, nid).tags == ["estudo", "trabalho"]
+    assert store.get_note(conn, nid, viewer=SYSTEM).tags == ["estudo", "trabalho"]
     store.set_tags(conn, nid, ["pessoal"])
-    assert store.get_note(conn, nid).tags == ["pessoal"]
+    assert store.get_note(conn, nid, viewer=SYSTEM).tags == ["pessoal"]
 
 
 # ── Soft delete ─────────────────────────────────────────────────────────────
@@ -332,11 +333,11 @@ def test_a_deleted_note_leaves_every_listing(conn):
     store.soft_delete(conn, dead, now=NOW)
 
     later = datetime(2026, 8, 10, 11, 0)
-    assert [n.id for n in store.list_notes(conn)] == [alive]
-    assert [n.id for n in store.due_today(conn, today=date(2026, 8, 10))] == [alive]
+    assert [n.id for n in store.list_notes(conn, viewer=SYSTEM)] == [alive]
+    assert [n.id for n in store.due_today(conn, viewer=SYSTEM, today=date(2026, 8, 10))] == [alive]
     assert [n.id for n in store.pending_reminders(conn, now=later)] == [alive]
     assert store.pending_review(conn) == [alive]
-    assert store.queue_all_for_review(conn) == 1
+    assert store.queue_all_for_review(conn, viewer=SYSTEM) == 1
 
 
 def test_the_trash_returns_only_the_deleted(conn):
@@ -344,18 +345,18 @@ def test_the_trash_returns_only_the_deleted(conn):
     dead = store.add_note(conn, "morta", now=NOW).id
     store.soft_delete(conn, dead, now=NOW)
 
-    assert [n.id for n in store.list_notes(conn, deleted=True)] == [dead]
-    assert [n.id for n in store.list_notes(conn)] == [alive]
+    assert [n.id for n in store.list_notes(conn, viewer=SYSTEM, deleted=True)] == [dead]
+    assert [n.id for n in store.list_notes(conn, viewer=SYSTEM)] == [alive]
 
 
 def test_restore_brings_it_back(conn):
     nid = store.add_note(conn, "x", now=NOW).id
     store.soft_delete(conn, nid, now=NOW)
-    assert store.get_note(conn, nid).is_deleted
+    assert store.get_note(conn, nid, viewer=SYSTEM).is_deleted
 
     store.restore(conn, nid)
-    assert not store.get_note(conn, nid).is_deleted
-    assert [n.id for n in store.list_notes(conn)] == [nid]
+    assert not store.get_note(conn, nid, viewer=SYSTEM).is_deleted
+    assert [n.id for n in store.list_notes(conn, viewer=SYSTEM)] == [nid]
 
 
 def test_deleting_and_cancelling_are_independent_axes(conn):
@@ -367,10 +368,10 @@ def test_deleting_and_cancelling_are_independent_axes(conn):
     store.set_status(conn, nid, "done", now=NOW)
     store.soft_delete(conn, nid, now=NOW)
 
-    n = store.get_note(conn, nid)
+    n = store.get_note(conn, nid, viewer=SYSTEM)
     assert n.status == "done" and n.is_deleted
-    assert store.list_notes(conn, include_done=True) == []
-    assert [x.id for x in store.list_notes(conn, deleted=True)] == [nid]
+    assert store.list_notes(conn, viewer=SYSTEM, include_done=True) == []
+    assert [x.id for x in store.list_notes(conn, viewer=SYSTEM, deleted=True)] == [nid]
 
 
 # ── Purge ───────────────────────────────────────────────────────────────────
@@ -379,12 +380,12 @@ def test_purge_only_reaches_what_is_in_the_trash(conn):
     alive = store.add_note(conn, "viva", now=NOW).id
 
     assert store.purge(conn, alive) is False
-    assert store.get_note(conn, alive).text == "viva"     # still there
+    assert store.get_note(conn, alive, viewer=SYSTEM).text == "viva"     # still there
 
     store.soft_delete(conn, alive, now=NOW)
     assert store.purge(conn, alive) is True
     with pytest.raises(KeyError):
-        store.get_note(conn, alive)
+        store.get_note(conn, alive, viewer=SYSTEM)
 
 
 def test_purge_takes_the_tags_with_it(conn):
@@ -410,11 +411,11 @@ def test_emptying_the_trash_does_not_touch_the_living(conn):
     for i in dead_ids:
         store.soft_delete(conn, i, now=NOW)
 
-    assert store.purge_all(conn) == 2
-    assert sorted(n.id for n in store.list_notes(conn)) == sorted(alive_ids)
-    assert store.list_notes(conn, deleted=True) == []
+    assert store.purge_all(conn, viewer=SYSTEM) == 2
+    assert sorted(n.id for n in store.list_notes(conn, viewer=SYSTEM)) == sorted(alive_ids)
+    assert store.list_notes(conn, viewer=SYSTEM, deleted=True) == []
 
 
 def test_emptying_an_empty_trash_is_zero(conn):
     store.add_note(conn, "viva", now=NOW)
-    assert store.purge_all(conn) == 0
+    assert store.purge_all(conn, viewer=SYSTEM) == 0

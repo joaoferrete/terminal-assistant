@@ -37,12 +37,17 @@ reverse are also ADRs, linked where they apply.
   5. `feat/board-link` — T1.7
   6. `docs/chatbot-guardrails` — D25–D33, ADR 0019, and F1 closed
   7. `feat/voice` — T2.1, T2.2
+  8. `feat/members` — T3.1, T3.2 (and the per-Member board session pulled from T6.4)
   The next task branches from the top of this list and is appended to it.
 - **F2 is closed** (2026-09-25). Voice notes are transcribed on the server at
   about 0.46× real time. The server runs `feat/voice`.
-- **Next agent action:** F3, Members, Grants, visibility and Lists. Start with
-  T3.1, the schema, on a new branch at the top of the stack. It absorbs
-  `channel_identities` (migration 8) into `members`.
+- **Next agent action:** T3.3, Grants in `config.toml`, then T3.4, pairing for
+  invited Members plus the group allowlist. Lists come from `[lists]` in
+  `config.toml`, with `compras` as a household List by default (decided
+  2026-09-25). Creating Lists from the chat or the board is F4.
+- **F8 interview:** before starting F8, not now. The user offered to run it now
+  and agreed to wait: most of what it configures (Grants, Lists, house rules, the
+  Digest) is still being built.
 - **Pending, the user's call (deferred on 2026-09-25):** rotate the Telegram bot
   token. One line in the server's journal holds it, from before the httpx fix. The
   steps: `/revoke` at @BotFather, update the laptop `.env`, then copy that one line
@@ -415,10 +420,10 @@ how `ta` is installed, configured or used also updates the README,
 
 ### F3 — Members, Grants, visibility, Lists
 
-- [ ] **T3.1 Schema.** Migration: `members` (channel, external id, username,
+- [x] **T3.1 Schema.** Migration: `members` (channel, external id, username,
       owner flag, persona, created), `notes.owner_id` backfilled to the Owner,
       `lists` (name, scope, owner), `notes.list_id`, Priorities per Member.
-- [ ] **T3.2 Visibility.** Every read path in `store.py` filters to own +
+- [x] **T3.2 Visibility.** Every read path in `store.py` filters to own +
       household. *Done when* one test covers list, Digest, reminders, review queue
       and export together — the same shape as the `deleted_at` test.
 - [ ] **T3.3 Grants.** `[grants.<name>]` (Entities/groups, Lists, Tools, admin)
@@ -551,3 +556,6 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-25 | T2.1 | The Capability is named `voice`, not `whisper` as T2.1 said. It names what the user gets, as every other Capability does, not the library | Recorded here so the plan and `ta doctor` stay aligned |
 | 2026-09-25 | T2.3 | Measured on the server after two real voice notes: the model stays **resident** once loaded, and the service sits at **1.4 GB** with it (the budget assumed about 1 GB, and only while transcribing). The host still had 5.2 GB available. The model cache is 464 MB on disk. The latency could not be read, because nothing logged it, and `MemoryPeak` is not exposed by this systemd | The bot now logs each voice note's length and transcription time. The latency row is still to be filled from the next voice note. Unloading the model after a quiet period is an option if RAM gets tight (HA plus the model plus AdGuard is about 3 GB today) |
 | 2026-09-25 | T2.3 | Latency, now logged: 25 s of speech in 11.4 s warm (0.46×), and 31 s in 21.8 s cold, with the model load included. The estimate was 0.3–0.5× | Within the estimate. A one-minute note answers in about half a minute, which is acceptable for capture, and the 600 s ceiling stands |
+| 2026-09-25 | T3.2 | The T1.7 cookie said *that* someone had the link, not *who*. With Members, a housemate's `/board` would have shown them the Owner's private Notes | The per-Member session planned for T6.4 came forward. The cookie is `v2.<member>.<issued>.<hmac>`, and editing the member number voids it (tested). `v1` cookies, only ever issued to the Owner, are still read as the Owner's |
+| 2026-09-25 | T3.2 | `notes_move`, `notes_done` and `notes_status` wrote before checking the Note existed: a 500 on an unknown id, and with Members, a way to edit somebody else's Note by id | Every mutating route goes through `_visible()` first, and returns 404 for "not yours" and "does not exist" alike, so ids are not confirmed. Tested per route |
+| 2026-09-25 | T3.2 | The read paths take `viewer` with **no default**, and `SYSTEM` is a distinct object, not `None`. A forgotten viewer raises TypeError instead of meaning "everyone" | 39 existing tests failed on purpose and were updated. The rewrite applied its regex twice (`viewer=SYSTEM, viewer=SYSTEM`), and lint caught it, as AGENTS §4 predicts |

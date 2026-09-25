@@ -11,7 +11,25 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from .db import STATUSES, TERMINAL_STATUSES, transaction
+from .members import OWNER_ID, SYSTEM, Viewer
 from .notes import ParsedNote, parse
+
+
+def _scope(viewer) -> tuple[str, list]:
+    """The SQL that limits a read to what `viewer` may see (D6, invariant 3).
+
+    Every human-facing read goes through here, and `viewer` is required with no
+    default: a caller that forgets it gets a TypeError, never "everyone". Only
+    `SYSTEM` — the scheduler, the review queue — sees every Note.
+    """
+    household = "list_id IN (SELECT id FROM lists WHERE scope = 'household')"
+    if viewer is SYSTEM:
+        return "1 = 1", []
+    if not isinstance(viewer, Viewer):
+        raise TypeError(f"a read needs a Viewer or SYSTEM, got {viewer!r}")
+    if viewer.in_group:
+        return household, []
+    return f"(owner_id = ? OR {household})", [viewer.member_id]
 
 # A tiebreak WITHIN a horizon band — no longer the first display criterion (see
 # `by_urgency`). No priority comes after low: not declaring one is not the same
@@ -58,6 +76,8 @@ class Note:
     priority_by_user: bool = False
     tags_by_user: bool = False
     deleted_at: str | None = None
+    owner_id: int = OWNER_ID
+    list_id: int | None = None
 
     @property
     def is_deleted(self) -> bool:
@@ -99,14 +119,27 @@ def _row_to_note(row: sqlite3.Row, tags: list[str]) -> Note:
         priority_by_user=bool(row["priority_by_user"]),
         tags_by_user=bool(row["tags_by_user"]),
         deleted_at=row["deleted_at"],
+        owner_id=row["owner_id"],
+        list_id=row["list_id"],
         pinned_by_user=bool(row["pinned_by_user"]),
         status=row["status"],
         tags=tags,
     )
 
 
-def add_note(conn: sqlite3.Connection, raw: str, *, now: datetime | None = None) -> Note:
-    """Capture a Note. Deterministic, no network (ADR 0003)."""
+def add_note(
+    conn: sqlite3.Connection,
+    raw: str,
+    *,
+    now: datetime | None = None,
+    owner_id: int = OWNER_ID,
+) -> Note:
+    """Capture a Note. Deterministic, no network (ADR 0003).
+
+    `owner_id` defaults to the Owner because every capture path that existed
+    before Members — `ta note`, the board — is the Owner's. The bot passes the
+    sender explicitly.
+    """
     now = now or datetime.now()
     p: ParsedNote = parse(raw, now=now)
 
@@ -117,8 +150,8 @@ def add_note(conn: sqlite3.Connection, raw: str, *, now: datetime | None = None)
         cur = conn.execute(
             """
             INSERT INTO notes (text, created_at, due, remind_at, priority, sort_key,
-                               priority_by_user, tags_by_user)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                               priority_by_user, tags_by_user, owner_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 p.text,
@@ -131,6 +164,7 @@ def add_note(conn: sqlite3.Connection, raw: str, *, now: datetime | None = None)
                 # review never touches it — not even in a future re-tagging.
                 1 if p.priority else 0,
                 1 if p.tags else 0,
+                owner_id,
             ),
         )
         note_id = cur.lastrowid
@@ -139,11 +173,19 @@ def add_note(conn: sqlite3.Connection, raw: str, *, now: datetime | None = None)
             [(note_id, t) for t in p.tags],
         )
 
-    return get_note(conn, note_id)
+    return get_note(conn, note_id, viewer=SYSTEM)
 
 
-def get_note(conn: sqlite3.Connection, note_id: int) -> Note:
-    row = conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
+def get_note(conn: sqlite3.Connection, note_id: int, *, viewer) -> Note:
+    """One Note, or KeyError — also when it exists but `viewer` may not see it.
+
+    The same error on purpose: telling "not yours" apart from "does not exist"
+    would confirm to a Member that somebody else's note id is in use.
+    """
+    scope, params = _scope(viewer)
+    row = conn.execute(
+        f"SELECT * FROM notes WHERE id = ? AND {scope}", (note_id, *params)
+    ).fetchone()
     if row is None:
         raise KeyError(f"note {note_id} does not exist")
     tags = [r["tag"] for r in conn.execute("SELECT tag FROM tags WHERE note_id = ?", (note_id,))]
@@ -151,15 +193,15 @@ def get_note(conn: sqlite3.Connection, note_id: int) -> Note:
 
 
 def list_notes(
-    conn: sqlite3.Connection, *, include_done: bool = False, deleted: bool = False
+    conn: sqlite3.Connection, *, viewer, include_done: bool = False, deleted: bool = False
 ) -> list[Note]:
     """List the Notes. By default hides the terminal and the deleted ones.
 
     `deleted=True` inverts the filter and returns **only** the deleted ones — it
     is the trash, not an "also include".
     """
-    where = ["deleted_at IS NOT NULL"] if deleted else ["deleted_at IS NULL"]
-    params: list = []
+    scope, params = _scope(viewer)
+    where = [scope, "deleted_at IS NOT NULL" if deleted else "deleted_at IS NULL"]
     if not include_done and not deleted:
         where.append(f"status NOT IN ({','.join('?' * len(TERMINAL_STATUSES))})")
         params += list(TERMINAL_STATUSES)
@@ -178,16 +220,17 @@ def list_notes(
     return [_row_to_note(r, sorted(tag_map[r["id"]])) for r in rows]
 
 
-def due_today(conn: sqlite3.Connection, *, today: date | None = None) -> list[Note]:
+def due_today(conn: sqlite3.Connection, *, viewer, today: date | None = None) -> list[Note]:
     """Tasks chaseable today or already overdue. The basis of the Digest."""
     today = today or date.today()
+    scope, params = _scope(viewer)
     placeholders = ",".join("?" * len(TERMINAL_STATUSES))
     rows = list(
         conn.execute(
-            f"SELECT * FROM notes WHERE deleted_at IS NULL"
+            f"SELECT * FROM notes WHERE {scope} AND deleted_at IS NULL"
             f" AND status NOT IN ({placeholders})"
             " AND due IS NOT NULL AND due <= ? ORDER BY due, sort_key",
-            (*TERMINAL_STATUSES, today.isoformat()),
+            (*params, *TERMINAL_STATUSES, today.isoformat()),
         )
     )
     return [_row_to_note(r, []) for r in rows]
@@ -310,12 +353,27 @@ def purge(conn: sqlite3.Connection, note_id: int) -> bool:
     return cur.rowcount > 0
 
 
-def purge_all(conn: sqlite3.Connection) -> int:
-    """Empty the trash. Returns how many went."""
-    return conn.execute("DELETE FROM notes WHERE deleted_at IS NOT NULL").rowcount
+def purge_all(conn: sqlite3.Connection, *, viewer) -> int:
+    """Empty the viewer's trash. Returns how many went.
+
+    Only what the viewer OWNS, never the household's: a Member emptying their
+    trash must not destroy an item somebody else deleted from a shared List.
+    """
+    if viewer is SYSTEM:
+        return conn.execute("DELETE FROM notes WHERE deleted_at IS NOT NULL").rowcount
+    return conn.execute(
+        "DELETE FROM notes WHERE deleted_at IS NOT NULL AND owner_id = ?",
+        (_owner_of(viewer),),
+    ).rowcount
 
 
-def queue_all_for_review(conn: sqlite3.Connection) -> int:
+def _owner_of(viewer) -> int:
+    if not isinstance(viewer, Viewer):
+        raise TypeError(f"a write needs a Viewer or SYSTEM, got {viewer!r}")
+    return viewer.member_id
+
+
+def queue_all_for_review(conn: sqlite3.Connection, *, viewer) -> int:
     """Put ALL non-terminal Notes back into the review queue.
 
     It resets `review_attempts` on purpose: an explicit request from the user is
@@ -324,10 +382,11 @@ def queue_all_for_review(conn: sqlite3.Connection) -> int:
     a model call for nothing.
     """
     placeholders = ",".join("?" * len(TERMINAL_STATUSES))
+    scope, params = _scope(viewer)
     cur = conn.execute(
         f"UPDATE notes SET reviewed_at = NULL, review_attempts = 0"
-        f" WHERE deleted_at IS NULL AND status NOT IN ({placeholders})",
-        TERMINAL_STATUSES,
+        f" WHERE {scope} AND deleted_at IS NULL AND status NOT IN ({placeholders})",
+        (*params, *TERMINAL_STATUSES),
     )
     return cur.rowcount
 
@@ -473,7 +532,7 @@ def move_note(
 STATUS_MARK = {"todo": "[ ]", "doing": "[~]", "hold": "[-]", "done": "[x]", "cancelled": "[/]"}
 
 
-def export_markdown(conn: sqlite3.Connection) -> str:
+def export_markdown(conn: sqlite3.Connection, *, viewer) -> str:
     """The escape hatch that justifies choosing SQLite: dump everything as markdown.
 
     The labels go through the catalogue. They used to be hardcoded Portuguese,
@@ -484,7 +543,7 @@ def export_markdown(conn: sqlite3.Connection) -> str:
     from .i18n import t
 
     lines = [f"# {t('export.title')}", ""]
-    for n in by_urgency(list_notes(conn, include_done=True)):
+    for n in by_urgency(list_notes(conn, viewer=viewer, include_done=True)):
         box = STATUS_MARK[n.status]
         bits = []
         if n.status not in ("todo", "done"):

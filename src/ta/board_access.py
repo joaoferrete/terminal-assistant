@@ -12,10 +12,12 @@ token in `localStorage` and strip it from the address bar, which is right for th
 history — and meant **every reload 401'd**, because loading a page cannot send a
 header built by JavaScript. A cookie travels with the page load by itself.
 
-The cookie is not the token. It is `v1.<issued>.<hmac>`, signed with `TA_TOKEN`:
-it survives a daemon restart (nothing to remember server-side), it expires, and
-rotating `TA_TOKEN` revokes every session at once. F6 replaces it with a
-per-Member session without changing the flow.
+The cookie is not the token. It is `v2.<member>.<issued>.<hmac>`, signed with
+`TA_TOKEN`: it survives a daemon restart (nothing to remember server-side), it
+expires, rotating `TA_TOKEN` revokes every session at once, and it says **which
+Member** is looking — the board shows each person their own Notes (F3). A `v1`
+cookie, from before Members, could only ever have been issued to the Owner, and
+is still read as the Owner's rather than logging that phone out.
 """
 
 from __future__ import annotations
@@ -26,51 +28,67 @@ import secrets
 import socket
 from datetime import datetime, timedelta
 
+from .members import OWNER_ID
+
 CODE_TTL = timedelta(minutes=5)
 SESSION_TTL = timedelta(days=90)
 COOKIE = "ta_session"
 
 
 class BoardCodes:
-    """Codes waiting to be redeemed. In memory on purpose: they live five
-    minutes, so a restart losing them costs one more `/board`."""
+    """Codes waiting to be redeemed, each for one Member. In memory on purpose:
+    they live five minutes, so a restart losing them costs one more `/board`."""
 
     def __init__(self) -> None:
-        self._codes: dict[str, datetime] = {}
+        self._codes: dict[str, tuple[datetime, int]] = {}
 
-    def issue(self, now: datetime | None = None) -> str:
+    def issue(self, member_id: int = OWNER_ID, now: datetime | None = None) -> str:
         now = now or datetime.now()
         # Drop the expired ones here, so the dict cannot grow without bound.
-        self._codes = {c: exp for c, exp in self._codes.items() if exp > now}
+        self._codes = {c: v for c, v in self._codes.items() if v[0] > now}
         code = secrets.token_urlsafe(16)
-        self._codes[code] = now + CODE_TTL
+        self._codes[code] = (now + CODE_TTL, member_id)
         return code
 
-    def redeem(self, code: str, now: datetime | None = None) -> bool:
-        """True once per valid code. `pop` is what makes the second use fail."""
-        expires = self._codes.pop(code, None)
-        return expires is not None and expires > (now or datetime.now())
+    def redeem(self, code: str, now: datetime | None = None) -> int | None:
+        """The Member the code was issued to, once. `pop` makes reuse fail."""
+        entry = self._codes.pop(code, None)
+        if entry is None or entry[0] <= (now or datetime.now()):
+            return None
+        return entry[1]
 
 
-def _mac(token: str, issued: int) -> str:
-    return hmac.new(token.encode(), f"session:{issued}".encode(), hashlib.sha256).hexdigest()
+def _mac(token: str, payload: str) -> str:
+    return hmac.new(token.encode(), f"session:{payload}".encode(), hashlib.sha256).hexdigest()
 
 
-def session_cookie(token: str, now: datetime | None = None) -> str:
+def session_cookie(token: str, member_id: int = OWNER_ID, now: datetime | None = None) -> str:
     issued = int((now or datetime.now()).timestamp())
-    return f"v1.{issued}.{_mac(token, issued)}"
+    return f"v2.{member_id}.{issued}.{_mac(token, f'{member_id}:{issued}')}"
+
+
+def session_member(token: str, value: str, now: datetime | None = None) -> int | None:
+    """The Member a valid cookie names, or None."""
+    parts = value.split(".")
+    try:
+        if parts[0] == "v2" and len(parts) == 4:
+            member_id, issued = int(parts[1]), int(parts[2])
+            expected = _mac(token, f"{member_id}:{issued}")
+        elif parts[0] == "v1" and len(parts) == 3:
+            member_id, issued = OWNER_ID, int(parts[1])
+            expected = _mac(token, str(issued))
+        else:
+            return None
+    except ValueError:
+        return None
+    if not hmac.compare_digest(parts[-1], expected):
+        return None
+    age = (now or datetime.now()).timestamp() - issued
+    return member_id if 0 <= age <= SESSION_TTL.total_seconds() else None
 
 
 def session_valid(token: str, value: str, now: datetime | None = None) -> bool:
-    try:
-        version, issued_s, mac = value.split(".")
-        issued = int(issued_s)
-    except ValueError:
-        return False
-    if version != "v1" or not hmac.compare_digest(mac, _mac(token, issued)):
-        return False
-    age = (now or datetime.now()).timestamp() - issued
-    return 0 <= age <= SESSION_TTL.total_seconds()
+    return session_member(token, value, now) is not None
 
 
 def lan_address() -> str | None:

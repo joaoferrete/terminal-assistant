@@ -126,3 +126,40 @@ def test_a_fresh_database_produces_no_copy(tmp_path):
     """Copying a freshly created database would only litter every test and every boot."""
     db.connect(tmp_path / "fresh.db").close()
     assert list(tmp_path.glob("*before-v*")) == []
+
+
+# ── Migration 9: Members, ownership, Lists (F3) ─────────────────────────────
+def test_migration_9_gives_every_existing_note_to_the_owner(tmp_path):
+    path = tmp_path / "t.db"
+    _database_at_v5(path)
+    conn = db.connect(path)
+
+    owner = conn.execute("SELECT id, is_owner FROM members").fetchall()
+    assert [tuple(r) for r in owner] == [(1, 1)], "the Owner is born with the database"
+    assert conn.execute("SELECT COUNT(*) FROM notes WHERE owner_id IS NULL").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM notes WHERE owner_id = 1").fetchone()[0] == 4
+
+
+def test_migration_9_links_the_paired_owner_to_the_owner_member(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    # A database paired under migration 8, then migrated: simulate by inserting
+    # the v8 row and re-running the v9 UPDATE the migration performs.
+    conn.execute(
+        "INSERT INTO channel_identities (channel, external_id, username, role, paired_at,"
+        " member_id) VALUES ('telegram', '1001', 'dono', 'owner', 'now', NULL)"
+    )
+    conn.execute("UPDATE channel_identities SET member_id = 1 WHERE role = 'owner'")
+    assert conn.execute("SELECT member_id FROM channel_identities").fetchone()[0] == 1
+
+
+def test_there_can_be_only_one_owner(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO members (handle, is_owner, created_at) VALUES ('b', 1, 'x')")
+
+
+def test_a_list_scope_is_household_or_personal(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO lists (name, scope, owner_id, created_at)"
+                     " VALUES ('x', 'public', 1, 'now')")

@@ -13,7 +13,7 @@ from test_bot import FakeChannel, inbound
 from test_security import TOKEN, build
 
 from ta import board_access, db
-from ta.board_access import BoardCodes, session_cookie, session_valid
+from ta.board_access import BoardCodes, session_cookie, session_member, session_valid
 from ta.bot import Bot
 from ta.config import Config
 from ta.daemon import _board_link
@@ -24,14 +24,14 @@ T0 = datetime(2026, 9, 25, 12, 0)
 # ── The code ────────────────────────────────────────────────────────────────
 def test_a_code_works_exactly_once():
     codes = BoardCodes()
-    code = codes.issue(T0)
+    code = codes.issue(now=T0)
     assert codes.redeem(code, T0)
     assert not codes.redeem(code, T0), "a code in a chat log must not be reusable"
 
 
 def test_a_code_expires_after_five_minutes():
     codes = BoardCodes()
-    code = codes.issue(T0)
+    code = codes.issue(now=T0)
     assert not codes.redeem(code, T0 + timedelta(minutes=5, seconds=1))
 
 
@@ -41,21 +41,41 @@ def test_an_invented_code_is_refused():
 
 # ── The cookie ──────────────────────────────────────────────────────────────
 def test_the_cookie_is_signed_not_the_token_itself():
-    value = session_cookie(TOKEN, T0)
+    value = session_cookie(TOKEN, now=T0)
     assert TOKEN not in value
     assert session_valid(TOKEN, value, T0 + timedelta(days=1))
 
 
 def test_a_tampered_or_expired_cookie_is_refused():
-    value = session_cookie(TOKEN, T0)
-    version, issued, mac = value.split(".")
-    assert not session_valid(TOKEN, f"{version}.{int(issued) + 1}.{mac}", T0)
+    value = session_cookie(TOKEN, 2, now=T0)
+    version, member, issued, mac = value.split(".")
+    assert not session_valid(TOKEN, f"{version}.{member}.{int(issued) + 1}.{mac}", T0)
     assert not session_valid(TOKEN, value, T0 + timedelta(days=91))
     assert not session_valid(TOKEN, "lixo", T0)
 
 
+def test_editing_the_member_in_a_cookie_does_not_make_you_someone_else():
+    """The cookie names who is looking (F3). Changing that number by hand must
+    void it, or anyone could read the Owner's notes by typing a 1."""
+    value = session_cookie(TOKEN, 2, now=T0)
+    assert session_member(TOKEN, value, T0) == 2
+    forged = value.replace("v2.2.", "v2.1.", 1)
+    assert session_member(TOKEN, forged, T0) is None
+
+
+def test_a_cookie_from_before_members_is_still_the_owners():
+    """v1 was only ever issued to the Owner; reading it as theirs keeps that
+    phone signed in across the upgrade."""
+    import hashlib
+    import hmac as hmac_
+
+    issued = int(T0.timestamp())
+    mac = hmac_.new(TOKEN.encode(), f"session:{issued}".encode(), hashlib.sha256).hexdigest()
+    assert session_member(TOKEN, f"v1.{issued}.{mac}", T0) == 1
+
+
 def test_rotating_the_token_revokes_every_session():
-    assert not session_valid("a-new-token", session_cookie(TOKEN, T0), T0)
+    assert not session_valid("a-new-token", session_cookie(TOKEN, now=T0), T0)
 
 
 # ── Through the daemon ──────────────────────────────────────────────────────
