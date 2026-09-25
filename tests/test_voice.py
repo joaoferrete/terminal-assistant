@@ -55,7 +55,7 @@ def voice(seconds=8):
 def make_bot(tmp_path, channel=None, transcriber=None):
     captured = []
 
-    def capture(text):
+    def capture(text, owner_id=1):
         captured.append(text)
         return types.SimpleNamespace(id=len(captured), due=None)
 

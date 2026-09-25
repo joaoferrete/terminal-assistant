@@ -47,7 +47,7 @@ def conn(tmp_path):
 def bot(conn):
     captured = []
 
-    def capture(text):
+    def capture(text, owner_id=1):
         captured.append(text)
         return types.SimpleNamespace(id=len(captured), due=None)
 
@@ -95,14 +95,16 @@ def test_a_stranger_is_answered_with_silence(bot, conn):
 
 
 def test_with_no_owner_configured_nobody_pairs(conn):
-    b = Bot(conn, FakeChannel(), capture=lambda t: None, owner_username=None)
+    b = Bot(conn, FakeChannel(), capture=lambda t, owner_id=1: None, owner_username=None)
     asyncio.run(b.handle(inbound()))
     assert b.channel.sent == []
 
 
 def test_only_one_owner_per_channel_even_at_the_database(conn):
-    run_bot = Bot(conn, FakeChannel(), capture=lambda t: types.SimpleNamespace(id=1, due=None),
-                  owner_username="dono")
+    def capture(t, owner_id=1):
+        return types.SimpleNamespace(id=1, due=None)
+
+    run_bot = Bot(conn, FakeChannel(), capture=capture, owner_username="dono")
     asyncio.run(run_bot.handle(inbound()))
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute(
@@ -139,7 +141,7 @@ def test_what_cannot_be_read_yet_is_answered_not_dropped(bot):
 
 def test_the_reply_mentions_the_deadline_when_there_is_one(conn):
     ch = FakeChannel()
-    b = Bot(conn, ch, capture=lambda t: types.SimpleNamespace(id=5, due="2026-10-02"),
+    b = Bot(conn, ch, capture=lambda t, owner_id=1: types.SimpleNamespace(id=5, due="2026-10-02"),
             owner_username="dono")
     asyncio.run(b.handle(inbound("pagar boleto @sexta")))
     assert "2026-10-02" in ch.sent[-1] and "5" in ch.sent[-1]

@@ -394,3 +394,46 @@ def telegram_owner() -> str | None:
     if not isinstance(owner, str) or not owner.strip().lstrip("@"):
         return None
     return owner.strip().lstrip("@").lower()
+
+
+def grants_config() -> tuple[dict, dict]:
+    """(`[members]`, `[grants]`) from config.toml, parsed by `grants.py`."""
+    from . import grants
+
+    raw = _user_config()
+    return grants.invited(raw.get("members", {})), grants.load(raw.get("grants", {}))
+
+
+DEFAULT_LISTS = {"compras": "household"}
+
+
+def lists_config() -> dict[str, str]:
+    """`[lists]` — name → scope. `compras` exists unless the file says otherwise.
+
+    Declared by the Owner (decided 2026-09-25), so the model can only put items in
+    Lists that exist, and "Compras", "compras do mês" and "mercado" do not grow
+    side by side. Only household Lists are declared here for now: a personal List
+    belongs to one Member, and creating those is F4's, from the chat or the board.
+    """
+    raw = _user_config().get("lists")
+    if raw is None:
+        return dict(DEFAULT_LISTS)
+    out = {}
+    for name, scope in (raw.items() if isinstance(raw, dict) else ()):
+        if scope == "household":
+            out[str(name).lower()] = scope
+        else:
+            log.warning("config.toml: lists.%s = %r; only \"household\" is declared here "
+                        "(personal Lists are created from the chat, F4)", name, scope)
+    return out
+
+
+def telegram_groups() -> set[str]:
+    """`[channel.telegram] groups` — the chat ids of groups the bot listens to.
+
+    By id, never by title: a group's title is editable by any of its members.
+    """
+    raw = _user_config().get("channel", {})
+    raw = raw.get("telegram", {}) if isinstance(raw, dict) else {}
+    groups = raw.get("groups", []) if isinstance(raw, dict) else []
+    return {str(g) for g in groups} if isinstance(groups, list) else set()

@@ -37,14 +37,13 @@ reverse are also ADRs, linked where they apply.
   5. `feat/board-link` — T1.7
   6. `docs/chatbot-guardrails` — D25–D33, ADR 0019, and F1 closed
   7. `feat/voice` — T2.1, T2.2
-  8. `feat/members` — T3.1, T3.2 (and the per-Member board session pulled from T6.4)
+  8. `feat/members` — T3.1–T3.4 (and the per-Member board session pulled from T6.4)
   The next task branches from the top of this list and is appended to it.
 - **F2 is closed** (2026-09-25). Voice notes are transcribed on the server at
   about 0.46× real time. The server runs `feat/voice`.
-- **Next agent action:** T3.3, Grants in `config.toml`, then T3.4, pairing for
-  invited Members plus the group allowlist. Lists come from `[lists]` in
-  `config.toml`, with `compras` as a household List by default (decided
-  2026-09-25). Creating Lists from the chat or the board is F4.
+- **Next agent action:** T3.5, the board's List view, which has to be **seen**
+  (`make demo`, then look: AGENTS §5). Then deploy F3 to the server, with the
+  user's yes, and close F3.
 - **F8 interview:** before starting F8, not now. The user offered to run it now
   and agreed to wait: most of what it configures (Grants, Lists, house rules, the
   Digest) is still being built.
@@ -426,10 +425,10 @@ how `ta` is installed, configured or used also updates the README,
 - [x] **T3.2 Visibility.** Every read path in `store.py` filters to own +
       household. *Done when* one test covers list, Digest, reminders, review queue
       and export together — the same shape as the `deleted_at` test.
-- [ ] **T3.3 Grants.** `[grants.<name>]` (Entities/groups, Lists, Tools, admin)
+- [x] **T3.3 Grants.** `[grants.<name>]` (Entities/groups, Lists, Tools, admin)
       and `[members]` mapping usernames to Grants. Deny by default; invariant 2
       tested.
-- [ ] **T3.4 Pairing.** Invited usernames pair on first contact; the Owner is
+- [x] **T3.4 Pairing.** Invited usernames pair on first contact; the Owner is
       notified; groups allowlisted by chat id. Invariant 4 tested.
 - [ ] **T3.5 Board.** A List view outside the Horizon ordering. Look at it.
 
@@ -559,3 +558,5 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-25 | T3.2 | The T1.7 cookie said *that* someone had the link, not *who*. With Members, a housemate's `/board` would have shown them the Owner's private Notes | The per-Member session planned for T6.4 came forward. The cookie is `v2.<member>.<issued>.<hmac>`, and editing the member number voids it (tested). `v1` cookies, only ever issued to the Owner, are still read as the Owner's |
 | 2026-09-25 | T3.2 | `notes_move`, `notes_done` and `notes_status` wrote before checking the Note existed: a 500 on an unknown id, and with Members, a way to edit somebody else's Note by id | Every mutating route goes through `_visible()` first, and returns 404 for "not yours" and "does not exist" alike, so ids are not confirmed. Tested per route |
 | 2026-09-25 | T3.2 | The read paths take `viewer` with **no default**, and `SYSTEM` is a distinct object, not `None`. A forgotten viewer raises TypeError instead of meaning "everyone" | 39 existing tests failed on purpose and were updated. The rewrite applied its regex twice (`viewer=SYSTEM, viewer=SYSTEM`), and lint caught it, as AGENTS §4 predicts |
+| 2026-09-25 | T3.3 | Grants reach further than the Tools of F4. The board and the CLI already switch the house, so a housemate's board could have turned off every light, or the ringlight | The home routes filter by the viewer's Grant: `off` with no target means "everything **you** may switch", and a target out of reach is a 403. Media and the ringlight are admin-only |
+| 2026-09-25 | T3.4 | Only household Lists can be declared in `[lists]`. A personal List belongs to one Member, and the config has no good way to say whose | Personal Lists are created from the chat or the board, in F4. A `personal` entry in `[lists]` is logged and ignored |

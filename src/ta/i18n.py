@@ -244,6 +244,10 @@ MESSAGES: dict[str, dict[str, str]] = {
               "\n"
               "To go back to local-only access, remove TA_HOST from your .env.",
     },
+    "api.forbidden": {
+        "pt": "Você não tem permissão para isso. Quem administra a casa define isso no config.",
+        "en": "You are not allowed to do that. Whoever runs the house sets it in the config.",
+    },
     "auth.code_used": {
         "pt": "Esse link já foi usado ou expirou. Peça outro ao bot com /board.",
         "en": "This link was already used or has expired. Ask the bot for another with /board.",
@@ -390,6 +394,10 @@ MESSAGES: dict[str, dict[str, str]] = {
     },
     "bot.voice_too_long": {"pt": "áudio longo demais", "en": "the audio is too long"},
     "bot.voice_failed": {"pt": "a transcrição falhou", "en": "transcription failed"},
+    "bot.member_paired": {
+        "pt": "{who} acabou de entrar no bot. Pode mandar notas a partir de agora.",
+        "en": "{who} just joined the bot, and can send notes from now on.",
+    },
     "bot.hello": {
         "pt": "Oi! Tudo o que você mandar aqui vira nota.",
         "en": "Hi! Everything you send here becomes a note.",

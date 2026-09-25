@@ -159,6 +159,9 @@ class TelegramChannel:
             raise ChannelError(f"telegram download: {type(e).__name__}") from None
         return r.content
 
+    async def send(self, conversation_id: str, text: str) -> None:
+        await self._call("sendMessage", {"chat_id": conversation_id, "text": text})
+
     async def reply(self, to: Inbound, text: str) -> None:
         payload = {"chat_id": to.conversation_id, "text": text}
         if to.message_id:

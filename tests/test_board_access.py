@@ -134,21 +134,21 @@ def test_without_a_public_url_it_guesses_the_lan_address(monkeypatch):
 
 def bot_with(tmp_path, link):
     return Bot(db.connect(tmp_path / "t.db"), FakeChannel(),
-               capture=lambda t: None, owner_username="dono", board_link=link)
+               capture=lambda t, owner_id=1: None, owner_username="dono", board_link=link)
 
 
 def test_pairing_sends_the_board_link(tmp_path):
-    b = bot_with(tmp_path, lambda: "http://x/board?code=abc")
+    b = bot_with(tmp_path, lambda member_id: "http://x/board?code=abc")
     asyncio.run(b.handle(inbound("/start")))
     assert any("http://x/board?code=abc" in m for m in b.channel.sent)
 
 
 def test_board_command_sends_a_link_or_says_why_not(tmp_path):
-    b = bot_with(tmp_path, lambda: "http://x/board?code=abc")
+    b = bot_with(tmp_path, lambda member_id: "http://x/board?code=abc")
     asyncio.run(b.handle(inbound("/start")))
     asyncio.run(b.handle(inbound("/board")))
     assert "code=abc" in b.channel.sent[-1]
 
-    b.board_link = lambda: None
+    b.board_link = lambda member_id: None
     asyncio.run(b.handle(inbound("/board")))
     assert "TA_HOST" in b.channel.sent[-1]

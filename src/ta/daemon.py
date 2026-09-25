@@ -23,7 +23,8 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from starlette.routing import Route
 
-from . import board_access, capabilities, engine, i18n, priorities, store, usage
+from . import board_access, capabilities, engine, grants, i18n, priorities, store, usage
+from . import members as members_mod
 from . import notes as notes_mod
 from .actuators.home import Home, HomeError, StateWatcher
 from .actuators.lighter import Lighter
@@ -36,11 +37,15 @@ from .config import (
     ConfigError,
     _commandable,
     config_dir,
+    grants_config,
+    lists_config,
     llm_prices,
     resolve_entity,
     resolve_targets,
+    telegram_groups,
     telegram_owner,
 )
+from .config import groups as config_groups
 from .db import connect, default_db_path
 from .llm import LLM, LLMUnavailable
 from .members import OWNER, OWNER_ID, SYSTEM, Viewer
@@ -185,6 +190,22 @@ def _viewer(request: Request) -> Viewer:
     and the daemon is on loopback: whoever reaches it is on this machine, the
     Owner's (ADR 0012)."""
     return getattr(request.state, "viewer", None) or OWNER
+
+
+def _permissions(request: Request) -> grants.Permissions:
+    """What the viewer may do (D12). Read from config.toml each time: it is
+    cached by `_user_config`, and a Grant edited there applies on restart."""
+    viewer = _viewer(request)
+    member = members_mod.get(request.app.state.conn, viewer.member_id)
+    if member is None:
+        return grants.NOTHING
+    invited, defined = grants_config()
+    return grants.permissions(member.handle, is_owner=member.is_owner, members=invited,
+                              grants=defined, groups=config_groups())
+
+
+def _forbidden() -> JSONResponse:
+    return JSONResponse({"error": i18n.t("api.forbidden")}, status_code=403)
 
 
 def _visible(request: Request, note_id: int) -> store.Note | JSONResponse:
@@ -339,7 +360,23 @@ async def notes_create(request: Request) -> JSONResponse:
     return JSONResponse(_note_json(note), status_code=201)
 
 
-def _board_link(app: Starlette, cfg: Config) -> str | None:
+def _sync_household(conn) -> None:
+    """Members and Lists follow config.toml at every boot (F3).
+
+    Created, never deleted: dropping a line from the file revokes access, but
+    what a person wrote, and the Lists with things in them, stay.
+    """
+    invited, _ = grants_config()
+    members_mod.sync(conn, owner=telegram_owner(), invited=list(invited))
+    now = datetime.now().isoformat(timespec="seconds")
+    for name, scope in lists_config().items():
+        conn.execute(
+            "INSERT OR IGNORE INTO lists (name, scope, owner_id, created_at) VALUES (?, ?, ?, ?)",
+            (name, scope, OWNER_ID, now),
+        )
+
+
+def _board_link(app: Starlette, cfg: Config, member_id: int = OWNER_ID) -> str | None:
     """The address the bot sends for `/board`, or None if a phone cannot reach it.
 
     On loopback nothing outside this machine can open it, so there is no link to
@@ -353,7 +390,7 @@ def _board_link(app: Starlette, cfg: Config) -> str | None:
     )
     if base is None:
         return None
-    return f"{base.rstrip('/')}/board?code={app.state.board_codes.issue()}"
+    return f"{base.rstrip('/')}/board?code={app.state.board_codes.issue(member_id)}"
 
 
 def _capture(app: Starlette, raw: str, *, owner_id: int = OWNER_ID) -> store.Note:
@@ -449,7 +486,9 @@ async def _review_one(app: Starlette, note_id: int) -> None:
             note.text,
             due=note.due,
             remind_at=note.remind_at,
-            priorities=priorities.current(app.state.conn) or "",
+            # The WRITER's Priorities: Ana's note is weighed by what matters to
+            # Ana, not to the Owner (D22).
+            priorities=priorities.current(app.state.conn, note.owner_id) or "",
             # Only the domain, not the address: it is what decides the routing,
             # and sending the whole email outside would be extra data for the
             # same result.
@@ -861,6 +900,12 @@ async def home_light(request: Request) -> JSONResponse:
             return JSONResponse(
                 {"error": i18n.t("api.no_match", termo=termo)}, status_code=404
             )
+        # Only what the viewer's Grant covers (D12). All out of reach is a 403,
+        # not a 404: the Entity exists, it is just not theirs to switch.
+        perms = _permissions(request)
+        targets = [e for e in targets if perms.entity(e)]
+        if not targets:
+            return _forbidden()
         # With no explicit brightness, turning a light on means turning it fully
         # on. The `switch` domain ignores the value (see `Home.switch_on`), so
         # the default changes nothing for a plug.
@@ -883,6 +928,7 @@ async def home_off(request: Request) -> JSONResponse:
     body = await request.json() if await request.body() else {}
     target = body.get("entity")
     home = request.app.state.home
+    perms = _permissions(request)
     try:
         if target:
             entities = resolve_targets(target, await home.entities("light.", "switch."))
@@ -890,20 +936,26 @@ async def home_off(request: Request) -> JSONResponse:
                 return JSONResponse(
                     {"error": i18n.t("api.no_match", termo=target)}, status_code=404
                 )
+            if not (entities := [e for e in entities if perms.entity(e)]):
+                return _forbidden()
         else:
             # With no target, turn off everything that is on. Never a hardcoded
             # list: the inventory belongs to Home Assistant (ADR 0001).
+            # "Everything" means everything THIS viewer may switch: a housemate's
+            # "turn it all off" must not reach the Owner's bedroom mid-call.
             entities = [
                 e["entity_id"]
                 for e in await home.entities("light.", "switch.")
-                if e["state"] == "on" and _commandable(e)
+                if e["state"] == "on" and _commandable(e) and perms.entity(e["entity_id"])
             ]
         resultados = []
         for entity in entities:
             await home.turn_off(entity)
             estado, confirmado = await home.confirm(entity, "off")
             resultados.append({"entity_id": entity, "state": estado, "confirmed": confirmado})
-        await request.app.state.lighter.enable(False)
+        # The ringlight is the Owner's desk, not the house's.
+        if perms.is_admin:
+            await request.app.state.lighter.enable(False)
     except HomeError as e:
         return JSONResponse({"error": str(e)}, status_code=502)
     return JSONResponse({"turned_off": [r["entity_id"] for r in resultados], "results": resultados})
@@ -922,13 +974,17 @@ async def home_entities(request: Request) -> JSONResponse:
         ents = await request.app.state.home.entities("light.", "switch.", "media_player.")
     except HomeError as e:
         return JSONResponse({"error": str(e)}, status_code=502)
+    perms = _permissions(request)
     return JSONResponse(
-        {"entities": [{"entity_id": e["entity_id"], "state": e["state"]} for e in ents]}
+        {"entities": [{"entity_id": e["entity_id"], "state": e["state"]} for e in ents
+                      if perms.entity(e["entity_id"])]}
     )
 
 
 async def media(request: Request) -> JSONResponse:
     """Media on the Echos. Zero Alexa code: they are Home Assistant `media_player`s (ADR 0009)."""
+    if not _permissions(request).is_admin:
+        return _forbidden()
     body = await request.json()
     cfg = request.app.state.config
     pedido = (body.get("entity") or "").strip()
@@ -967,6 +1023,8 @@ async def media(request: Request) -> JSONResponse:
 
 
 async def lighter_route(request: Request) -> JSONResponse:
+    if not _permissions(request).is_admin:
+        return _forbidden()
     body = await request.json() if await request.body() else {}
     lg = request.app.state.lighter
     if not lg.available:
@@ -1000,7 +1058,8 @@ async def organize(request: Request) -> JSONResponse:
     reference_day = date.today()
     try:
         res = await app.state.llm.organize(
-            [_note_json(n, today=reference_day) for n in notes], priorities.current(conn) or ""
+            [_note_json(n, today=reference_day) for n in notes],
+            priorities.current(conn, _viewer(request).member_id) or "",
         )
     except LLMUnavailable as e:
         return JSONResponse({"error": str(e)}, status_code=503)
@@ -1091,23 +1150,24 @@ async def create_event(request: Request) -> JSONResponse:
 async def priorities_route(request: Request) -> JSONResponse:
     app = request.app
     conn = app.state.conn
+    me = _viewer(request).member_id
     if request.method == "GET":
         return JSONResponse(
-            {"content": priorities.current(conn), "questions": priorities.QUESTIONS}
+            {"content": priorities.current(conn, me), "questions": priorities.QUESTIONS}
         )
     body = await request.json()
     if "answers" in body:
         conteudo = priorities.from_answers(body["answers"])
-        priorities.save(conn, conteudo)
+        priorities.save(conn, conteudo, member_id=me)
         return JSONResponse({"content": conteudo})
     if "instruction" in body:
         try:
-            conteudo = await priorities.rewrite(conn, app.state.llm, body["instruction"])
+            conteudo = await priorities.rewrite(conn, app.state.llm, body["instruction"], me)
         except LLMUnavailable as e:
             return JSONResponse({"error": str(e)}, status_code=503)
         return JSONResponse({"content": conteudo})
     if "content" in body:
-        priorities.save(conn, body["content"])
+        priorities.save(conn, body["content"], member_id=me)
         return JSONResponse({"content": body["content"]})
     return JSONResponse({"error": i18n.t("api.nothing_to_do")}, status_code=400)
 
@@ -1271,13 +1331,16 @@ def create_app(
         app.state.channel = channel if channel is not None else TelegramChannel(
             cfg.telegram_token
         )
+        _sync_household(app.state.conn)
         app.state.board_codes = board_access.BoardCodes()
         app.state.bot = Bot(
             app.state.conn,
             app.state.channel,
-            capture=lambda raw: _capture(app, raw),
+            capture=lambda raw, owner_id=OWNER_ID: _capture(app, raw, owner_id=owner_id),
             owner_username=telegram_owner(),
-            board_link=lambda: _board_link(app, cfg),
+            board_link=lambda member_id: _board_link(app, cfg, member_id),
+            invited=lambda: set(grants_config()[0]),
+            allowed_groups=telegram_groups,
             transcriber=Transcriber(),
             audio_dir=db_path_resolved.parent / "audio",
         )

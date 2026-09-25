@@ -56,4 +56,7 @@ class Channel(Protocol):
 
     async def reply(self, to: Inbound, text: str) -> None: ...
 
+    async def send(self, conversation_id: str, text: str) -> None:
+        """A message nobody asked for — telling the Owner someone new paired."""
+
     async def download(self, file_id: str) -> bytes: ...

@@ -108,6 +108,28 @@ organize = "gemini"
 # counts, so a changed or stolen username does not change who the bot obeys.
 [channel.telegram]
 owner = "your_username"
+# Groups the bot listens to, by chat id (never by title, which any member of the
+# group can edit). What it does there arrives with the agent, in F4.
+groups = [-1001234567890]
+
+# The people you share the bot with, by Telegram username. Like the owner, the
+# username only pairs once; after that the bot knows them by their numeric id, so
+# a changed or stolen username does not change who is who. Removing someone here
+# revokes them on their next message; what they wrote stays theirs.
+[members.ana]
+grants = ["morador"]
+
+# What a Grant allows. Deny by default: someone with no Grant can capture and
+# read their own notes, and nothing else. The owner holds every Grant.
+[grants.morador]
+entities = ["light.sala", "tomada"]   # entity_ids, domains ("switch.") or groups
+lists = ["compras"]
+admin = false                          # media, the ringlight, server health
+
+# Household Lists, seen by every member. `compras` exists by default; declaring
+# [lists] replaces the default.
+[lists]
+compras = "household"
 
 # USD per million tokens, for the cost the Digest reports. DeepSeek's models ship
 # with their peak price (an upper bound: off-peak is half). Gemini ships with none,
