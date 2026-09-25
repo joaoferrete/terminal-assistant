@@ -92,6 +92,14 @@ fallback = "gemini"
 # over each capture), organize, detect_event, digest_prose, priorities.
 [llm.tasks]
 organize = "gemini"
+
+# USD per million tokens, for the cost the Digest reports. DeepSeek's models ship
+# with their peak price (an upper bound: off-peak is half). Gemini ships with none,
+# because the free tier costs nothing and this cannot tell which tier you are on;
+# an unpriced call is counted as "unknown", never as free.
+[llm.prices.gemini-flash-latest]
+input = 0.30
+output = 2.50
 ```
 
 A provider name that does not exist is ignored with a warning in the log, rather

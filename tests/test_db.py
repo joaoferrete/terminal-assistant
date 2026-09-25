@@ -81,7 +81,7 @@ def test_migration_6_translates_the_existing_priorities(tmp_path):
 
     conn = db.connect(path)   # opening it is what migrates
 
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
     found = dict(conn.execute("SELECT text, priority FROM notes"))
     assert found == {
         "com alta": "high", "com media": "medium",

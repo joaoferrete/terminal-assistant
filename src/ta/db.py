@@ -20,7 +20,7 @@ from pathlib import Path
 
 log = logging.getLogger("ta")
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 # The states of a Note. Stored in English because the rest of the vocabulary is
 # (see CONTEXT.md); the translated labels live in the interface.
@@ -188,6 +188,31 @@ MIGRATIONS: list[tuple[int, str]] = [
         UPDATE notes SET priority = 'high'   WHERE priority = 'alta';
         UPDATE notes SET priority = 'medium' WHERE priority = 'media';
         UPDATE notes SET priority = 'low'    WHERE priority = 'baixa';
+        """,
+    ),
+    (
+        7,
+        """
+        -- What each answered model call cost (ADR 0018). The Digest's admin
+        -- section reports it (D15), and it is the only way to see whether
+        -- routing to the cheaper provider is actually paying off.
+        --
+        -- `model` is stored, not just `provider`, because a price belongs to a
+        -- model and the same provider can serve two at different prices.
+        -- `cost_usd` NULL means "no price known for this model" — unknown, which
+        -- is not the same as free, and a sum must not treat it as zero.
+        CREATE TABLE llm_usage (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            at          TEXT    NOT NULL,
+            provider    TEXT    NOT NULL,
+            model       TEXT    NOT NULL,
+            task        TEXT    NOT NULL,
+            tokens_in   INTEGER NOT NULL,
+            tokens_out  INTEGER NOT NULL,
+            cost_usd    REAL
+        );
+
+        CREATE INDEX idx_llm_usage_at ON llm_usage(at);
         """,
     ),
 ]

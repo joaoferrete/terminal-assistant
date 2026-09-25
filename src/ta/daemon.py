@@ -23,7 +23,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
-from . import capabilities, engine, i18n, priorities, store
+from . import capabilities, engine, i18n, priorities, store, usage
 from . import notes as notes_mod
 from .actuators.home import Home, HomeError, StateWatcher
 from .actuators.lighter import Lighter
@@ -34,6 +34,7 @@ from .config import (
     ConfigError,
     _commandable,
     config_dir,
+    llm_prices,
     resolve_entity,
     resolve_targets,
 )
@@ -1101,6 +1102,24 @@ def _wire_engine(app: Starlette) -> None:
 
 
 # ── App ─────────────────────────────────────────────────────────────────────
+def _usage_recorder(app: Starlette):
+    """Write each answered model call to `llm_usage` (ADR 0018).
+
+    Never raises. The call it describes already succeeded, and failing it over
+    the bookkeeping would throw away a review the user is waiting for.
+    """
+    prices = llm_prices()
+
+    def on_usage(provider: str, model: str, task: str, spent) -> None:
+        try:
+            usage.record(app.state.conn, provider=provider, model=model, task=task,
+                         usage=spent, prices=prices)
+        except Exception:
+            log.exception("could not record model usage for %s/%s", provider, task)
+
+    return on_usage
+
+
 def create_app(
     config: Config | None = None,
     *,
@@ -1144,6 +1163,7 @@ def create_app(
         app.state.notify = Notifier()
         app.state.calendar = calendar if calendar is not None else Calendar()
         app.state.llm = LLM.from_config(cfg)
+        app.state.llm.on_usage = _usage_recorder(app)
         app.state.cal_adapter = CalendarAdapter(app.state.calendar)
 
         report = engine.load_rules(rules_path)

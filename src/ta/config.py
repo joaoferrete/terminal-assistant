@@ -348,3 +348,27 @@ def llm_routing() -> tuple[str, str | None, dict[str, str]]:
         if (name := known(value, f"llm.tasks.{task}")) is not None:
             routes[str(task)] = name
     return default, fallback, routes
+
+
+def llm_prices() -> dict:
+    """USD per million tokens, per model: the built-ins, plus `[llm.prices]`.
+
+        [llm.prices.gemini-flash-latest]
+        input = 0.30
+        output = 2.50
+
+    A malformed entry is dropped with a warning rather than priced at zero,
+    because zero would read as "free" in the Digest.
+    """
+    from .usage import DEFAULT_PRICES, Price
+
+    raw = _user_config().get("llm", {})
+    raw = raw.get("prices", {}) if isinstance(raw, dict) else {}
+    prices = dict(DEFAULT_PRICES)
+    for model, entry in (raw.items() if isinstance(raw, dict) else ()):
+        try:
+            prices[str(model)] = Price(input=float(entry["input"]), output=float(entry["output"]))
+        except (KeyError, TypeError, ValueError):
+            log.warning("config.toml: llm.prices.%s needs numeric input and output; ignored",
+                        model)
+    return prices

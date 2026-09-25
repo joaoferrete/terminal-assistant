@@ -165,9 +165,11 @@ def test_a_task_route_overrides_the_default():
 def test_usage_is_reported_with_the_provider_and_the_task():
     seen = []
     llm = routed(deepseek('{"text": "ok"}'), FakeGemini())
-    llm.on_usage = lambda provider, task, usage: seen.append((provider, task, usage))
+    llm.on_usage = lambda provider, model, task, usage: seen.append(
+        (provider, model, task, usage)
+    )
     ask(llm, task="review_capture")
-    assert seen == [("deepseek", "review_capture", Usage(10, 5))]
+    assert seen == [("deepseek", "deepseek-flash", "review_capture", Usage(10, 5))]
 
 
 def test_the_task_methods_route_by_their_own_name():
@@ -175,7 +177,7 @@ def test_the_task_methods_route_by_their_own_name():
     config.toml would never be reached from the daemon."""
     seen = []
     llm = routed(deepseek('{"text": "a sentence"}'), FakeGemini())
-    llm.on_usage = lambda provider, task, usage: seen.append(task)
+    llm.on_usage = lambda provider, model, task, usage: seen.append(task)
     asyncio.run(llm.digest_prose([], []))
     assert seen == ["digest_prose"]
 

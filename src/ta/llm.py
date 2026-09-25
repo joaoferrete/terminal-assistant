@@ -173,9 +173,9 @@ class LLM:
         self.default = default
         self.fallback = fallback
         self.routes = routes or {}
-        # Called with (provider, task, Usage) after every answered call. The
-        # daemon points it at the usage table; nothing else needs to know.
-        self.on_usage: Callable[[str, str, Usage], None] | None = None
+        # Called with (provider, model, task, Usage) after every answered call.
+        # The daemon points it at the usage table; nothing else needs to know.
+        self.on_usage: Callable[[str, str, str, Usage], None] | None = None
 
     @classmethod
     def from_config(cls, cfg) -> LLM:
@@ -260,7 +260,7 @@ class LLM:
                 failure = e
                 continue
             if self.on_usage is not None:
-                self.on_usage(provider.name, task or "other", usage)
+                self.on_usage(provider.name, provider.model, task or "other", usage)
             return value
         assert failure is not None
         raise failure

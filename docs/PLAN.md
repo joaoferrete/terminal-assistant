@@ -23,11 +23,14 @@ reverse are also ADRs, linked where they apply.
 
 ## Now
 
-- **Phase:** F1, on branch `feat/llm-providers` (stacked on `docs/v2-plan`).
-  T1.1 is done. F0 was finished on 2026-09-25.
-- **Next agent action:** T1.2, usage accounting. `LLM.on_usage` already reports
-  `(provider, task, Usage)` after every answered call; T1.2 adds the migration
-  and points the hook at it in `daemon.create_app`.
+- **Phase:** F1. Done: T1.1, T1.2. F0 was finished on 2026-09-25.
+- **Branch stack.** Each task branches from the previous one. **Merge in this
+  order**, each into `main` after the one before it:
+  1. `docs/v2-plan` — the plan, the glossary, the ADRs, F0 and the server docs
+  2. `feat/llm-providers` — T1.1
+  3. `feat/llm-usage` — T1.2
+  The next task branches from the top of this list and is appended to it.
+- **Next agent action:** T1.3, the `telegram` Capability. Then T1.4, the Channel.
 - **Waiting on the user:** a DeepSeek API key and a Telegram bot token, needed from
   T1.4 on. They go straight into the server's `.env`, never into the chat.
 - **Rule:** never run a command on the server without the user's yes, read-only
@@ -274,7 +277,7 @@ how `ta` is installed, configured or used also updates the README,
       tests pass unchanged (including `SpyLLM` in `tests/test_docs.py`, which
       overrides `_structured`), and new tests cover malformed JSON → retry →
       fallback.
-- [ ] **T1.2 Usage accounting.** New migration in `db.py` (never edit a released
+- [x] **T1.2 Usage accounting.** New migration in `db.py` (never edit a released
       one): `llm_usage(provider, task, tokens_in, tokens_out, cost, at)`, with
       prices from config. *Done when* each task call writes one row.
 - [ ] **T1.3 Capabilities.** `deepseek` and `telegram` in `capabilities.py`, each
