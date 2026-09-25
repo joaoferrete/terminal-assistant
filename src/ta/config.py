@@ -81,6 +81,7 @@ class Config:
     ha_token: str | None = None
     gemini_api_key: str | None = None
     deepseek_api_key: str | None = None
+    telegram_token: str | None = None
     # The daemon's OWN credential, not a third party's. Only required when the
     # bind leaves loopback; on loopback it stays None and local use is unchanged.
     token: str | None = None
@@ -102,6 +103,7 @@ class Config:
             ha_token=os.environ.get("HA_TOKEN") or None,
             gemini_api_key=os.environ.get("GEMINI_API_KEY") or None,
             deepseek_api_key=os.environ.get("DEEPSEEK_API_KEY") or None,
+            telegram_token=os.environ.get("TELEGRAM_BOT_TOKEN") or None,
             token=os.environ.get("TA_TOKEN") or None,
             auto_review=os.environ.get("TA_AUTO_REVIEW", "1") not in ("0", "false", "no"),
             echo_entities=tuple(
@@ -372,3 +374,18 @@ def llm_prices() -> dict:
             log.warning("config.toml: llm.prices.%s needs numeric input and output; ignored",
                         model)
     return prices
+
+
+def telegram_owner() -> str | None:
+    """The Owner's Telegram username from `[channel.telegram] owner`, normalised.
+
+    Only used to *pair* (D21): the first message from this username binds its
+    numeric id, and from then on the id is what counts. `@` and case are dropped
+    because Telegram usernames are case-insensitive and people type the `@`.
+    """
+    raw = _user_config().get("channel", {})
+    raw = raw.get("telegram", {}) if isinstance(raw, dict) else {}
+    owner = raw.get("owner") if isinstance(raw, dict) else None
+    if not isinstance(owner, str) or not owner.strip().lstrip("@"):
+        return None
+    return owner.strip().lstrip("@").lower()

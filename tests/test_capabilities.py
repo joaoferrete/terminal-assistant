@@ -22,7 +22,7 @@ REPO = Path(__file__).resolve().parents[1]
 
 def test_the_six_capabilities_exist():
     keys = [c.key for c in inspect(Config())]
-    assert keys == ["notes", "calendar", "mic", "home", "lighter", "ai"]
+    assert keys == ["notes", "calendar", "mic", "home", "lighter", "ai", "telegram"]
 
 
 def test_only_notes_are_essential():

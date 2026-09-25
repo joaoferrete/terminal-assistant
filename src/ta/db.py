@@ -20,7 +20,7 @@ from pathlib import Path
 
 log = logging.getLogger("ta")
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 # The states of a Note. Stored in English because the rest of the vocabulary is
 # (see CONTEXT.md); the translated labels live in the interface.
@@ -213,6 +213,31 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
 
         CREATE INDEX idx_llm_usage_at ON llm_usage(at);
+        """,
+    ),
+    (
+        8,
+        """
+        -- Who the bot recognises on a Channel (D21). Identity is the Channel's
+        -- numeric id; the username is only how the Owner named them in the
+        -- config, and it is kept to notice when it is taken over.
+        --
+        -- A username can be released and claimed by a stranger. Binding it to
+        -- the id on first contact, and never consulting it again, is what stops
+        -- that stranger inheriting the Member's access.
+        --
+        -- This is the seed of `members` (F3), which will absorb it.
+        CREATE TABLE channel_identities (
+            channel      TEXT NOT NULL,
+            external_id  TEXT NOT NULL,
+            username     TEXT,
+            role         TEXT NOT NULL,     -- 'owner' for now; Grants arrive in F3
+            paired_at    TEXT NOT NULL,
+            PRIMARY KEY (channel, external_id)
+        );
+
+        CREATE UNIQUE INDEX idx_one_owner_per_channel
+            ON channel_identities(channel) WHERE role = 'owner';
         """,
     ),
 ]

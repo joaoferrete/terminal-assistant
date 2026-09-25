@@ -40,10 +40,11 @@ TYPES = {
 # Scopes are optional but must come from this list when present, so that
 # `git log --oneline | grep board` is a reliable filter rather than a guess. They
 # map to the subsystems the capability registry already names, plus the two
-# cross-cutting concerns.
+# cross-cutting concerns. `channel` is the glossary's name for the bot's front
+# door, not `telegram`: WhatsApp will land under the same scope (D4).
 SCOPES = {
     "notes", "board", "cli", "daemon", "db", "store",
-    "home", "calendar", "mic", "lighter", "ai",
+    "home", "calendar", "mic", "lighter", "ai", "channel",
     "i18n", "docs", "ci", "security", "rules",
 }
 

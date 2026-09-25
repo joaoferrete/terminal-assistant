@@ -202,6 +202,44 @@ ta init            # the priorities interview
 
 ---
 
+## Layer 4b — The Telegram bot
+
+**Take this if** you want to capture from your phone: send the bot a message and
+it becomes a Note, the same as `ta note`. It is the front door of the V2 plan
+([PLAN.md](PLAN.md)); for now it serves only you, in a private chat.
+
+1. In Telegram, talk to **@BotFather**, send `/newbot`, and follow the prompts. It
+   answers with a token.
+2. Put the token in `.env`, and your own Telegram username in `config.toml`:
+
+   ```bash
+   echo "TELEGRAM_BOT_TOKEN=the-token" >> .env
+   ```
+
+   ```toml
+   [channel.telegram]
+   owner = "your_username"
+   ```
+
+3. Restart the daemon and send the bot anything. The first message pairs your
+   account and is captured too.
+
+The bot polls Telegram from inside your network, so no port opens on your router
+and nothing needs a public address. It answers nobody but you: anyone else gets
+silence. Your username is only used for that first pairing. After it, the bot
+recognises your account by its numeric id, so someone who later takes your old
+username is still a stranger.
+
+### Did it work?
+
+```bash
+ta doctor          # Telegram (bot): ok
+```
+
+Then send the bot a message, and look for it on the board.
+
+---
+
 ## Layer 5 — The desktop extras
 
 Global keyboard shortcuts, the quick-capture popup, and the ringlight.

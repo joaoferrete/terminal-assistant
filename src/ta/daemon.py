@@ -28,6 +28,8 @@ from . import notes as notes_mod
 from .actuators.home import Home, HomeError, StateWatcher
 from .actuators.lighter import Lighter
 from .actuators.notify import Notifier
+from .bot import Bot
+from .channel.telegram import TelegramChannel
 from .config import (
     LOOPBACK,
     Config,
@@ -37,6 +39,7 @@ from .config import (
     llm_prices,
     resolve_entity,
     resolve_targets,
+    telegram_owner,
 )
 from .db import connect
 from .llm import LLM, LLMUnavailable
@@ -274,12 +277,20 @@ async def notes_create(request: Request) -> JSONResponse:
     raw = (body.get("text") or "").strip()
     if not raw:
         return JSONResponse({"error": i18n.t("api.empty_text")}, status_code=400)
-    note = store.add_note(request.app.state.conn, raw)
-    # Review goes out in the background and the 201 comes back now: capture never
-    # waits for the network (ADR 0003). Whatever it changes shows up on the board
-    # at the next reload.
-    _schedule_review(request.app, note)
+    note = _capture(request.app, raw)
     return JSONResponse(_note_json(note), status_code=201)
+
+
+def _capture(app: Starlette, raw: str) -> store.Note:
+    """Capture a Note: the one path shared by `POST /notes` and the bot.
+
+    Review goes out in the background and the Note comes back now: capture never
+    waits for the network (ADR 0003). Whatever it changes shows up on the board
+    at the next reload.
+    """
+    note = store.add_note(app.state.conn, raw)
+    _schedule_review(app, note)
+    return note
 
 
 # The confidence floor for acting alone. Below it, review does nothing: a wrong
@@ -1127,6 +1138,7 @@ def create_app(
     rules_dir=None,
     calendar=None,
     lighter=None,
+    channel=None,
     background: bool = True,
 ) -> Starlette:
     """Monta o app.
@@ -1165,6 +1177,17 @@ def create_app(
         app.state.llm = LLM.from_config(cfg)
         app.state.llm.on_usage = _usage_recorder(app)
         app.state.cal_adapter = CalendarAdapter(app.state.calendar)
+        # Injectable like `calendar`: a test hands in a fake and never reaches
+        # Telegram.
+        app.state.channel = channel if channel is not None else TelegramChannel(
+            cfg.telegram_token
+        )
+        app.state.bot = Bot(
+            app.state.conn,
+            app.state.channel,
+            capture=lambda raw: _capture(app, raw),
+            owner_username=telegram_owner(),
+        )
 
         report = engine.load_rules(rules_path)
         app.state.rules, app.state.rule_errors = report.rules, report.errors
@@ -1195,6 +1218,12 @@ def create_app(
                 asyncio.create_task(app.state.mic.run(), name="mic"),
                 asyncio.create_task(app.state.state_watcher.run(), name="state"),
             ]
+            # Without an Owner to pair there is nobody the bot may answer, so it
+            # does not poll at all rather than read messages it would drop.
+            if app.state.channel.configured and telegram_owner():
+                tasks.append(asyncio.create_task(
+                    app.state.channel.run(app.state.bot.handle), name="channel"
+                ))
         log.info(
             "daemon up on %s | %d rule(s), %d error(s)",
             cfg.base_url, len(app.state.rules), len(app.state.rule_errors),
@@ -1207,6 +1236,8 @@ def create_app(
             await asyncio.gather(*tasks, return_exceptions=True)
             await app.state.lighter.hand_back()
             await app.state.home.close()
+            if hasattr(app.state.channel, "close"):
+                await app.state.channel.close()
             app.state.conn.close()
 
     return Starlette(

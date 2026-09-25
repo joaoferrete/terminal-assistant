@@ -56,6 +56,12 @@ load it. That cost an afternoon once.
 
 See [ai.md](ai.md) for what each feature costs in model calls.
 
+### Telegram bot
+
+| Variable | Default | What it does |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | *(none)* | The token @BotFather gives you. The bot also needs an owner in `config.toml` (below); with only one of the two it does not poll at all |
+
 Which provider answers which task is set in `config.toml` (below). A provider
 with no key is skipped, not failed, so a Gemini-only installation keeps working
 exactly as before ([ADR 0018](adr/0018-llm-providers-routed-per-task.md)).
@@ -92,6 +98,12 @@ fallback = "gemini"
 # over each capture), organize, detect_event, digest_prose, priorities.
 [llm.tasks]
 organize = "gemini"
+
+# The Telegram username allowed to talk to the bot. It is only used once: the first
+# message from it binds that account's numeric id, and from then on the id is what
+# counts, so a changed or stolen username does not change who the bot obeys.
+[channel.telegram]
+owner = "your_username"
 
 # USD per million tokens, for the cost the Digest reports. DeepSeek's models ship
 # with their peak price (an upper bound: off-peak is half). Gemini ships with none,

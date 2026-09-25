@@ -341,6 +341,25 @@ MESSAGES: dict[str, dict[str, str]] = {
         "pt": "na lixeira — `↩` restaura, ou volte ao mural para escrever",
         "en": "in the trash — `↩` restores; go back to the board to write",
     },
+    # ── Bot (Channel) ───────────────────────────────────────────────────────
+    "bot.paired": {
+        "pt": "Pronto, agora eu te reconheço. Tudo o que você mandar aqui vira nota.",
+        "en": "Done, I know you now. Everything you send here becomes a note.",
+    },
+    "bot.captured": {"pt": "Anotado · #{id}", "en": "Noted · #{id}"},
+    "bot.captured_due": {"pt": "Anotado · #{id} · prazo {due}", "en": "Noted · #{id} · due {due}"},
+    "bot.unsupported": {
+        "pt": "Por enquanto eu só leio texto.",
+        "en": "For now I can only read text.",
+    },
+    "bot.unknown_command": {
+        "pt": "Não conheço esse comando. Mande só o texto que eu anoto.",
+        "en": "I don't know that command. Just send the text and I'll note it.",
+    },
+    "bot.hello": {
+        "pt": "Oi! Tudo o que você mandar aqui vira nota.",
+        "en": "Hi! Everything you send here becomes a note.",
+    },
     # ── CLI ─────────────────────────────────────────────────────────────────
     # A linha de uma nota no `ta note` e no `ta list`. Estava fixa em português —
     # `tarefa, prazo`, `lembrete`, `prio` — então em `TA_LANG=en` o comando mais
@@ -391,6 +410,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     "cap.home": {"pt": "Home Assistant", "en": "Home Assistant"},
     "cap.lighter": {"pt": "Lighter (ringlight)", "en": "Lighter (ringlight)"},
     "cap.ai": {"pt": "IA", "en": "AI"},
+    "cap.telegram": {"pt": "Telegram (bot)", "en": "Telegram (bot)"},
     "cli.doctor_summary": {
         "pt": "{live}/{total} disponíveis. O que está marcado com — é opcional.",
         "en": "{live}/{total} available. Anything marked with — is optional.",

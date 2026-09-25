@@ -163,7 +163,24 @@ def _ai(cfg: Config) -> Capability:
     )
 
 
-PROBES = (_notes, _calendar, _mic, _home, _lighter, _ai)
+def _telegram(cfg: Config) -> Capability:
+    from .config import telegram_owner
+
+    has_token, owner = bool(cfg.telegram_token), telegram_owner()
+    ok = has_token and bool(owner)
+    if not has_token:
+        reason = "TELEGRAM_BOT_TOKEN is not set"
+        fix = "optional. Create a bot with @BotFather and put TELEGRAM_BOT_TOKEN in .env"
+    elif not owner:
+        # A token with no owner would poll and answer nobody: say which half is missing.
+        reason = "no owner in config.toml, so the bot would answer nobody"
+        fix = 'add [channel.telegram] owner = "your_username" to config.toml'
+    else:
+        reason = fix = ""
+    return Capability(key="telegram", label=t("cap.telegram"), ok=ok, reason=reason, fix=fix)
+
+
+PROBES = (_notes, _calendar, _mic, _home, _lighter, _ai, _telegram)
 
 
 def inspect(cfg: Config | None = None) -> list[Capability]:

@@ -23,16 +23,23 @@ reverse are also ADRs, linked where they apply.
 
 ## Now
 
-- **Phase:** F1. Done: T1.1, T1.2. F0 was finished on 2026-09-25.
+- **Phase:** F1. Done: T1.1–T1.5. F0 was finished on 2026-09-25.
 - **Branch stack.** Each task branches from the previous one. **Merge in this
   order**, each into `main` after the one before it:
   1. `docs/v2-plan` — the plan, the glossary, the ADRs, F0 and the server docs
   2. `feat/llm-providers` — T1.1
   3. `feat/llm-usage` — T1.2
+  4. `feat/telegram-channel` — T1.3, T1.4, T1.5
   The next task branches from the top of this list and is appended to it.
-- **Next agent action:** T1.3, the `telegram` Capability. Then T1.4, the Channel.
-- **Waiting on the user:** a DeepSeek API key and a Telegram bot token, needed from
-  T1.4 on. They go straight into the server's `.env`, never into the chat.
+- **Next agent action:** T1.7, the board link from the bot (with the session
+  cookie that fixes the reload 401). T1.6, strings in the catalogue, is kept up as
+  each task lands, and is ticked when F1 closes. Then **deploy F1 to the server**:
+  ask the user first, and copy `DEEPSEEK_API_KEY` and `GEMINI_API_KEY` from the
+  laptop's `.env` into the server's without printing them. The user asked for this.
+  Then add `TELEGRAM_BOT_TOKEN` and `[channel.telegram] owner`, and run F1's
+  acceptance check.
+- **Waiting on the user:** the Telegram bot token and their Telegram username. The
+  AI keys are already in the laptop's `.env`.
 - **Rule:** never run a command on the server without the user's yes, read-only
   ones included.
 
@@ -280,15 +287,15 @@ how `ta` is installed, configured or used also updates the README,
 - [x] **T1.2 Usage accounting.** New migration in `db.py` (never edit a released
       one): `llm_usage(provider, task, tokens_in, tokens_out, cost, at)`, with
       prices from config. *Done when* each task call writes one row.
-- [ ] **T1.3 Capabilities.** `deepseek` and `telegram` in `capabilities.py`, each
+- [x] **T1.3 Capabilities.** `deepseek` and `telegram` in `capabilities.py`, each
       with why-not and how-to-fix, visible in `ta doctor` and `/health` (presence of
       a secret, never its value).
-- [ ] **T1.4 Channel.** `src/ta/channel/`: a `Channel` protocol (inbound message,
+- [x] **T1.4 Channel.** `src/ta/channel/`: a `Channel` protocol (inbound message,
       reply, reaction, buttons) and `TelegramChannel` by long polling over `httpx`.
       Add an SDK only if it pays for itself, and say why in the commit. It runs as a
       background task in the daemon loop, under the existing `background` flag, so
       tests never touch the network.
-- [ ] **T1.5 Owner capture.** `[channel.telegram] owner = "@…"`, bound to the user
+- [x] **T1.5 Owner capture.** `[channel.telegram] owner = "@…"`, bound to the user
       id on first contact (the seed of D21). Text → `notes.py` parser → `store.py`
       capture → confirmation reply; the asynchronous review as today.
 - [ ] **T1.7 Board link from the bot** (D20, pulled forward). On the Owner's first
@@ -427,3 +434,5 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-25 | T1.1 | The plan said `llm.py` would become a package. Tests subclass `LLM` and override `_structured(prompt, schema, system)`, so the task could not be a new argument | Providers went to `src/ta/providers.py`, and `LLM`'s public surface is unchanged: every pre-existing test passed untouched. The task travels in a `ContextVar`, set by a decorator on each task method and by `for_task()` in `priorities.py` |
 | 2026-09-25 | T1.1 | DeepSeek's current model is `deepseek-flash`, not the `deepseek-chat` older examples use. Its JSON mode needs the word "json" in the prompt, and its docs warn the content can come back empty | Default `deepseek-flash`, pinnable with `TA_DEEPSEEK_MODEL`. The schema is sent in the system prompt, and an empty answer counts as one more invalid attempt |
 | 2026-09-25 | T1.3 | With DeepSeek as the default, the `ai` Capability still only looked at `GEMINI_API_KEY` | Folded into T1.1: `ai` is alive with either key. T1.3 keeps the `telegram` Capability |
+| 2026-09-25 | T1.4 | The Telegram bot token travels in the URL path, and an `httpx` exception message includes the URL, so logging one would log the token | `ChannelError` carries only the method and the status. A test fails if the token ever appears in the log |
+| 2026-09-25 | T1.5 | Two things the plan did not say: Telegram sends `/start` when a chat opens, and a text starting with `/` can be a mistyped command | `/start` greets and is never captured. Any other `/word` is answered as an unknown command rather than captured. That still meets invariant 1, because the message was answered |
