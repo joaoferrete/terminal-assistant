@@ -21,6 +21,12 @@ from . import ChannelError, Handler, Inbound
 
 log = logging.getLogger("ta.channel")
 
+# httpx logs every request at INFO, **with the full URL** — and ours carries the
+# bot token. The daemon logs at INFO, so each 50-second poll wrote the token to
+# the journal. It was caught on the server's first deploy, not by the test that
+# checked our own log lines, which never saw httpx's. WARNING keeps its errors.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 API = "https://api.telegram.org"
 
 

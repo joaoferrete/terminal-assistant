@@ -5,6 +5,7 @@ and the bot talks to a fake Channel that records what it would have sent.
 """
 import asyncio
 import json
+import logging
 import sqlite3
 import types
 
@@ -215,6 +216,9 @@ def test_a_handler_that_crashes_does_not_stop_the_loop_or_repeat_the_message():
 
 
 def test_an_outage_is_retried_and_the_token_never_reaches_the_log(caplog):
+    # INFO, not the default WARNING: httpx logs every request at INFO with the
+    # full URL, and the first version of this test could not see that leak.
+    caplog.set_level(logging.INFO)
     calls = []
     ch = telegram([httpx.Response(502, text="bad gateway"),
                    {"ok": False, "description": "Unauthorized"},
