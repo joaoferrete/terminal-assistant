@@ -38,10 +38,11 @@ reverse are also ADRs, linked where they apply.
   6. `docs/chatbot-guardrails` — D25–D33, ADR 0019, and F1 closed
   7. `feat/voice` — T2.1, T2.2
   The next task branches from the top of this list and is appended to it.
-- **Next agent action:** T2.3, on the server, with the user's yes. Deploy
-  `feat/voice`, install the `[voice]` extra there, send a real voice note, and
-  record latency and peak RAM in Discoveries and the hardware budget. After that,
-  F3.
+- **F2 is closed** (2026-09-25). Voice notes are transcribed on the server at
+  about 0.46× real time. The server runs `feat/voice`.
+- **Next agent action:** F3, Members, Grants, visibility and Lists. Start with
+  T3.1, the schema, on a new branch at the top of the stack. It absorbs
+  `channel_identities` (migration 8) into `members`.
 - **Pending, the user's call (deferred on 2026-09-25):** rotate the Telegram bot
   token. One line in the server's journal holds it, from before the httpx fix. The
   steps: `/revoke` at @BotFather, update the laptop `.env`, then copy that one line
@@ -325,9 +326,11 @@ The server: Intel i5 6th gen (4 cores, AVX2, integrated GPU unusable for inferen
 | AdGuard | ~100 MB |
 | Home Assistant (Docker) | 0.5–1 GB |
 | `ta` daemon | ~150 MB |
-| faster-whisper `small` int8 — stays resident after the first voice note | 1.4 GB service total, measured |
+| faster-whisper `small` int8 — stays resident after the first voice note | 1.2–1.4 GB service total, measured |
 
-LLMs are remote. The estimates are unmeasured; T2.3 replaces them with numbers.
+LLMs are remote. Measured in T2.3: transcription runs at about **0.46× the audio's
+length** once the model is loaded (25 s of speech took 11.4 s). The first note
+after a restart also pays the load: 31 s of speech took 21.8 s.
 
 ## Phases
 
@@ -407,7 +410,7 @@ how `ta` is installed, configured or used also updates the README,
 - [x] **T2.2** Telegram voice (OGG/Opus) → transcription in a worker thread → the
       same capture path; the transcript is stored with the Note. On failure the
       audio file is kept and the reply says so (invariant 1).
-- [ ] **T2.3** Measure the latency and peak RAM on the server; record them in
+- [x] **T2.3** Measure the latency and peak RAM on the server; record them in
       Discoveries and correct the hardware budget.
 
 ### F3 — Members, Grants, visibility, Lists
@@ -541,3 +544,4 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-25 | T2.2 | Transcription inside `Bot.handle` would block the Channel's loop: a minute of audio takes seconds on this CPU, and every text behind it would wait | Voice runs as a background task, and `handle` returns at once. A test proves a text sent after a slow voice note is captured first |
 | 2026-09-25 | T2.1 | The Capability is named `voice`, not `whisper` as T2.1 said. It names what the user gets, as every other Capability does, not the library | Recorded here so the plan and `ta doctor` stay aligned |
 | 2026-09-25 | T2.3 | Measured on the server after two real voice notes: the model stays **resident** once loaded, and the service sits at **1.4 GB** with it (the budget assumed about 1 GB, and only while transcribing). The host still had 5.2 GB available. The model cache is 464 MB on disk. The latency could not be read, because nothing logged it, and `MemoryPeak` is not exposed by this systemd | The bot now logs each voice note's length and transcription time. The latency row is still to be filled from the next voice note. Unloading the model after a quiet period is an option if RAM gets tight (HA plus the model plus AdGuard is about 3 GB today) |
+| 2026-09-25 | T2.3 | Latency, now logged: 25 s of speech in 11.4 s warm (0.46×), and 31 s in 21.8 s cold, with the model load included. The estimate was 0.3–0.5× | Within the estimate. A one-minute note answers in about half a minute, which is acceptable for capture, and the 600 s ceiling stands |
