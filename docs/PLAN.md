@@ -280,6 +280,12 @@ conversation go along; otherwise nothing does. A lone "turn on the light" carrie
 no history. Older things are reachable only through the memory Tool (D13).
 History from a group counts as third-party content for D27.
 
+**D34 — Answers are text, even to a voice question.** A spoken question is
+transcribed and handled like a typed one (F4). The answer comes back as text,
+with no synthesised voice. *Why:* the user's call on 2026-09-25. Text is
+readable later and searchable, and speaking back would add a TTS dependency and a
+cost for little gain.
+
 ### Delivery
 
 **D23 — Vertical slice, Owner first.** The Owner uses a Telegram capture on the
@@ -319,7 +325,7 @@ The server: Intel i5 6th gen (4 cores, AVX2, integrated GPU unusable for inferen
 | AdGuard | ~100 MB |
 | Home Assistant (Docker) | 0.5–1 GB |
 | `ta` daemon | ~150 MB |
-| faster-whisper `small` int8, while transcribing | ~1 GB |
+| faster-whisper `small` int8 — stays resident after the first voice note | 1.4 GB service total, measured |
 
 LLMs are remote. The estimates are unmeasured; T2.3 replaces them with numbers.
 
@@ -534,3 +540,4 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-25 | T1.4 | On the first deploy the bot token would still reach the journal. httpx logs every request at INFO with the full URL, and the daemon logs at INFO. The test that guarded the token only looked at WARNING, pytest's default capture level, so it never saw httpx's lines | httpx is set to WARNING when the Telegram module loads, and the test captures INFO. It was confirmed to fail without the fix. The server's journal had no such line yet, because the first poll had not completed |
 | 2026-09-25 | T2.2 | Transcription inside `Bot.handle` would block the Channel's loop: a minute of audio takes seconds on this CPU, and every text behind it would wait | Voice runs as a background task, and `handle` returns at once. A test proves a text sent after a slow voice note is captured first |
 | 2026-09-25 | T2.1 | The Capability is named `voice`, not `whisper` as T2.1 said. It names what the user gets, as every other Capability does, not the library | Recorded here so the plan and `ta doctor` stay aligned |
+| 2026-09-25 | T2.3 | Measured on the server after two real voice notes: the model stays **resident** once loaded, and the service sits at **1.4 GB** with it (the budget assumed about 1 GB, and only while transcribing). The host still had 5.2 GB available. The model cache is 464 MB on disk. The latency could not be read, because nothing logged it, and `MemoryPeak` is not exposed by this systemd | The bot now logs each voice note's length and transcription time. The latency row is still to be filled from the next voice note. Unloading the model after a quiet period is an option if RAM gets tight (HA plus the model plus AdGuard is about 3 GB today) |

@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -169,8 +170,13 @@ class Bot:
             reason = "too_long"
         else:
             await self.channel.reply(msg, t("bot.voice_listening"))
+            started = time.monotonic()
             try:
                 text = await transcriber.transcribe(audio, language=i18n.lang())
+                # The one number that says whether this CPU keeps up. It was
+                # missing on the first real run, and nobody could measure it.
+                log.info("voice note of %ds transcribed in %.1fs",
+                         msg.voice_seconds, time.monotonic() - started)
             except TranscriptionFailed as e:
                 log.warning("transcription failed: %s", e)
                 reason = "failed"
