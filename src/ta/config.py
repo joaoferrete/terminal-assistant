@@ -82,6 +82,10 @@ class Config:
     gemini_api_key: str | None = None
     deepseek_api_key: str | None = None
     telegram_token: str | None = None
+    # The address a phone uses to reach the board, for the link the bot sends.
+    # Unset, it is guessed from this machine's LAN address, which is right for a
+    # home server and wrong behind a reverse proxy.
+    public_url: str | None = None
     # The daemon's OWN credential, not a third party's. Only required when the
     # bind leaves loopback; on loopback it stays None and local use is unchanged.
     token: str | None = None
@@ -104,6 +108,7 @@ class Config:
             gemini_api_key=os.environ.get("GEMINI_API_KEY") or None,
             deepseek_api_key=os.environ.get("DEEPSEEK_API_KEY") or None,
             telegram_token=os.environ.get("TELEGRAM_BOT_TOKEN") or None,
+            public_url=os.environ.get("TA_PUBLIC_URL") or None,
             token=os.environ.get("TA_TOKEN") or None,
             auto_review=os.environ.get("TA_AUTO_REVIEW", "1") not in ("0", "false", "no"),
             echo_entities=tuple(

@@ -277,6 +277,13 @@ The token is stored in the browser and stripped from the address bar, so it does
 not end up in your history. Read [`SECURITY.md`](../SECURITY.md) before doing
 this on a network you do not control.
 
+**With the Telegram bot** ([Layer 4b](#layer-4b--the-telegram-bot)) there is nothing to
+type: send it `/board`. It answers with a link that works once, for five minutes,
+and opening it leaves a session cookie in that browser. The cookie is what keeps
+a reload working. A page load cannot send the token the board keeps in
+`localStorage`, which is why, with the token alone, every refresh on a phone asked
+for it again.
+
 ---
 
 ## Alternative: on a home server

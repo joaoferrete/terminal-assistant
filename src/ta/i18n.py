@@ -244,6 +244,10 @@ MESSAGES: dict[str, dict[str, str]] = {
               "\n"
               "To go back to local-only access, remove TA_HOST from your .env.",
     },
+    "auth.code_used": {
+        "pt": "Esse link já foi usado ou expirou. Peça outro ao bot com /board.",
+        "en": "This link was already used or has expired. Ask the bot for another with /board.",
+    },
     "auth.missing_credential": {
         "pt": "credencial ausente ou inválida (TA_TOKEN)",
         "en": "missing or invalid credential (TA_TOKEN)",
@@ -355,6 +359,18 @@ MESSAGES: dict[str, dict[str, str]] = {
     "bot.unknown_command": {
         "pt": "Não conheço esse comando. Mande só o texto que eu anoto.",
         "en": "I don't know that command. Just send the text and I'll note it.",
+    },
+    "bot.board_link": {
+        "pt": "O seu board: {url}\nO link vale por 5 minutos e funciona uma vez só. "
+              "Depois disso o navegador já fica lembrando de você.",
+        "en": "Your board: {url}\nThe link works once, for 5 minutes. "
+              "After that the browser remembers you.",
+    },
+    "bot.board_unreachable": {
+        "pt": "O board só abre nesta máquina: o daemon está em loopback. "
+              "Para abrir no celular, veja TA_HOST e TA_TOKEN.",
+        "en": "The board only opens on this machine: the daemon is on loopback. "
+              "To open it on a phone, see TA_HOST and TA_TOKEN.",
     },
     "bot.hello": {
         "pt": "Oi! Tudo o que você mandar aqui vira nota.",

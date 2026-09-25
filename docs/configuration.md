@@ -25,6 +25,7 @@ Every one of these is optional.
 | `TA_HOST` | `127.0.0.1` | Address to listen on. Anything else **requires** `TA_TOKEN` or the daemon refuses to start |
 | `TA_PORT` | `7777` | Port |
 | `TA_TOKEN` | *(none)* | Shared secret required from any client that is not on this machine. See [`SECURITY.md`](../SECURITY.md) |
+| `TA_PUBLIC_URL` | *(guessed)* | The address a phone uses to reach the board, for the link the Telegram bot sends with `/board`. Unset, it is this machine's LAN address and `TA_PORT`, which is right for a home server and wrong behind a reverse proxy |
 | `TA_DB` | `~/.local/share/ta/ta.db` | Where the SQLite file lives. `make demo` uses this to stay away from your real notes |
 | `TA_LANG` | your locale | `pt` or `en`. Governs the capture parser, the interface and the model's output language ([ADR 0013](adr/0013-one-language-at-a-time.md)) |
 

@@ -20,10 +20,10 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from starlette.routing import Route
 
-from . import capabilities, engine, i18n, priorities, store, usage
+from . import board_access, capabilities, engine, i18n, priorities, store, usage
 from . import notes as notes_mod
 from .actuators.home import Home, HomeError, StateWatcher
 from .actuators.lighter import Lighter
@@ -125,21 +125,51 @@ class TokenAuth(BaseHTTPMiddleware):
             return header[7:].strip()
         return request.query_params.get("token", "")
 
+    def _authorised(self, request: Request) -> bool:
+        # `compare_digest` instead of `==`: comparing a secret with an early
+        # exit leaks the correct prefix through response timing.
+        presented = self._presented(request)
+        if presented and hmac.compare_digest(presented, self._token):
+            return True
+        # The session cookie the bot's link sets: it is what survives a reload,
+        # which a header built by JavaScript cannot (board_access.py).
+        cookie = request.cookies.get(board_access.COOKIE)
+        return bool(cookie) and board_access.session_valid(self._token, cookie)
+
     async def dispatch(self, request: Request, call_next):
-        if not _peer_local(request):
-            # `compare_digest` instead of `==`: comparing a secret with an early
-            # exit leaks the correct prefix through response timing.
-            presented = self._presented(request)
-            if not presented or not hmac.compare_digest(presented, self._token):
-                log.warning(
-                    "401 from %s on %s", request.client.host if request.client else "?",
-                    request.url.path,
-                )
-                return JSONResponse(
-                    {"error": i18n.t("auth.missing_credential")},
-                    status_code=401,
-                )
+        code = request.query_params.get("code")
+        if request.url.path == "/board" and code:
+            return self._redeem(request, code)
+        if not _peer_local(request) and not self._authorised(request):
+            log.warning(
+                "401 from %s on %s", request.client.host if request.client else "?",
+                request.url.path,
+            )
+            return JSONResponse(
+                {"error": i18n.t("auth.missing_credential")},
+                status_code=401,
+            )
         return await call_next(request)
+
+    def _redeem(self, request: Request, code: str):
+        """Trade a one-time code from the bot for a session cookie (T1.7)."""
+        if not request.app.state.board_codes.redeem(code):
+            return JSONResponse({"error": i18n.t("auth.code_used")}, status_code=401)
+        # A redirect, so the code leaves the address bar and the history.
+        resp = RedirectResponse("/board", status_code=303)
+        resp.set_cookie(
+            board_access.COOKIE,
+            board_access.session_cookie(self._token),
+            max_age=int(board_access.SESSION_TTL.total_seconds()),
+            httponly=True,
+            # Lax, not Strict. The link is opened from the Telegram app, a
+            # cross-site navigation, and a Strict cookie is withheld from the
+            # redirect that follows it — the first load would 401 with the
+            # cookie sitting right there.
+            samesite="lax",
+            path="/",
+        )
+        return resp
 
 
 def _note_json(n: store.Note, *, today: date | None = None) -> dict:
@@ -279,6 +309,23 @@ async def notes_create(request: Request) -> JSONResponse:
         return JSONResponse({"error": i18n.t("api.empty_text")}, status_code=400)
     note = _capture(request.app, raw)
     return JSONResponse(_note_json(note), status_code=201)
+
+
+def _board_link(app: Starlette, cfg: Config) -> str | None:
+    """The address the bot sends for `/board`, or None if a phone cannot reach it.
+
+    On loopback nothing outside this machine can open it, so there is no link to
+    send. With `TA_TOKEN` the link carries a one-time code; without one, the
+    daemon is on loopback anyway.
+    """
+    if not cfg.exposed or cfg.token is None:
+        return None
+    base = cfg.public_url or (
+        f"http://{addr}:{cfg.port}" if (addr := board_access.lan_address()) else None
+    )
+    if base is None:
+        return None
+    return f"{base.rstrip('/')}/board?code={app.state.board_codes.issue()}"
 
 
 def _capture(app: Starlette, raw: str) -> store.Note:
@@ -1182,11 +1229,13 @@ def create_app(
         app.state.channel = channel if channel is not None else TelegramChannel(
             cfg.telegram_token
         )
+        app.state.board_codes = board_access.BoardCodes()
         app.state.bot = Bot(
             app.state.conn,
             app.state.channel,
             capture=lambda raw: _capture(app, raw),
             owner_username=telegram_owner(),
+            board_link=lambda: _board_link(app, cfg),
         )
 
         report = engine.load_rules(rules_path)

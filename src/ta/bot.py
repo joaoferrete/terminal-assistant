@@ -58,6 +58,7 @@ class Bot:
         *,
         capture: Callable[[str], object],
         owner_username: str | None,
+        board_link: Callable[[], str | None] = lambda: None,
     ) -> None:
         self.conn = conn
         self.channel = channel
@@ -65,6 +66,8 @@ class Bot:
         # exactly like one from the terminal, review and all.
         self.capture = capture
         self.owner_username = owner_username
+        # Issues a one-time code each call, so it is a function, not a string.
+        self.board_link = board_link
 
     def _recognise(self, msg: Inbound) -> tuple[str | None, bool]:
         """(role, just paired). None is a stranger, answered with silence (D8)."""
@@ -92,6 +95,10 @@ class Bot:
             return
         if just_paired:
             await self.channel.reply(msg, t("bot.paired"))
+            # The first thing a new Member needs is the board, and typing a
+            # 43-character token on a phone is where the user actually got stuck.
+            if (url := self.board_link()) is not None:
+                await self.channel.reply(msg, t("bot.board_link", url=url))
 
         if msg.unsupported:
             await self.channel.reply(msg, t("bot.unsupported"))
@@ -104,6 +111,11 @@ class Bot:
             if command == "/start":
                 if not just_paired:
                     await self.channel.reply(msg, t("bot.hello"))
+            elif command == "/board":
+                url = self.board_link()
+                await self.channel.reply(
+                    msg, t("bot.board_link", url=url) if url else t("bot.board_unreachable")
+                )
             else:
                 await self.channel.reply(msg, t("bot.unknown_command"))
             return
