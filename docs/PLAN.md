@@ -23,7 +23,11 @@ reverse are also ADRs, linked where they apply.
 
 ## Now
 
-- **Phase:** F1. Done: T1.1–T1.5 and T1.7. F0 was finished on 2026-09-25.
+- **Phase:** F1. Done: T1.1–T1.5 and T1.7. **F1's acceptance passed on
+  2026-09-25.** A message from the phone appeared on the board, the board survives
+  a reload, and `llm_usage` shows the reviews ran on `deepseek-flash` at about
+  $0.001 each (an upper bound, at peak price). The server runs `feat/board-link`.
+  F0 was finished on 2026-09-25.
 - **Branch stack.** Each task branches from the previous one. **Merge in this
   order**, each into `main` after the one before it:
   1. `docs/v2-plan` — the plan, the glossary, the ADRs, F0 and the server docs
@@ -32,14 +36,8 @@ reverse are also ADRs, linked where they apply.
   4. `feat/telegram-channel` — T1.3, T1.4, T1.5
   5. `feat/board-link` — T1.7
   The next task branches from the top of this list and is appended to it.
-- **Next agent action:** **deploy F1 to the server**:
-  ask the user first, and copy `DEEPSEEK_API_KEY` and `GEMINI_API_KEY` from the
-  laptop's `.env` into the server's without printing them. The user asked for this.
-  Then add `TELEGRAM_BOT_TOKEN` and `[channel.telegram] owner`, and run F1's
-  acceptance check. Then run the **chatbot interview** (the section before F8) and
-  close F1. T1.6 is ticked then.
-- **Waiting on the user:** the Telegram bot token and their Telegram username. The
-  AI keys are already in the laptop's `.env`.
+- **Next agent action:** run the **chatbot interview** (the section before F8),
+  record its decisions, tick T1.6, and close F1. Then F2 (voice).
 - **Pending, the user's call (deferred on 2026-09-25):** rotate the Telegram bot
   token. One line in the server's journal holds it, from before the httpx fix. The
   steps: `/revoke` at @BotFather, update the laptop `.env`, then copy that one line
