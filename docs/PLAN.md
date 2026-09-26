@@ -80,8 +80,10 @@ in its tasks and in Discoveries; this section is only where things stand.*
 ### The agent's next actions
 
 - **F9 is in progress on `feat/agent-extras`** (D39–D41): colour and scheduled
-  actions are done and tested, but **not deployed**. Next is **T9.3**, Satellite
-  files, then T9.4, Gmail. Deploy together (T9.5), with the user's yes.
+  actions and Satellite files are done and tested, but **not deployed**. Next is
+  **T9.4**, Gmail. Deploy together (T9.5), with the user's yes. The laptop's
+  Satellite must be updated too (`git pull` there and restart `ta-satellite`, the
+  user's call), or file requests time out.
 - Open the PRs for the stack, in order, if the user asks. Each targets the branch
   below it, or everything goes to `main` one after another, whichever the user
   prefers.
@@ -665,7 +667,7 @@ Channel. *Why:* the user's call.
       `schedule_action` / `schedule_list` / `schedule_cancel`, the bot's
       `run_scheduled` every 20 s, [Cancel schedule], and the current time in the
       agent's prompt.
-- [ ] **T9.3** Satellite files (D41): `[files] folders` on the laptop, a
+- [x] **T9.3** Satellite files (D41): `[files] folders` on the laptop, a
       request/response over the Satellite's existing connection, the Tools
       `files_list`, `files_read` and `files_send`, and `sendDocument` on the
       Telegram Channel.
@@ -738,3 +740,5 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T8.5 | A test that monkeypatched `asyncio.get_running_loop` to catch the restart froze the whole suite, because it replaced the loop the test client runs on | The exit is scheduled by `_exit_soon`, which the test replaces instead |
 | 2026-09-26 | T9.2 | The suite read the author's real `~/.config/ta/config.toml`. `conftest.py` pinned the language but not the config, so a test switching "quarto" resolved the user's real `[aliases] quarto` and not the fake inventory's lamp. It passed on CI, which has no config file | `conftest.py` points `XDG_CONFIG_HOME` at a temporary directory for every test. The full suite still passes |
 | 2026-09-26 | T9.2 | The acting Tools answer "nothing you may switch" instead of raising `NotAllowed`. A scheduled run after a Grant was narrowed would have been reported as "⏰ Done" for a light that stayed off | A scheduled run with no Receipt is reported as not done. Tested with a revoked Grant |
+| 2026-09-26 | T9.3 | F7's file filter (`rag_sync.eligible`) also requires a text suffix, so reusing it would have stopped a PDF from being sent | The files module uses F7's lists (secret words, key suffixes, skipped folders) plus hidden names, without the suffix rule, and checks every path component after resolving symlinks |
+| 2026-09-26 | T9.3 | A Satellite running the older code ignores a request it does not know, so the agent would wait for nothing | A request times out after 30 s, and the agent says the Satellite "may need updating". Deploying F9 means updating the laptop too |

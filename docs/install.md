@@ -469,6 +469,20 @@ first use, running locally: nothing goes to a cloud). You search your own folder
 Whoever runs the house can search every Satellite's. Nobody can search from a
 group.
 
+**Opening files on your computer from the chat.** Ask the bot "o que tem na minha
+pasta Downloads?", "lê o arquivo X", or "me manda o PDF do contrato", and your
+Satellite answers live. It lists, reads text, or sends the file to your chat. It
+does this only in the folders your laptop shares:
+
+```toml
+[files]
+folders = ["~/Documentos", "~/Downloads"]
+```
+
+Read-only, and only in a private chat. Secrets and hidden files are refused, and
+so is any path that leads outside those folders, even through a link. Each person
+reaches only their own computer, and it has to be on. Otherwise the bot says so.
+
 To remove a computer, `systemctl --user disable --now ta-satellite` and delete
 `~/.config/ta/satellite.json`. Rotating the server's `TA_TOKEN` revokes every
 Satellite token at once.

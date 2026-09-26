@@ -82,3 +82,7 @@ class Channel(Protocol):
         """A message nobody asked for — a new pairing, a split to decide."""
 
     async def download(self, file_id: str) -> bytes: ...
+
+    async def send_document(self, conversation_id: str, filename: str, data: bytes,
+                            caption: str = "") -> str | None:
+        """Send a file. Optional: a Channel without it cannot deliver files."""

@@ -15,6 +15,7 @@ action travels back out.
 from __future__ import annotations
 
 import asyncio
+import itertools
 import time
 from collections import defaultdict
 
@@ -32,6 +33,9 @@ class Hub:
         self._queues: dict[int, asyncio.Queue] = defaultdict(
             lambda: asyncio.Queue(maxsize=MAX_QUEUED))
         self._seen: dict[int, float] = {}
+        # Questions waiting for a Satellite's answer (F9, D41): id → (member, future).
+        self._pending: dict[str, tuple[int, asyncio.Future]] = {}
+        self._ids = itertools.count(1)
 
     def seen(self, member_id: int) -> None:
         self._seen[member_id] = time.monotonic()
@@ -58,6 +62,34 @@ class Hub:
             actions.append(q.get_nowait())
         self.seen(member_id)
         return actions
+
+
+    async def ask(self, member_id: int, request: dict, timeout: float = 30.0) -> dict:
+        """Send a question to the Member's Satellite and wait for its answer.
+
+        The same long poll carries it out, and the answer comes back on
+        `/satellite/answer`, so the laptop still opens every connection. Raises
+        TimeoutError when nothing answers — the laptop went to sleep, or runs a
+        version that does not know the question.
+        """
+        rid = f"q{next(self._ids)}"
+        future = asyncio.get_running_loop().create_future()
+        self._pending[rid] = (member_id, future)
+        self.push(member_id, {**request, "id": rid})
+        try:
+            return await asyncio.wait_for(future, timeout)
+        finally:
+            self._pending.pop(rid, None)
+
+    def answer(self, member_id: int, rid: str, payload: dict) -> bool:
+        """Deliver an answer. Only the Satellite the question went to may answer
+        it: another Member's token guessing `q7` must not feed somebody else's
+        agent."""
+        waiting = self._pending.get(rid)
+        if waiting is None or waiting[0] != member_id or waiting[1].done():
+            return False
+        waiting[1].set_result(payload)
+        return True
 
 
 class RemoteLighter:

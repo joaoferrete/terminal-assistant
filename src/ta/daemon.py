@@ -957,6 +957,14 @@ async def satellite_actions(request: Request) -> JSONResponse:
     return JSONResponse({"actions": actions})
 
 
+async def satellite_answer(request: Request) -> JSONResponse:
+    """A Satellite answers a question the server asked it (F9, D41)."""
+    body = await request.json()
+    ok = request.app.state.hub.answer(_viewer(request).member_id, str(body.get("id", "")),
+                                      body.get("answer") or {})
+    return JSONResponse({"ok": ok}, status_code=200 if ok else 404)
+
+
 # ── The config page (F8, D38) ──────────────────────────────────────────────
 CONFIG_HTML = Path(__file__).parent / "web" / "config.html"
 
@@ -1869,6 +1877,7 @@ def create_app(
             Route("/lists", lists_route),
             Route("/satellite/signal", satellite_signal, methods=["POST"]),
             Route("/satellite/actions", satellite_actions),
+            Route("/satellite/answer", satellite_answer, methods=["POST"]),
             Route("/satellite/redeem", satellite_redeem, methods=["POST"]),
             Route("/rag/manifest", rag_manifest, methods=["POST"]),
             Route("/config", config_page),

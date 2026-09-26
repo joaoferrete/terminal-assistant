@@ -160,6 +160,12 @@ place = "São Paulo"
 [rag]
 folders = ["~/notas"]
 
+# On a Satellite: folders the bot may list, read and send from when you ask
+# (F9, D41). Read-only. Decided here, on the laptop: the server cannot widen it.
+# Hidden files and anything named like a secret are refused.
+[files]
+folders = ["~/Documentos", "~/Downloads"]
+
 # The chat's guardrails (D29, D30). `house_rules` goes into every conversation:
 # a SOFT guardrail that shapes answers, and nothing depends on it for safety. The
 # ceilings are hard: when one is spent, chat and web search stop for the day (or

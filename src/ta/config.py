@@ -541,3 +541,15 @@ def rag_folders() -> list[str]:
     raw = _user_config().get("rag", {})
     folders = raw.get("folders", []) if isinstance(raw, dict) else []
     return [str(f) for f in folders if isinstance(f, str)] if isinstance(folders, list) else []
+
+
+def files_folders() -> list[str]:
+    """`[files] folders` — on a Satellite, the folders the agent may list, read
+    and send from (F9, D41). Decided on the laptop, never by the server.
+
+        [files]
+        folders = ["~/Documentos", "~/Downloads"]
+    """
+    raw = _user_config().get("files", {})
+    folders = raw.get("folders", []) if isinstance(raw, dict) else []
+    return [str(f) for f in folders if isinstance(f, str)] if isinstance(folders, list) else []

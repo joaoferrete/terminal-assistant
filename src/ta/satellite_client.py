@@ -56,6 +56,9 @@ class Satellite:
             log.warning("could not report the microphone: %s", type(e).__name__)
 
     async def act(self, action: dict) -> None:
+        if action.get("kind") == "files":
+            await self.answer_files(action)
+            return
         if action.get("kind") == "notify":
             await self.notifier.send(action.get("title", ""), action.get("body", ""),
                                      urgency=action.get("urgency", "normal"))
@@ -73,6 +76,21 @@ class Satellite:
                                              enable=bool(action.get("enable", True)))
         elif op == "set":
             await self.lighter.set(action["key"], action["value"])
+
+    async def answer_files(self, request: dict) -> None:
+        """The agent asked for a file (F9, D41). What may leave this machine is
+        decided here, from this machine's `[files] folders`."""
+        from .config import files_folders
+        from .satellite_files import handle
+
+        answer = await asyncio.to_thread(handle, request, files_folders())
+        try:
+            r = await self.http.post("/satellite/answer",
+                                     json={"id": request.get("id"), "answer": answer})
+            r.raise_for_status()
+        except httpx.HTTPError as e:
+            # The server gave up waiting, or went away: the agent already said so.
+            log.warning("could not answer a file request: %s", type(e).__name__)
 
     async def poll_once(self) -> int:
         r = await self.http.get("/satellite/actions", params={"wait": POLL_WAIT})

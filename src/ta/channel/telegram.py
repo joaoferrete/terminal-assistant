@@ -75,9 +75,10 @@ class TelegramChannel:
             await self._client.aclose()
             self._client = None
 
-    async def _call(self, method: str, payload: dict):
+    async def _call(self, method: str, payload: dict, files: dict | None = None):
         try:
-            r = await self._http().post(f"/{method}", json=payload)
+            r = await (self._http().post(f"/{method}", data=payload, files=files) if files
+                       else self._http().post(f"/{method}", json=payload))
         except httpx.HTTPError as e:
             raise ChannelError(f"telegram {method}: {type(e).__name__}") from None
         try:
@@ -199,6 +200,15 @@ class TelegramChannel:
             payload["reply_markup"] = {"inline_keyboard": [[
                 {"text": b.label, "callback_data": b.data} for b in buttons]]}
         sent = await self._call("sendMessage", payload)
+        return str(sent["message_id"]) if isinstance(sent, dict) and "message_id" in sent else None
+
+    async def send_document(self, conversation_id: str, filename: str, data: bytes,
+                            caption: str = "") -> str | None:
+        """A file from a Member's own computer (F9, D41), sent to their own chat."""
+        payload = {"chat_id": conversation_id}
+        if caption:
+            payload["caption"] = caption
+        sent = await self._call("sendDocument", payload, files={"document": (filename, data)})
         return str(sent["message_id"]) if isinstance(sent, dict) and "message_id" in sent else None
 
     async def reply(self, to: Inbound, text: str, buttons: list[Button] | None = None,

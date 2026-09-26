@@ -444,3 +444,79 @@ async def schedule_cancel(ctx: ToolContext, id: str) -> ToolResult:  # noqa: A00
     if not raw.isdigit() or not scheduled.cancel(ctx.conn, int(raw), ctx.turn.member_id):
         return ToolResult(text=f"no active scheduled action #{raw} of yours")
     return ToolResult(text=f"cancelled #{raw}", receipt={"summary": f"cancelled scheduled #{raw}"})
+
+
+# ── Files on the Member's own computer (F9, D41) ────────────────────────────
+def _state(ctx: ToolContext, name: str):
+    app = ctx.services.get("app")
+    return ctx.services.get(name) or (getattr(app.state, name, None) if app else None)
+
+
+async def _ask_computer(ctx: ToolContext, op: str, path: str) -> dict | str:
+    """Ask the asker's OWN Satellite. Returns its answer, or why there is none.
+
+    Only the asker's: D37 lets the Owner search every Satellite's index, but live
+    access to somebody's laptop is another thing, and was decided separately.
+    """
+    if ctx.turn.in_group:
+        return "files are private; ask in a private chat"
+    hub = _state(ctx, "hub")
+    if hub is None or not hub.connected(ctx.turn.member_id):
+        return "your computer is not connected right now (its Satellite is off or asleep)"
+    try:
+        answer = await hub.ask(ctx.turn.member_id, {"kind": "files", "op": op, "path": path})
+    except TimeoutError:
+        return "your computer did not answer; its Satellite may need updating"
+    return answer.get("error") or answer
+
+
+@tool(
+    description="List a folder on the asker's own computer, among the folders it shares. "
+    "Empty path lists the shared folders themselves.",
+    args={"path": "a folder as a previous listing showed it, or empty"},
+    # A file name is text somebody else may have chosen (a download, a clone).
+    third_party=True,
+)
+async def files_list(ctx: ToolContext, path: str = "") -> ToolResult:
+    answer = await _ask_computer(ctx, "list", path)
+    if isinstance(answer, str):
+        return ToolResult(text=answer)
+    entries = answer.get("entries", [])
+    lines = [f"{e['path']}{'/' if e.get('dir') else ''}"
+             + ("" if e.get("dir") else f" ({e.get('size', 0)} bytes)") for e in entries]
+    return ToolResult(text="\n".join(lines) or "(empty)")
+
+
+@tool(
+    description="Read a text file on the asker's own computer (notes, code, markdown, "
+    "config). For a PDF, an image or anything to keep, use files_send.",
+    args={"path": "the file, as files_list showed it"},
+    third_party=True,
+)
+async def files_read(ctx: ToolContext, path: str) -> ToolResult:
+    answer = await _ask_computer(ctx, "read", path)
+    if isinstance(answer, str):
+        return ToolResult(text=answer)
+    more = "\n[truncated]" if answer.get("truncated") else ""
+    return ToolResult(text=f"{answer['path']}:\n{answer['text']}{more}",
+                      sources=[Source("doc", answer["path"], answer["path"].rsplit("/", 1)[-1])])
+
+
+@tool(
+    description="Send a file from the asker's own computer to them, here in this chat",
+    args={"path": "the file, as files_list showed it"},
+)
+async def files_send(ctx: ToolContext, path: str) -> ToolResult:
+    import base64
+
+    channel = _state(ctx, "channel")
+    if channel is None or not hasattr(channel, "send_document"):
+        return ToolResult(text="this chat cannot receive files")
+    answer = await _ask_computer(ctx, "send", path)
+    if isinstance(answer, str):
+        return ToolResult(text=answer)
+    # To the conversation the asker is in, which in a private chat is theirs
+    # alone: `_ask_computer` already refused a group.
+    await channel.send_document(ctx.turn.conversation_id, answer["name"],
+                                base64.b64decode(answer["data"]))
+    return ToolResult(text=f"sent {answer['name']} to the member; it is in the chat now")
