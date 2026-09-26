@@ -244,6 +244,7 @@ MESSAGES: dict[str, dict[str, str]] = {
               "\n"
               "To go back to local-only access, remove TA_HOST from your .env.",
     },
+    "api.list_missing": {"pt": "essa lista não existe", "en": "that list does not exist"},
     "api.forbidden": {
         "pt": "Você não tem permissão para isso. Quem administra a casa define isso no config.",
         "en": "You are not allowed to do that. Whoever runs the house sets it in the config.",
@@ -310,6 +311,15 @@ MESSAGES: dict[str, dict[str, str]] = {
     "board.view.board": {"pt": "geral", "en": "board"},
     "board.view.list": {"pt": "lista", "en": "list"},
     "board.view.kanban": {"pt": "kanban", "en": "kanban"},
+    "board.view.lists": {"pt": "listas", "en": "lists"},
+    "board.scope.household": {"pt": "da casa", "en": "household"},
+    "board.scope.personal": {"pt": "sua", "en": "yours"},
+    "board.list_add": {"pt": "adicionar…", "en": "add…"},
+    "board.list_empty": {"pt": "nada aqui", "en": "nothing here"},
+    "board.lists_none": {
+        "pt": "Nenhuma lista ainda. Declare em [lists] no config.toml.",
+        "en": "No lists yet. Declare them under [lists] in config.toml.",
+    },
     "board.filter.area": {"pt": "todas as áreas", "en": "all areas"},
     "board.filter.type": {"pt": "todos os tipos", "en": "all types"},
     "board.filter.tag": {"pt": "todas as tags", "en": "all tags"},

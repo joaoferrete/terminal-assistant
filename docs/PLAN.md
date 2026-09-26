@@ -37,13 +37,14 @@ reverse are also ADRs, linked where they apply.
   5. `feat/board-link` — T1.7
   6. `docs/chatbot-guardrails` — D25–D33, ADR 0019, and F1 closed
   7. `feat/voice` — T2.1, T2.2
-  8. `feat/members` — T3.1–T3.4 (and the per-Member board session pulled from T6.4)
+  8. `feat/members` — T3.1–T3.5 (and the per-Member board session pulled from T6.4)
   The next task branches from the top of this list and is appended to it.
 - **F2 is closed** (2026-09-25). Voice notes are transcribed on the server at
   about 0.46× real time. The server runs `feat/voice`.
-- **Next agent action:** T3.5, the board's List view, which has to be **seen**
-  (`make demo`, then look: AGENTS §5). Then deploy F3 to the server, with the
-  user's yes, and close F3.
+- **Next agent action:** deploy F3 to the server, with the user's yes. Migration
+  9 runs there on the live database, and the daemon copies it first. Then the user
+  invites a first housemate in `[members]` and tries it, and F3 closes. After that,
+  F4: the agent.
 - **F8 interview:** before starting F8, not now. The user offered to run it now
   and agreed to wait: most of what it configures (Grants, Lists, house rules, the
   Digest) is still being built.
@@ -430,7 +431,7 @@ how `ta` is installed, configured or used also updates the README,
       tested.
 - [x] **T3.4 Pairing.** Invited usernames pair on first contact; the Owner is
       notified; groups allowlisted by chat id. Invariant 4 tested.
-- [ ] **T3.5 Board.** A List view outside the Horizon ordering. Look at it.
+- [x] **T3.5 Board.** A List view outside the Horizon ordering. Look at it.
 
 ### F4 — Agent, Tools, Receipts, groups
 
@@ -560,3 +561,5 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-25 | T3.2 | The read paths take `viewer` with **no default**, and `SYSTEM` is a distinct object, not `None`. A forgotten viewer raises TypeError instead of meaning "everyone" | 39 existing tests failed on purpose and were updated. The rewrite applied its regex twice (`viewer=SYSTEM, viewer=SYSTEM`), and lint caught it, as AGENTS §4 predicts |
 | 2026-09-25 | T3.3 | Grants reach further than the Tools of F4. The board and the CLI already switch the house, so a housemate's board could have turned off every light, or the ringlight | The home routes filter by the viewer's Grant: `off` with no target means "everything **you** may switch", and a target out of reach is a 403. Media and the ringlight are admin-only |
 | 2026-09-25 | T3.4 | Only household Lists can be declared in `[lists]`. A personal List belongs to one Member, and the config has no good way to say whose | Personal Lists are created from the chat or the board, in F4. A `personal` entry in `[lists]` is logged and ignored |
+| 2026-09-25 | T3.5 | Browser automation froze the tab on every **mouse click** (CDP screenshot timeouts), and the database showed no click ever reached the page. The same interactions, driven by JavaScript, worked, and fresh tabs rendered fine | Verified by screenshot at desktop width, and at 375 px by measurement (no horizontal overflow; filters and "review everything" hidden). Nothing in the board's code loops, so this is a tooling problem to remember, not a bug |
+| 2026-09-25 | T3.5 | List items would still have been reviewed, later: skipped at capture, but left in the backlog queue with `reviewed_at` NULL | They are marked reviewed at capture. A test checks the column |

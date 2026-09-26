@@ -251,6 +251,7 @@ def _note_json(n: store.Note, *, today: date | None = None) -> dict:
         "terminal": n.is_terminal,
         "tags": n.tags,
         "deleted_at": n.deleted_at,
+        "list_id": n.list_id,
         # Derived roles, made explicit so the client does not recompute the rule.
         "roles": {"task": n.is_task, "reminder": n.is_reminder},
     }
@@ -393,14 +394,22 @@ def _board_link(app: Starlette, cfg: Config, member_id: int = OWNER_ID) -> str |
     return f"{base.rstrip('/')}/board?code={app.state.board_codes.issue(member_id)}"
 
 
-def _capture(app: Starlette, raw: str, *, owner_id: int = OWNER_ID) -> store.Note:
+def _capture(
+    app: Starlette, raw: str, *, owner_id: int = OWNER_ID, list_id: int | None = None
+) -> store.Note:
     """Capture a Note: the one path shared by `POST /notes` and the bot.
 
     Review goes out in the background and the Note comes back now: capture never
     waits for the network (ADR 0003). Whatever it changes shows up on the board
     at the next reload.
     """
-    note = store.add_note(app.state.conn, raw, owner_id=owner_id)
+    note = store.add_note(app.state.conn, raw, owner_id=owner_id, list_id=list_id)
+    if list_id is not None:
+        # A List item is never reviewed: a model call so "leite" gains a deadline
+        # and a tag is cost with no use. Marking it reviewed is what keeps it out
+        # of the backlog queue too, not just out of this capture's review.
+        store.mark_reviewed(app.state.conn, note.id)
+        return note
     _schedule_review(app, note)
     return note
 
@@ -705,6 +714,9 @@ async def notes_list(request: Request) -> JSONResponse:
     notes = store.list_notes(
         request.app.state.conn, viewer=_viewer(request), include_done=include_done,
         deleted=deleted,
+        # List items live in the List view, outside the Horizon order (D7). The
+        # trash still shows them: recovering a deleted item happens there too.
+        in_lists=deleted,
     )
     # Display order comes from here, not from the client: the board's three
     # views, `ta list` and any other consumer get the same order without each
@@ -712,6 +724,35 @@ async def notes_list(request: Request) -> JSONResponse:
     reference_day = date.today()
     notes = store.by_urgency(notes, today=reference_day)
     return JSONResponse({"notes": [_note_json(n, today=reference_day) for n in notes]})
+
+
+async def lists_route(request: Request) -> JSONResponse:
+    """The Lists the viewer sees, with their open items (T3.5)."""
+    perms = _permissions(request)
+    return JSONResponse({"lists": [
+        {"id": lv.id, "name": lv.name, "scope": lv.scope,
+         # Whether the viewer may add to it: a household List needs the Grant,
+         # one's own personal List never does.
+         "writable": lv.scope == "personal" or perms.list_(lv.name),
+         "items": [_note_json(n) for n in lv.items]}
+        for lv in store.lists_for(request.app.state.conn, viewer=_viewer(request))
+    ]})
+
+
+async def list_add(request: Request) -> JSONResponse:
+    list_id = int(request.path_params["list_id"])
+    text = ((await request.json()).get("text") or "").strip()
+    if not text:
+        return JSONResponse({"error": i18n.t("api.empty_text")}, status_code=400)
+    viewer = _viewer(request)
+    lv = next((x for x in store.lists_for(request.app.state.conn, viewer=viewer)
+               if x.id == list_id), None)
+    if lv is None:
+        return JSONResponse({"error": i18n.t("api.list_missing")}, status_code=404)
+    if lv.scope == "household" and not _permissions(request).list_(lv.name):
+        return _forbidden()
+    note = _capture(request.app, text, owner_id=viewer.member_id, list_id=list_id)
+    return JSONResponse(_note_json(note), status_code=201)
 
 
 async def notes_delete(request: Request) -> JSONResponse:
@@ -1406,6 +1447,8 @@ def create_app(
             Route("/health", health),
             Route("/notes", notes_create, methods=["POST"]),
             Route("/notes", notes_list, methods=["GET"]),
+            Route("/lists", lists_route),
+            Route("/lists/{list_id:int}/items", list_add, methods=["POST"]),
             Route("/notes/{note_id:int}/move", notes_move, methods=["POST"]),
             Route("/notes/{note_id:int}/done", notes_done, methods=["POST"]),
             Route("/notes/{note_id:int}/status", notes_status, methods=["POST"]),

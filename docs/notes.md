@@ -121,15 +121,28 @@ It refreshes itself every 15 seconds — but **not** while you are dragging, and
 **not** while there is text in the capture field, because a reload rebuilds the
 DOM and would eat what you are typing.
 
-### Three views
+### Four views
 
 | View | For | What dragging does |
 |---|---|---|
 | **board** | free-form. A note stays where your hand left it | changes its **position** |
 | **list** | everything in order, with a divider per band | — (use the status selector) |
 | **kanban** | five columns by status; ordered by urgency inside each | changes its **status** |
+| **lists** | one card per List (shopping and the like), with a box to tick and a field to add | — |
 
 The chosen view survives a reload.
+
+### Lists
+
+A List is a named collection, like the household's shopping list. Its items are
+notes, but they live **only** in the lists view. They have no deadline to be
+ordered by, and a shopping list would crowd everything else off the board. They
+are also never sent for review: a model call so "milk" gains a tag would be cost
+with no use. Ticking an item marks it done and takes it off the List.
+
+Household Lists are declared in `config.toml` (see
+[configuration.md](configuration.md)). Everyone in the house sees them. Adding to
+one takes a Grant that names it, and the add field only shows up when you can.
 
 ![Kanban](img/kanban.jpg)
 

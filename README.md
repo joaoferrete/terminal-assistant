@@ -95,7 +95,7 @@ Every fact has exactly one home. Start wherever your question is.
 
 | Per feature | |
 |---|---|
-| [Notes and the board](docs/notes.md) | Capture syntax, roles, ordering, the three views |
+| [Notes and the board](docs/notes.md) | Capture syntax, roles, ordering, the four views, Lists |
 | [Home Assistant](docs/home-assistant.md) | From zero: token, entities, aliases, the traps |
 | [Calendar](docs/calendar.md) | Online Accounts, typelibs, the dedicated calendar |
 | [AI](docs/ai.md) | What it adds, what it costs, how to turn it off |

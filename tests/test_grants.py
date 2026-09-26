@@ -214,3 +214,38 @@ def test_a_group_outside_the_allowlist_is_ignored(house_bot):
     sent = len(b.channel.sent)
     asyncio.run(b.handle(inbound("oi grupo", private=False)))
     assert len(b.channel.sent) == sent and b.captured == []
+
+
+# ── Lists (T3.5) ────────────────────────────────────────────────────────────
+def test_list_items_stay_out_of_the_horizon_views_and_out_of_review(tmp_path):
+    """D7: "leite" has no deadline to be sorted by, and costs no model call."""
+    with TestClient(build(tmp_path)) as c:
+        compras = c.get("/lists").json()["lists"][0]
+        assert compras["name"] == "compras" and compras["writable"]
+        assert c.post(f"/lists/{compras['id']}/items", json={"text": "leite"}).status_code == 201
+        c.post("/notes", json={"text": "revisar PR"})
+
+        texts = [n["text"] for n in c.get("/notes").json()["notes"]]
+        assert texts == ["revisar PR"], "the List item is not in the general views"
+        items = c.get("/lists").json()["lists"][0]["items"]
+        assert [i["text"] for i in items] == ["leite"]
+    conn = db.connect(tmp_path / "t.db")
+    reviewed = conn.execute("SELECT reviewed_at FROM notes WHERE text = 'leite'").fetchone()[0]
+    assert reviewed is not None, "marked reviewed, so the backlog queue skips it too"
+
+
+def test_a_housemate_without_the_list_grant_sees_it_but_cannot_add(ana, tmp_path):
+    c, _ = ana
+    lists = c.get("/lists").json()["lists"]
+    assert [lst["name"] for lst in lists] == ["compras"], "household Lists are everyone's to see"
+    assert lists[0]["writable"] is False, "her Grant names no List"
+    r = c.post(f"/lists/{lists[0]['id']}/items", json={"text": "chocolate"})
+    assert r.status_code == 403
+
+
+def test_checking_an_item_takes_it_off_the_list(tmp_path):
+    with TestClient(build(tmp_path)) as c:
+        lid = c.get("/lists").json()["lists"][0]["id"]
+        item = c.post(f"/lists/{lid}/items", json={"text": "pão"}).json()
+        c.post(f"/notes/{item['id']}/done")
+        assert c.get("/lists").json()["lists"][0]["items"] == []

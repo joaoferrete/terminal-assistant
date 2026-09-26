@@ -133,6 +133,7 @@ def add_note(
     *,
     now: datetime | None = None,
     owner_id: int = OWNER_ID,
+    list_id: int | None = None,
 ) -> Note:
     """Capture a Note. Deterministic, no network (ADR 0003).
 
@@ -150,8 +151,9 @@ def add_note(
         cur = conn.execute(
             """
             INSERT INTO notes (text, created_at, due, remind_at, priority, sort_key,
-                               priority_by_user, tags_by_user, owner_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                               priority_by_user, tags_by_user, owner_id, list_id,
+                               list_by_user)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 p.text,
@@ -165,6 +167,9 @@ def add_note(
                 1 if p.priority else 0,
                 1 if p.tags else 0,
                 owner_id,
+                list_id,
+                # Put in a List by a person, so the model never moves it out.
+                1 if list_id is not None else 0,
             ),
         )
         note_id = cur.lastrowid
@@ -193,7 +198,12 @@ def get_note(conn: sqlite3.Connection, note_id: int, *, viewer) -> Note:
 
 
 def list_notes(
-    conn: sqlite3.Connection, *, viewer, include_done: bool = False, deleted: bool = False
+    conn: sqlite3.Connection,
+    *,
+    viewer,
+    include_done: bool = False,
+    deleted: bool = False,
+    in_lists: bool = True,
 ) -> list[Note]:
     """List the Notes. By default hides the terminal and the deleted ones.
 
@@ -202,6 +212,8 @@ def list_notes(
     """
     scope, params = _scope(viewer)
     where = [scope, "deleted_at IS NOT NULL" if deleted else "deleted_at IS NULL"]
+    if not in_lists:
+        where.append("list_id IS NULL")
     if not include_done and not deleted:
         where.append(f"status NOT IN ({','.join('?' * len(TERMINAL_STATUSES))})")
         params += list(TERMINAL_STATUSES)
@@ -559,3 +571,36 @@ def export_markdown(conn: sqlite3.Connection, *, viewer) -> str:
         suffix = f"  _({', '.join(bits)})_" if bits else ""
         lines.append(f"- {box} {n.text}{suffix}")
     return "\n".join(lines) + "\n"
+
+
+@dataclass
+class ListView:
+    id: int
+    name: str
+    scope: str
+    items: list[Note]
+
+
+def lists_for(conn: sqlite3.Connection, *, viewer) -> list[ListView]:
+    """The Lists `viewer` may see — the household's and their own — with their
+    open items, in capture order.
+
+    Lists sit outside the Horizon ordering (D7): "leite" has no deadline to sort
+    by, and ordering a shopping list by urgency would be noise.
+    """
+    if not isinstance(viewer, Viewer):
+        raise TypeError(f"a read needs a Viewer, got {viewer!r}")
+    params: list = []
+    where = "scope = 'household'"
+    if not viewer.in_group:
+        where += " OR (scope = 'personal' AND owner_id = ?)"
+        params.append(viewer.member_id)
+    out = []
+    for r in conn.execute(f"SELECT * FROM lists WHERE {where} ORDER BY name", params):
+        rows = conn.execute(
+            "SELECT * FROM notes WHERE list_id = ? AND deleted_at IS NULL"
+            f" AND status NOT IN ({','.join('?' * len(TERMINAL_STATUSES))}) ORDER BY id",
+            (r["id"], *TERMINAL_STATUSES),
+        ).fetchall()
+        out.append(ListView(r["id"], r["name"], r["scope"], [_row_to_note(x, []) for x in rows]))
+    return out

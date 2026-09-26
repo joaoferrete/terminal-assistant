@@ -58,6 +58,10 @@ NOTES = [
 ]
 
 
+LIST_ITEMS = ["Milk", "Coffee beans", "Dish soap", "A very long item name that has to wrap "
+              "inside its card instead of pushing the layout sideways"]
+
+
 def seed(db_path: Path) -> int:
     conn = connect(db_path)
     for i, (text, due, status, prio, tags) in enumerate(NOTES):
@@ -80,6 +84,17 @@ def seed(db_path: Path) -> int:
     # grid — and because the stored position is the mechanism that makes the hand
     # beat the model.
     move_note(conn, 3, pos_x=48, pos_y=430)
+
+    # A household List with items, so the Lists view has something to show. It
+    # is created here rather than left to the boot sync, because the demo must
+    # not depend on whatever the person running it has in their config.toml.
+    now = datetime.now().isoformat(timespec="seconds")
+    cur = conn.execute(
+        "INSERT INTO lists (name, scope, owner_id, created_at)"
+        " VALUES ('groceries', 'household', 1, ?)", (now,)
+    )
+    for item in LIST_ITEMS:
+        add_note(conn, item, list_id=cur.lastrowid)
     total = conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
     conn.close()
     return total

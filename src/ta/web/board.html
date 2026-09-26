@@ -189,6 +189,26 @@
     font-size: .85rem; white-space: pre-line;
   }
 
+  /* Lists (T3.5): one card per List, outside the Horizon order (D7). The
+     filters are for notes by area, type and tag; on Lists they would filter
+     nothing and look broken, so they leave the header. */
+  body.view-lists .filters { display: none; }
+  /* List items are never reviewed (T3.5), so "review everything" does nothing here. */
+  body.view-lists #review { display: none !important; }
+  #board.lists { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+                 gap: 1rem; padding: 1rem; align-items: start; }
+  .list-card { background: var(--panel); border-radius: 10px; padding: .8rem .9rem;
+               box-shadow: 0 2px 8px var(--shadow); min-width: 0; }
+  .list-card h2 { font-size: .95rem; margin: 0 0 .5rem; display: flex; gap: .5rem;
+                  align-items: baseline; justify-content: space-between; }
+  .list-card h2 .scope { font-size: .7rem; font-weight: 500; color: var(--muted); }
+  .list-card ul { list-style: none; margin: 0; padding: 0; }
+  .list-card li { display: flex; gap: .5rem; align-items: flex-start; padding: .25rem 0;
+                  overflow-wrap: anywhere; }
+  .list-card li input { margin-top: .2rem; flex: 0 0 auto; }
+  .list-card .none { color: var(--muted); font-size: .85rem; padding: .25rem 0; }
+  .list-card .add { width: 100%; box-sizing: border-box; margin-top: .5rem; }
+
   @media (max-width: 720px) {
     /* Free positioning is hostile on a phone: the free-form view falls to flow. */
     #board.board { display: flex; flex-direction: column; gap: .8rem; }
@@ -203,6 +223,7 @@
     <button data-view="board"></button>
     <button data-view="list"></button>
     <button data-view="kanban"></button>
+    <button data-view="lists"></button>
   </div>
   <div class="filters">
     <select id="fArea" data-i18n-title="board.title_filter_area">
@@ -387,7 +408,7 @@ const btnEmptyTrash = document.getElementById("emptyTrash");
 // not catch it, because an old string is truthy. The result would be
 // `renderers["geral"]` undefined: a blank board with no visible error, for
 // exactly the people who already used it.
-const VIEWS = ["board", "list", "kanban"];
+const VIEWS = ["board", "list", "kanban", "lists"];
 let view = VIEWS.includes(localStorage.getItem("ta.view"))
   ? localStorage.getItem("ta.view")
   : "board";
@@ -401,6 +422,7 @@ window.addEventListener("hashchange", () => {
   load();
 });
 let allNotes = [];   // what came from the API
+let allLists = [];   // the Lists view's data, from `/lists`
 let notes = [];      // what the renderers draw: `allNotes`, filtered
 let staleDaemon = false;   // Python routes older than this HTML (see `load`)
 // The `localStorage` KEYS keep their Portuguese names: they are stored state, and
@@ -481,6 +503,11 @@ const api = async (method, path, body) => {
 const wantsAll = () => view !== "board" || showDone.checked;
 
 const load = async () => {
+  if (view === "lists" && !trash) {
+    allLists = (await api("GET", "/lists")).lists;
+    render();
+    return;
+  }
   const q = trash ? "?deleted=1" : (wantsAll() ? "?done=1" : "");
   allNotes = (await api("GET", `/notes${q}`)).notes;
   // The order of the notes comes from the server (ADR 0010). Against an old
@@ -684,6 +711,69 @@ const renderList = () => {
       if (band) divider(HORIZON_LABEL[band] || band);
     }
     boardEl.appendChild(noteEl(n, { withStatusSelect: true, withSwatches: false }));
+  });
+};
+
+// ── Lists view (T3.5) ──────────────────────────────────────────────────────
+// Every string goes through `textContent`: item text is what somebody typed, and
+// a household List shows other people's words.
+const renderLists = () => {
+  if (!allLists.length) {
+    boardEl.innerHTML = `<div class="empty">${tr("board.lists_none")}</div>`;
+    return;
+  }
+  allLists.forEach(l => {
+    const card = document.createElement("section");
+    card.className = "list-card";
+    const h = document.createElement("h2");
+    const name = document.createElement("span");
+    name.textContent = l.name;
+    const scope = document.createElement("span");
+    scope.className = "scope";
+    scope.textContent = tr(`board.scope.${l.scope}`);
+    h.append(name, scope);
+    card.appendChild(h);
+
+    const ul = document.createElement("ul");
+    l.items.forEach(n => {
+      const li = document.createElement("li");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.setAttribute("aria-label", n.text);
+      box.addEventListener("change", async () => {
+        box.disabled = true;
+        try { await api("POST", `/notes/${n.id}/done`); await load(); }
+        catch (err) { box.disabled = false; box.checked = false; warn(err.message); }
+      });
+      const text = document.createElement("span");
+      text.textContent = n.text;
+      li.append(box, text);
+      ul.appendChild(li);
+    });
+    if (!l.items.length) {
+      const none = document.createElement("li");
+      none.className = "none";
+      none.textContent = tr("board.list_empty");
+      ul.appendChild(none);
+    }
+    card.appendChild(ul);
+
+    // Only where the viewer's Grant allows adding (D12): an input that 403s on
+    // Enter would read as a broken board.
+    if (l.writable) {
+      const add = document.createElement("input");
+      add.className = "add";
+      add.placeholder = tr("board.list_add");
+      add.addEventListener("keydown", async (e) => {
+        if (e.key !== "Enter" || !add.value.trim()) return;
+        const text = add.value;
+        add.value = "";
+        try { await api("POST", `/lists/${l.id}/items`, { text }); await load(); }
+        catch (err) { add.value = text; warn(err.message); }   // never swallow what was typed
+      });
+      card.appendChild(add);
+    }
+    boardEl.appendChild(card);
   });
 };
 
@@ -955,6 +1045,13 @@ const draw = () => {
     ? (filtering ? `${notes.length} / ${allNotes.length}` : `${notes.length} ${tr("board.counter")}`)
     : "";
   [...viewsEl.children].forEach(b => b.setAttribute("aria-pressed", b.dataset.view === view));
+
+  if (view === "lists" && !trash) {
+    const items = allLists.reduce((sum, l) => sum + l.items.length, 0);
+    countEl.textContent = items ? `${items} ${tr("board.counter")}` : "";
+    renderLists();
+    return;
+  }
 
   if (!notes.length && trash) {
     // The em dash separates the two sentences: without it they ran together and

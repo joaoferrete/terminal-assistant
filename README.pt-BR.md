@@ -84,7 +84,7 @@ Está em inglês, e é onde estão as respostas de verdade:
 | [Configuração](docs/configuration.md) | Toda variável e chave |
 | [Quando não funciona](docs/troubleshooting.md) | Sintoma → causa → conserto |
 | [Home Assistant](docs/home-assistant.md) | Do zero: token, entities, apelidos, armadilhas |
-| [Notas e mural](docs/notes.md) | Sintaxe de captura, papéis, ordem, as três visões |
+| [Notas e mural](docs/notes.md) | Sintaxe de captura, papéis, ordem, as quatro visões, Lists |
 | [Automações](docs/automations.md) | O motor de regras e seis receitas |
 | [IA](docs/ai.md) | O que acrescenta, o que custa, como desligar |
 
