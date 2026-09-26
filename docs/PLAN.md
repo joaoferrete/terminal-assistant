@@ -443,10 +443,10 @@ how `ta` is installed, configured or used also updates the README,
 - [x] **T4.1 `@tool`.** Decorator and loader for `~/.config/ta/tools/`, loading
       each file in isolation like `engine.load_rules`. Metadata: Grant, destructive,
       description, argument schema.
-- [ ] **T4.2 Built-in Tools.** Home (over `actuators/home.py`, Grant-checked),
+- [x] **T4.2 Built-in Tools.** Home (over `actuators/home.py`, Grant-checked),
       List add/remove/show, Note search (FTS5 migration over Notes and memory),
       memory search, Persona get/set, and the Satellite's Lighter (once F6 exists).
-- [ ] **T4.3 Pre-router and agent loop.** Slash commands and the home grammar
+- [x] **T4.3 Pre-router and agent loop.** Slash commands and the home grammar
       already in `cli.py`/`config.resolve_targets` resolve with no model. The rest
       goes to tool calling on the routed provider. Timeout or failure → capture.
       Invariant 1 tested with every provider down.
@@ -575,3 +575,5 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T4.3 | Voice transcripts now go through the agent too, not straight to capture. That is D34: a spoken question gets an answer | The bot shows "🎤 “…”" first, so a wrong transcript is visible before the answer to it |
 | 2026-09-26 | T4.4 | "What did you do here?" by pattern matching would be fragile and tied to one language | When a message replies to another, that message's Receipts go into the agent's context as data, and the agent answers from what was actually recorded. A reply can quote the Member's message or the bot's answer, so a Receipt keeps both ids |
 | 2026-09-26 | T4.4 | A confirmation button proposed before a Grant was revoked could still run the action | Permissions are read again when the button is pressed, and only the Member the Receipt belongs to may press it. Both are tested |
+| 2026-09-26 | T4.3 | A switching verb alone does not mean the house. "Apaga aquela nota" starts like "apaga a luz", and "ligar pro dentista" is a phone call | The pre-router's match is only a candidate. It acts only if the target resolves to something the asker may switch; otherwise the message goes to the agent. Tested both ways |
+| 2026-09-26 | T4.2 | `home_off` of several entities has no undo. Some of them may have been off already, and "turn them all back on" would light up what nobody had lit | Undo is offered for a single Entity, and for any `home_on`, whose targets were all turned on by it |

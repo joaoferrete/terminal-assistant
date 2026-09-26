@@ -27,7 +27,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import agent as agent_mod
-from . import i18n, memory, receipts, store
+from . import builtin_tools, i18n, memory, prerouter, receipts, store
 from . import members as members_mod
 from .builtin_tools import ToolContext
 from .channel import Button, Channel, ChannelError, Inbound
@@ -268,6 +268,8 @@ class Bot:
             return
 
         deps = self.agent
+        if await self._prerouted(msg, member_id, text):
+            return
         turn = Turn(member_id=member_id, conversation_id=msg.conversation_id,
                     in_group=not msg.private, permissions=deps.permissions(member_id))
         ctx = ToolContext(conn=self.conn, turn=turn, channel=msg.channel,
@@ -321,6 +323,35 @@ class Bot:
         if cited := agent_mod.format_sources(reply.sources):
             parts.append(cited)
         await self._say(msg, "\n\n".join(parts), buttons or None, rids)
+
+    async def _prerouted(self, msg: Inbound, member_id: int, text: str) -> bool:
+        """Switching the house with no model (D9). True if it was handled."""
+        route = prerouter.home(text)
+        if route is None:
+            return False
+        name, target = route
+        chosen = self.agent.registry().get(name)
+        if chosen is None:
+            return False
+        turn, ctx = self._turn(msg, member_id)
+        try:
+            # Only a target that resolves to something this Member may switch;
+            # otherwise it was not about the house, and the agent takes it.
+            if not await builtin_tools._targets(ctx, target):
+                return False
+            result = await run_tool(chosen, turn, ctx, {"target": target})
+        except Exception as e:   # Home Assistant down: let the agent say so, or capture
+            log.warning("pre-routed %s failed: %s", name, e)
+            return False
+        rids, buttons = [], None
+        for done in turn.receipts:
+            rid = self._receipt(msg, member_id, tool=done["tool"], summary=done["summary"],
+                                undo=done.get("undo"))
+            rids.append(rid)
+            if done.get("undo"):
+                buttons = [Button(t("bot.btn_undo"), f"undo:{rid}")]
+        await self._say(msg, t("bot.home_done", what=result.text), buttons, rids)
+        return True
 
     def _propose(self, msg: Inbound, member_id: int, pending) -> tuple[int, str]:
         """Store an action waiting for the asker's button (D27) and describe it."""

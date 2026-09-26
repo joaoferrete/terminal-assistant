@@ -385,7 +385,14 @@ def _agent_deps(app: Starlette) -> AgentDeps:
         llm=app.state.llm,
         registry=tools_mod.registered,
         permissions=lambda member_id: _member_permissions(app.state.conn, member_id),
-        services={"app": app},
+        services={
+            "app": app,
+            # The one capture path, so a List item added by the agent is born
+            # like one added on the board (not reviewed, marked as such).
+            "capture": lambda raw, owner_id=OWNER_ID, list_id=None: _capture(
+                app, raw, owner_id=owner_id, list_id=list_id),
+        },
+        persona=lambda member_id: builtin_tools.persona_line(app.state.conn, member_id),
     )
 
 

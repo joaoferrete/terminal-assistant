@@ -92,3 +92,123 @@ async def list_show(ctx: ToolContext, list: str = "") -> ToolResult:  # noqa: A0
         sources=[Source("note", str(n.id), _quote(n.text)[:60]) for n in lv.items],
         tainted=any(n.owner_id != ctx.turn.member_id for n in lv.items),
     )
+
+
+# ── Acting Tools (F4, T4.2) ─────────────────────────────────────────────────
+# Each one checks the asker's Grant per argument, because only it knows which
+# Entity or List an argument names, and each returns the Receipt with its undo.
+
+def _home(ctx: ToolContext):
+    app = ctx.services.get("app")
+    return app.state.home if app is not None else ctx.services.get("home")
+
+
+async def _targets(ctx: ToolContext, target: str) -> list[str]:
+    from .config import resolve_targets
+
+    found = resolve_targets(target.strip() or "luz", await _home(ctx).entities("light.", "switch."))
+    return [e for e in found if ctx.turn.permissions.entity(e)]
+
+
+@tool(
+    description="Turn on lights or plugs: a room, a name, a group like 'luz', or an entity_id",
+    args={"target": "what to turn on", "brightness": "0-100 for lights, or empty for full"},
+    grant="home",
+    changes_state=True,
+)
+async def home_on(ctx: ToolContext, target: str, brightness: str = "") -> ToolResult:
+    entities = await _targets(ctx, target)
+    if not entities:
+        return ToolResult(text=f"nothing you may switch matches {target!r}")
+    level = int(brightness) if str(brightness).strip().isdigit() else 100
+    for e in entities:
+        await _home(ctx).switch_on(e, level)
+    return ToolResult(
+        text="turned on: " + ", ".join(entities),
+        receipt={"summary": "turned on " + ", ".join(entities),
+                 "undo": {"tool": "home_off", "args": {"target": ",".join(entities)}}},
+    )
+
+
+@tool(
+    description="Turn off lights or plugs: a room, a name, a group like 'luz', or an entity_id",
+    args={"target": "what to turn off; 'tudo' for everything the asker may switch"},
+    grant="home",
+    changes_state=True,
+)
+async def home_off(ctx: ToolContext, target: str) -> ToolResult:
+    # An undo of home_on hands back a comma-separated list of entity_ids.
+    if "," in target:
+        entities = [e for e in target.split(",") if ctx.turn.permissions.entity(e)]
+    else:
+        entities = await _targets(ctx, target)
+    if not entities:
+        return ToolResult(text=f"nothing you may switch matches {target!r}")
+    for e in entities:
+        await _home(ctx).turn_off(e)
+    return ToolResult(
+        text="turned off: " + ", ".join(entities),
+        receipt={"summary": "turned off " + ", ".join(entities),
+                 "undo": {"tool": "home_on", "args": {"target": ",".join(entities)}}
+                 if len(entities) == 1 else None},
+    )
+
+
+@tool(
+    description="Add an item to a List (shopping and the like)",
+    args={"list": "the List's name", "item": "what to add"},
+    grant="lists",
+    changes_state=True,
+)
+async def list_add(ctx: ToolContext, list: str, item: str) -> ToolResult:  # noqa: A002
+    lv = next((x for x in store.lists_for(ctx.conn, viewer=ctx.viewer)
+               if x.name.lower() == list.strip().lower()), None)
+    if lv is None:
+        return ToolResult(text=f"no List named {list!r}")
+    if lv.scope == "household" and not ctx.turn.permissions.list_(lv.name):
+        return ToolResult(text=f"you may not add to {lv.name}")
+    capture = ctx.services.get("capture")
+    note = (capture(item.strip(), owner_id=ctx.turn.member_id, list_id=lv.id) if capture
+            else store.add_note(ctx.conn, item.strip(), owner_id=ctx.turn.member_id,
+                                list_id=lv.id))
+    return ToolResult(
+        text=f"added to {lv.name}: {item.strip()} (#{note.id})",
+        receipt={"summary": f"added #{note.id} to {lv.name}",
+                 "undo": {"kind": "delete_note", "note_id": note.id}},
+    )
+
+
+@tool(
+    description="Remember how to address this member: a name to call them, and a tone",
+    args={"name": "what to call them, or empty to keep", "tone": "how to talk, or empty"},
+    changes_state=True,
+)
+async def persona_set(ctx: ToolContext, name: str = "", tone: str = "") -> ToolResult:
+    import json
+
+    row = ctx.conn.execute("SELECT persona FROM members WHERE id = ?",
+                           (ctx.turn.member_id,)).fetchone()
+    persona = json.loads(row[0]) if row and row[0] else {}
+    if name.strip():
+        persona["name"] = name.strip()
+    if tone.strip():
+        persona["tone"] = tone.strip()
+    ctx.conn.execute("UPDATE members SET persona = ? WHERE id = ?",
+                     (json.dumps(persona, ensure_ascii=False), ctx.turn.member_id))
+    return ToolResult(text=f"persona now: {persona}",
+                      receipt={"summary": f"persona set to {persona}"})
+
+
+def persona_line(conn, member_id: int) -> str:
+    """The Persona as a line for the agent's system prompt (D13): it belongs to
+    the Member and applies in every conversation."""
+    import json
+
+    row = conn.execute("SELECT persona FROM members WHERE id = ?", (member_id,)).fetchone()
+    p = json.loads(row[0]) if row and row[0] else {}
+    bits = []
+    if p.get("name"):
+        bits.append(f"call them {p['name']}")
+    if p.get("tone"):
+        bits.append(f"tone: {p['tone']}")
+    return "; ".join(bits)

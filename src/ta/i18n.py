@@ -424,6 +424,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     "bot.cancelled": {"pt": "Cancelado.", "en": "Cancelled."},
     "bot.undone": {"pt": "Desfeito.", "en": "Undone."},
     "bot.stale": {"pt": "Isso já foi resolvido.", "en": "That was already settled."},
+    "bot.home_done": {"pt": "Feito · {what}", "en": "Done · {what}"},
     "agent.sources": {"pt": "Fontes: {list}", "en": "Sources: {list}"},
     "bot.hello": {
         "pt": "Oi! Tudo o que você mandar aqui vira nota.",
