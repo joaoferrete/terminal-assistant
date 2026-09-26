@@ -473,7 +473,7 @@ class Bot:
             # otherwise it was not about the house, and the agent takes it.
             if not await builtin_tools._targets(ctx, target):
                 return False
-            result = await run_tool(chosen, turn, ctx, {"target": target})
+            await run_tool(chosen, turn, ctx, {"target": target})
         except Exception as e:   # Home Assistant down: let the agent say so, or capture
             log.warning("pre-routed %s failed: %s", name, e)
             return False
@@ -484,7 +484,14 @@ class Bot:
             rids.append(rid)
             if done.get("undo"):
                 buttons = [Button(t("bot.btn_undo"), f"undo:{rid}")]
-        await self._say(msg, t("bot.home_done", what=result.text), buttons, rids)
+        # The Tool's own text is written for the model, in English. What the Member
+        # reads comes from the catalogue (AGENTS §1): the first real run showed
+        # "Feito · turned on: light.sala" on the phone.
+        switched = [e for done in turn.receipts for e in done.get("entities", [])]
+        if not switched:
+            return False
+        key = "bot.home_on_done" if name == "home_on" else "bot.home_off_done"
+        await self._say(msg, t(key, what=", ".join(switched)), buttons, rids)
         return True
 
     def _propose(self, msg: Inbound, member_id: int, pending) -> tuple[int, str]:
@@ -588,7 +595,14 @@ class Bot:
         undo = (result.receipt or {}).get("undo")
         receipts.set_undo(self.conn, r.id, undo)
         buttons = [Button(t("bot.btn_undo"), f"undo:{r.id}")] if undo else None
-        await self._say(msg, result.text, buttons, [r.id])
+        # Not `result.text`: that is written for the model, in English.
+        switched = (result.receipt or {}).get("entities")
+        if switched:
+            key = "bot.home_on_done" if r.tool == "home_on" else "bot.home_off_done"
+            done = t(key, what=", ".join(switched))
+        else:
+            done = t("bot.done")
+        await self._say(msg, done, buttons, [r.id])
 
     async def _undo(self, msg: Inbound, member_id: int, r) -> None:
         u = r.undo or {}

@@ -113,6 +113,8 @@ def test_apaga_a_luz_needs_no_model(bot):
     asyncio.run(b.handle(inbound("apaga a luz da sala")))
     assert b.home.turned_off == ["light.sala"]
     assert b.llm.prompts == []
+    assert "turned" not in b.channel.sent[-1], "the reply comes from the catalogue, not the Tool"
+    assert "light.sala" in b.channel.sent[-1]
     assert b.channel.buttons[-1][0].data.startswith("undo:")
 
 

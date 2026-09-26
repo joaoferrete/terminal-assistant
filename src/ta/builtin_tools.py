@@ -125,7 +125,7 @@ async def home_on(ctx: ToolContext, target: str, brightness: str = "") -> ToolRe
         await _home(ctx).switch_on(e, level)
     return ToolResult(
         text="turned on: " + ", ".join(entities),
-        receipt={"summary": "turned on " + ", ".join(entities),
+        receipt={"summary": "turned on " + ", ".join(entities), "entities": entities,
                  "undo": {"tool": "home_off", "args": {"target": ",".join(entities)}}},
     )
 
@@ -148,7 +148,7 @@ async def home_off(ctx: ToolContext, target: str) -> ToolResult:
         await _home(ctx).turn_off(e)
     return ToolResult(
         text="turned off: " + ", ".join(entities),
-        receipt={"summary": "turned off " + ", ".join(entities),
+        receipt={"summary": "turned off " + ", ".join(entities), "entities": entities,
                  "undo": {"tool": "home_on", "args": {"target": ",".join(entities)}}
                  if len(entities) == 1 else None},
     )

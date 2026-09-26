@@ -428,7 +428,9 @@ MESSAGES: dict[str, dict[str, str]] = {
     "bot.cancelled": {"pt": "Cancelado.", "en": "Cancelled."},
     "bot.undone": {"pt": "Desfeito.", "en": "Undone."},
     "bot.stale": {"pt": "Isso já foi resolvido.", "en": "That was already settled."},
-    "bot.home_done": {"pt": "Feito · {what}", "en": "Done · {what}"},
+    "bot.done": {"pt": "Feito.", "en": "Done."},
+    "bot.home_on_done": {"pt": "Feito · ligado: {what}", "en": "Done · on: {what}"},
+    "bot.home_off_done": {"pt": "Feito · desligado: {what}", "en": "Done · off: {what}"},
     "bot.budget_spent": {
         "pt": "{line}\n(o limite de uso do chat por hoje acabou, então só anotei)",
         "en": "{line}\n(today's chat budget is spent, so I only noted it)",
