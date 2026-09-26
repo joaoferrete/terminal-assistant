@@ -193,7 +193,20 @@ def _voice(_: Config) -> Capability:
     )
 
 
-PROBES = (_notes, _calendar, _mic, _home, _lighter, _ai, _telegram, _voice)
+def _gcal(cfg: Config) -> Capability:
+    # The OAuth client only: which Members connected an account is theirs to do
+    # from the chat, and not a property of this machine.
+    ok = bool(cfg.google_client_id and cfg.google_client_secret)
+    return Capability(
+        key="gcal",
+        label=t("cap.gcal"),
+        ok=ok,
+        reason="" if ok else "GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are not set",
+        fix="" if ok else "optional. Create an OAuth client in Google Cloud (docs/calendar.md)",
+    )
+
+
+PROBES = (_notes, _calendar, _mic, _home, _lighter, _ai, _telegram, _voice, _gcal)
 
 
 def inspect(cfg: Config | None = None) -> list[Capability]:

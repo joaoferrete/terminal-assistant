@@ -74,6 +74,12 @@ def pair_owner(conn: sqlite3.Connection, msg: Inbound, *, now: datetime | None =
     pair(conn, msg, OWNER_ID, now=now)
 
 
+def _looks_pasted(text: str) -> bool:
+    from .sensors.google_calendar import Connector
+
+    return Connector.looks_pasted(text)
+
+
 def _identity_of(conn: sqlite3.Connection, channel: str, member_id: int) -> str | None:
     row = conn.execute(
         "SELECT external_id FROM channel_identities WHERE channel = ? AND member_id = ?",
@@ -132,6 +138,7 @@ class Bot:
         transcriber: Transcriber | None = None,
         audio_dir: Path | None = None,
         agent: AgentDeps | None = None,
+        calendar_link=None,
     ) -> None:
         self.conn = conn
         self.channel = channel
@@ -147,6 +154,9 @@ class Bot:
         self.board_link = board_link
         self.transcriber = transcriber
         self.agent = agent
+        # Connecting a Google account from the chat (D14): the link out, the
+        # pasted redirect back. None when there is no OAuth client configured.
+        self.calendar_link = calendar_link
         # Where audio that could not be transcribed is kept, so nothing said is
         # lost (invariant 1). None keeps nothing, which is what tests want.
         self.audio_dir = audio_dir
@@ -250,6 +260,8 @@ class Bot:
             if command == "/start":
                 if not just_paired:
                     await self.channel.reply(msg, t("bot.hello"))
+            elif command in ("/conectar_agenda", "/connect_calendar"):
+                await self._connect_calendar(msg, member_id)
             elif command == "/board":
                 url = self.board_link(member_id)
                 await self.channel.reply(
@@ -259,7 +271,33 @@ class Bot:
                 await self.channel.reply(msg, t("bot.unknown_command"))
             return
 
+        # The pasted consent redirect is a credential, not a thought: it is never
+        # captured, never remembered, never sent to a model.
+        if self.calendar_link is not None and _looks_pasted(text):
+            await self._finish_calendar(msg, member_id, text)
+            return
+
         await self._text(msg, member_id, text)
+
+    async def _connect_calendar(self, msg: Inbound, member_id: int) -> None:
+        if self.calendar_link is None or not self.calendar_link.configured:
+            await self.channel.reply(msg, t("bot.calendar_unconfigured"))
+            return
+        if not msg.private:
+            return      # a consent link is personal; it never goes to a group
+        await self.channel.reply(
+            msg, t("bot.calendar_link", url=self.calendar_link.consent(member_id)))
+
+    async def _finish_calendar(self, msg: Inbound, member_id: int, text: str) -> None:
+        from .sensors.google_calendar import CalendarError
+
+        try:
+            account = await asyncio.to_thread(self.calendar_link.finish, member_id, text)
+        except CalendarError as e:
+            log.warning("calendar connection failed: %s", e)
+            await self.channel.reply(msg, t("bot.calendar_failed"))
+            return
+        await self.channel.reply(msg, t("bot.calendar_connected", account=account))
 
     # ── Groups (T4.6) ──────────────────────────────────────────────────────
     def _known(self, msg: Inbound) -> int | None:

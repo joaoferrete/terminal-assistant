@@ -487,6 +487,24 @@ MESSAGES: dict[str, dict[str, str]] = {
                        "en": "{queries} queries · {blocked} blocked ({pct}%)"},
     "digest.adguard_top": {"pt": "mais bloqueados: {domains}\nclientes mais ativos: {clients}",
                            "en": "most blocked: {domains}\nmost active clients: {clients}"},
+    "bot.calendar_unconfigured": {
+        "pt": "A agenda do Google ainda não foi configurada no servidor (GOOGLE_CLIENT_ID).",
+        "en": "Google Calendar is not set up on the server yet (GOOGLE_CLIENT_ID).",
+    },
+    "bot.calendar_link": {
+        "pt": "1. Abra este link e autorize: {url}\n2. No fim, o navegador vai mostrar um "
+              "erro de página — é esperado.\n3. Copie o endereço da barra e cole aqui.",
+        "en": "1. Open this link and allow access: {url}\n2. At the end the browser shows "
+              "a page error — that is expected.\n3. Copy the address bar and paste it here.",
+    },
+    "bot.calendar_connected": {"pt": "Agenda conectada: {account} ✓",
+                               "en": "Calendar connected: {account} ✓"},
+    "bot.calendar_failed": {
+        "pt": "Não consegui conectar a agenda. O link vale 10 minutos e uma vez só — "
+              "mande /conectar_agenda de novo.",
+        "en": "I couldn't connect the calendar. The link works once, for 10 minutes — "
+              "send /connect_calendar again.",
+    },
     "agent.sources": {"pt": "Fontes: {list}", "en": "Sources: {list}"},
     "bot.hello": {
         "pt": "Oi! Tudo o que você mandar aqui vira nota.",
@@ -543,6 +561,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     "cap.lighter": {"pt": "Lighter (ringlight)", "en": "Lighter (ringlight)"},
     "cap.ai": {"pt": "IA", "en": "AI"},
     "cap.telegram": {"pt": "Telegram (bot)", "en": "Telegram (bot)"},
+    "cap.gcal": {"pt": "Agenda do Google", "en": "Google Calendar"},
     "cap.voice": {"pt": "Voz (transcrição)", "en": "Voice (transcription)"},
     "cli.doctor_summary": {
         "pt": "{live}/{total} disponíveis. O que está marcado com — é opcional.",

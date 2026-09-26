@@ -66,6 +66,10 @@ from .llm import LLM, LLMUnavailable, current_member, for_member
 from .members import OWNER, OWNER_ID, SYSTEM, Viewer
 from .scheduler import Scheduler, lateness_label, lateness_of
 from .sensors.calendar import Calendar
+from .sensors.google_calendar import Connector as GoogleConnector
+from .sensors.google_calendar import GoogleCalendar
+from .sensors.google_calendar import Link as GoogleLink
+from .sensors.google_calendar import TokenStore as GoogleTokens
 from .sensors.mic import MicWatcher
 from .speech import Transcriber
 
@@ -402,13 +406,45 @@ def _agent_deps(app: Starlette) -> AgentDeps:
     )
 
 
+def _calendar_for(app: Starlette, member_id: int):
+    """The Member's calendar: their Google accounts if connected (D14), else the
+    machine's Evolution calendar — which on a laptop is the Owner's, and on the
+    server is simply unavailable."""
+    connector = getattr(app.state, "google", None)
+    if connector is None or not connector.configured:
+        return app.state.calendar
+    google = GoogleCalendar(member_id, connector, app.state.google_tokens)
+    return google if google.available else app.state.calendar
+
+
+def _calendar_today(app: Starlette, member_id: int):
+    cal = _calendar_for(app, member_id)
+    if not cal.available:
+        return None
+
+    async def read() -> list[dict]:
+        return [_event_json(e) for e in await asyncio.to_thread(cal.today)]
+    return read
+
+
+class _OwnerCalendar:
+    """What Rules see as the calendar: the Owner's, whichever backend it is.
+    Resolved on every call, so connecting Google later needs no restart."""
+
+    def __init__(self, app: Starlette) -> None:
+        self._app = app
+
+    def __getattr__(self, name):
+        return getattr(_calendar_for(self._app, OWNER_ID), name)
+
+
 async def _build_digest(app: Starlette, member_id: int) -> str:
     """One Member's Digest, now (D15, D35)."""
     conn = app.state.conn
     settings = digest_mod.Settings.load(conn, member_id)
     src = digest_mod.Sources(
         conn=conn,
-        calendar_today=app.state.cal_adapter.today if app.state.calendar.available else None,
+        calendar_today=_calendar_today(app, member_id),
         weather=digest_weather(),
         adguard=digest_mod.adguard_from_env(),
         prices=llm_prices(),
@@ -617,7 +653,8 @@ async def _review_one(app: Starlette, note_id: int) -> None:
     try:
         # A broad Exception on purpose: this function is optional by design, and
         # nothing it does is worth taking down the daemon or losing the Note.
-        targets = await asyncio.to_thread(app.state.calendar.write_targets)
+        # The writer's own calendars: Ana's appointment goes into Ana's account.
+        targets = await asyncio.to_thread(_calendar_for(app, note.owner_id).write_targets)
         # The review serves the Note's writer: it counts against their ceiling.
         with for_member(note.owner_id):
             r = await _review_call(app, note, targets)
@@ -770,8 +807,9 @@ async def _create_event_automatically(app: Starlette, note_id: int, r, targets) 
         log.info("review of #%s returned an invalid date: %r", note_id, r.start)
         return None
 
+    owner = store.get_note(app.state.conn, note_id, viewer=SYSTEM).owner_id
     uid = await asyncio.to_thread(
-        app.state.calendar.create_event, chosen.uid,
+        _calendar_for(app, owner).create_event, chosen.uid,
         r.title or i18n.t("review.untitled"), start_at, end_at,
     )
     if uid:
@@ -1024,7 +1062,7 @@ async def today(request: Request) -> JSONResponse:
         with contextlib.suppress(Exception):
             await warm
 
-    events = await asyncio.to_thread(app.state.calendar.today, day)
+    events = await asyncio.to_thread(_calendar_for(app, _viewer(request).member_id).today, day)
     # `day` rather than `date.today()`: with `--date`, the band has to be counted
     # against the requested day, otherwise everything it returns becomes
     # `overdue`. Only `overdue` and `today` appear here, because `due_today`
@@ -1489,7 +1527,9 @@ def create_app(
         app.state.calendar = calendar if calendar is not None else Calendar()
         app.state.llm = LLM.from_config(cfg)
         app.state.llm.on_usage = _usage_recorder(app)
-        app.state.cal_adapter = CalendarAdapter(app.state.calendar)
+        app.state.google = GoogleConnector(cfg.google_client_id, cfg.google_client_secret)
+        app.state.google_tokens = GoogleTokens(db_path_resolved.parent / "google")
+        app.state.cal_adapter = CalendarAdapter(_OwnerCalendar(app))
         # Injectable like `calendar`: a test hands in a fake and never reaches
         # Telegram.
         app.state.channel = channel if channel is not None else TelegramChannel(
@@ -1514,6 +1554,7 @@ def create_app(
             # The agent only when a model is there to drive it: without one, every
             # text is captured, which is F1's behaviour and keeps invariant 1.
             agent=_agent_deps(app) if app.state.llm.configured else None,
+            calendar_link=GoogleLink(app.state.google, app.state.google_tokens),
         )
 
         report = engine.load_rules(rules_path)

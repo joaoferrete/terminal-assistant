@@ -135,3 +135,31 @@ would be worse than the original slowness.
 See [troubleshooting.md](troubleshooting.md#the-calendar) — it covers `import gi`
 failing, the D-Bus error in headless sessions, an empty `ta today`, recurring
 events showing the wrong date, and duplicate events.
+
+## On a server: Google Calendar
+
+A server has no GNOME session, so there the calendar is Google's API, with an
+OAuth client of your own ([ADR 0004](adr/0004-calendar-through-gnome-online-accounts.md),
+amendment). Each Member connects their own accounts, from the chat.
+
+1. In the Google Cloud Console, create a project, enable the **Google Calendar
+   API**, configure the OAuth consent screen, and create an OAuth client of type
+   **Desktop app**. Put its id and secret in `.env` as `GOOGLE_CLIENT_ID` and
+   `GOOGLE_CLIENT_SECRET`.
+2. **Publish the consent screen to Production.** In *Testing*, Google expires the
+   refresh tokens after seven days, and every calendar silently disconnects once
+   a week. In Production an unverified app shows a warning on the consent screen,
+   which is fine for a household.
+3. In the chat, send `/conectar_agenda`. Open the link, allow access, and when the
+   browser shows a page error at the end — that is expected, nothing listens on
+   `localhost` — copy the address bar and paste it back into the chat.
+
+The bot asks for two scopes only: reading and creating events, and listing your
+calendars. It never asks for the scope that can delete a calendar. Events it
+creates go to a calendar named `Terminal Assistant` in that account, and never
+have guests. Tokens are stored one file per account, readable by the daemon's
+user only.
+
+A **work account** may refuse: a Google Workspace admin can block unverified
+third-party apps. If the consent screen says so, that account stays out, and the
+personal one still works.

@@ -59,9 +59,17 @@ reverse are also ADRs, linked where they apply.
   `ta.db.v11-before-v12`). The weather is for São Mateus, ES (-18.72, -39.86), and
   `ADGUARD_URL=http://localhost` is set on the server. The Owner's Digest is on at
   07:00.
-- **Next agent action:** T5.1/T5.2, the Google Calendar. It needs the user to
-  create an OAuth client in Google Cloud first; prepare a walkthrough. Check the
-  Workspace risk (D14) on the work account before anything else.
+- **T5.1 code is done** (`feat/digest`): OAuth paste-back from the chat with PKCE,
+  per-Member Google calendars behind the `Calendar` interface, tokens stored 0600.
+  **Waiting on the user:** create the OAuth client (docs/calendar.md), publish it
+  to Production, and try the work account first (the Workspace risk in D14).
+- **Open question for the user, T5.2:** the plan says to confirm events with a
+  button, but the V1 code records the user's choice to **create events without
+  confirmation** (amendment to ADR 0007). Nothing was changed. The proposal: keep
+  auto-creation, and have the bot tell the writer, "📅 created X on day Y",
+  with [Undo]. The server has no desktop notifications, so today nobody sees it.
+- **Next agent action:** F6, the Satellite (T6.1–T6.3, T6.5), which needs nothing
+  from the user until it is installed on the laptop.
 - **F8 interview:** before starting F8, not now. The user offered to run it now
   and agreed to wait: most of what it configures (Grants, Lists, house rules, the
   Digest) is still being built.
@@ -500,7 +508,7 @@ how `ta` is installed, configured or used also updates the README,
 
 ### F5 — Calendar and the pushed Digest
 
-- [ ] **T5.1 Google Calendar.** A provider behind the interface
+- [x] **T5.1 Google Calendar.** *(code; waits on the user's OAuth client)* A provider behind the interface
       `sensors/calendar.py` already exposes to rules (`now`/`today` and their
       Portuguese aliases must keep working — [AGENTS §3](../AGENTS.md#3-a-rename-can-break-code-that-is-not-in-this-repository)).
       OAuth paste-back through `/conectar_agenda`; refresh token per Member, file
@@ -614,3 +622,5 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T4.9 | The user's Gemini key answered **429 RESOURCE_EXHAUSTED** to a grounded search, and 503 to a plain call. It is quota or billing on the account, not code. The agent said search had failed and invented nothing | Web search waits on the user's Google AI account (billing or quota). Everything else runs on DeepSeek |
 | 2026-09-26 | T4.2 | The user's first real question, "quais são minhas notas vencidas?", ran out of steps. With only a word search, "vencidas" matched nothing, and the model kept searching. The fallback then said "the model is down", which was false, since the model was up | A `notes_due` Tool lists open tasks by Horizon. The last step tells the model to answer with what it has. The fallback message says "the model is down" only when the provider failed. Confirmed against real DeepSeek |
 | 2026-09-26 | T5.3 | Open-Meteo's terms, checked: free with no key for personal home automation, 10,000 calls a day, data under CC BY 4.0 | One call a day is well inside the limit. The weather line credits "(Open-Meteo)" |
+| 2026-09-26 | T5.2 | The plan's "propose and confirm with buttons" contradicts an earlier decision recorded in the V1 code: "The user chose to give up the confirmation step (amendment to ADR 0007)" | Behaviour unchanged, and asked of the user (see Now) |
+| 2026-09-26 | T5.1 | Least privilege is possible: `calendar.events` and `calendar.calendarlist.readonly` cover reading, creating and finding the dedicated calendar. The full `calendar` scope, which can delete whole calendars, is not needed | The consent asks for those two, and a test forbids the full scope. The `Terminal Assistant` calendar must already exist in the account, because creating it would take the full scope |

@@ -20,9 +20,10 @@ from ta.i18n import lang
 REPO = Path(__file__).resolve().parents[1]
 
 
-def test_the_six_capabilities_exist():
+def test_every_capability_exists_in_order():
     keys = [c.key for c in inspect(Config())]
-    assert keys == ["notes", "calendar", "mic", "home", "lighter", "ai", "telegram", "voice"]
+    assert keys == ["notes", "calendar", "mic", "home", "lighter", "ai", "telegram", "voice",
+                    "gcal"]
 
 
 def test_only_notes_are_essential():
