@@ -189,3 +189,83 @@ def test_memory_search_stays_in_its_conversation(make):
     b = make(call("memory_search", '{"query": "wifi"}'), answer("Não achei."))
     say(b, "qual era a senha do wifi?")
     assert "banana" not in b.llm.prompts[-1][1], "another conversation's memory never leaks"
+
+
+# ── Buttons and Receipts (T4.4) ─────────────────────────────────────────────
+def press(b, data, *, sender_id="1001"):
+    from ta.channel import Inbound
+
+    msg = Inbound(channel="telegram", conversation_id="c1", message_id="bot9",
+                  sender_id=sender_id, sender_username="dono", private=True,
+                  callback=data, callback_id="cb1")
+    asyncio.run(b.handle(msg))
+
+
+def last_button(b):
+    return b.channel.buttons[-1][0].data
+
+
+def test_confirming_a_pending_action_runs_it_and_offers_undo(make):
+    conn = make.conn
+    conn.execute("INSERT INTO members (id, handle, is_owner, created_at) VALUES (2, 'ana', 0, 'x')")
+    conn.execute("INSERT INTO lists (id, name, scope, owner_id, created_at)"
+                 " VALUES (1, 'compras', 'household', 1, 'x')")
+    store.add_note(conn, "algo de outra pessoa", owner_id=2, list_id=1)
+    b = make(call("list_show", '{"list": "compras"}'),
+             call("test_switch", '{"target": "light.quarto"}'))
+    say(b, "o que tem na lista?")
+    assert switched == []
+    ok = [x.data for x in b.channel.buttons[-1]]
+    assert ok[0].startswith("ok:") and ok[1].startswith("no:")
+
+    press(b, ok[0])
+    assert switched == ["light.quarto"], "pressed by the asker, it runs"
+
+
+def test_cancelling_runs_nothing(make):
+    b = make(call("list_show"), call("test_switch", '{"target": "x"}'))
+    b.agent.registry()["list_show"].third_party = True   # force the taint for this test
+    try:
+        say(b, "algo")
+        press(b, b.channel.buttons[-1][1].data)
+    finally:
+        b.agent.registry()["list_show"].third_party = False
+    assert switched == []
+
+
+def test_a_button_is_pressed_only_by_whom_it_was_offered_to(make):
+    b = make(answer("", capture=True))
+    say(b, "uma ideia")
+    button = last_button(b)
+    # Somebody else in the chat presses it: not theirs.
+    make.conn.execute("INSERT INTO members (id, handle, is_owner, created_at)"
+                      " VALUES (2, 'ana', 0, 'x')")
+    make.conn.execute("INSERT INTO channel_identities (channel, external_id, username, role,"
+                      " paired_at, member_id) VALUES ('telegram', '2002', 'ana', 'member', 'x', 2)")
+    b.invited = lambda: {"ana"}
+    press(b, button, sender_id="2002")
+    assert notes(make.conn) == ["uma ideia"], "a stranger's press changed nothing"
+
+
+def test_not_a_note_undoes_the_capture(make):
+    """D32: erring towards capture costs one tap — this one."""
+    b = make(answer("", capture=True))
+    say(b, "hmm, qual era mesmo")
+    assert last_button(b).startswith("undo:")
+    press(b, last_button(b))
+    assert notes(make.conn) == []
+    press(b, b.channel.buttons[-2][0].data if b.channel.buttons[-2] else "undo:1")
+    assert b.channel.acks[-1], "a second press is answered as already settled"
+
+
+def test_what_did_you_do_here_is_answered_from_the_receipts(make):
+    b = make(answer("", capture=True), answer("Anotei isso como a nota #1."))
+    say(b, "comprar pão")
+    from ta.channel import Inbound
+
+    reply = Inbound(channel="telegram", conversation_id="c1", message_id="8",
+                    sender_id="1001", sender_username="dono", private=True,
+                    text="o que você fez aqui?", reply_to_message_id="7")
+    asyncio.run(b.handle(reply))
+    prompt = b.llm.prompts[-1][1]
+    assert "captured #1" in prompt, "the model is told what was really done"

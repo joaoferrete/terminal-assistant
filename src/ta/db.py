@@ -319,7 +319,8 @@ MIGRATIONS: list[tuple[int, str]] = [
             id               INTEGER PRIMARY KEY AUTOINCREMENT,
             channel          TEXT    NOT NULL,
             conversation_id  TEXT    NOT NULL,
-            message_id       TEXT,
+            message_id       TEXT,             -- the Member's message that caused it
+            bot_message_id   TEXT,             -- the bot's answer, which a reply may quote
             member_id        INTEGER NOT NULL REFERENCES members(id),
             tool             TEXT    NOT NULL,
             args             TEXT,             -- JSON: what a pending action will run with

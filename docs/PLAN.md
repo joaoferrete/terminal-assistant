@@ -450,7 +450,7 @@ how `ta` is installed, configured or used also updates the README,
       already in `cli.py`/`config.resolve_targets` resolve with no model. The rest
       goes to tool calling on the routed provider. Timeout or failure → capture.
       Invariant 1 tested with every provider down.
-- [ ] **T4.4 Receipts.** `receipts` (conversation, message id, Member, action,
+- [x] **T4.4 Receipts.** `receipts` (conversation, message id, Member, action,
       payload, undo payload, at). An undo button, and "what did you do here?" as a
       reply to the message.
 - [x] **T4.5 Conversation Memory.** Stored per conversation with retention; search
@@ -466,7 +466,7 @@ how `ta` is installed, configured or used also updates the README,
 - [ ] **T4.9 `web_search`** (D25, D26). A Tool that asks Gemini with Google Search
       grounding and returns a summary with links. It is routed as task
       `web_search`, and it taints the turn.
-- [ ] **T4.10 Answer assembly** (D31, D32). Citations are built from Tool
+- [x] **T4.10 Answer assembly** (D31, D32). Citations are built from Tool
       results (invariant 10). The capture-or-answer decision comes with a
       [not a note] button.
 - [ ] **T4.11 House rules and cost ceilings** (D29, D30). `[chat] house_rules`,
@@ -573,3 +573,5 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T4.2 | D17 said SQLite FTS5 for search. FTS5 works in the laptop's Python, but could not be confirmed in the server's (uv's build) without asking, and a migration that fails there stops the daemon from starting | Search scans the rows the viewer may see and matches accent- and case-folded words in Python. At a household's volume it is instant. FTS5 can come back as an index if that ever changes |
 | 2026-09-26 | T4.3 | The agent loop is ours, not a vendor's function calling. Each step is a structured `AgentStep` through the existing provider layer | DeepSeek and Gemini both drive it with no new code per vendor, and ADR 0018's fallback applies to the chat unchanged |
 | 2026-09-26 | T4.3 | Voice transcripts now go through the agent too, not straight to capture. That is D34: a spoken question gets an answer | The bot shows "🎤 “…”" first, so a wrong transcript is visible before the answer to it |
+| 2026-09-26 | T4.4 | "What did you do here?" by pattern matching would be fragile and tied to one language | When a message replies to another, that message's Receipts go into the agent's context as data, and the agent answers from what was actually recorded. A reply can quote the Member's message or the bot's answer, so a Receipt keeps both ids |
+| 2026-09-26 | T4.4 | A confirmation button proposed before a Grant was revoked could still run the action | Permissions are read again when the button is pressed, and only the Member the Receipt belongs to may press it. Both are tested |

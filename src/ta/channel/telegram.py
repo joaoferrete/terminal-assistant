@@ -17,7 +17,7 @@ import logging
 
 import httpx
 
-from . import ChannelError, Handler, Inbound
+from . import Button, ChannelError, Handler, Inbound
 
 log = logging.getLogger("ta.channel")
 
@@ -91,9 +91,22 @@ class TelegramChannel:
     @staticmethod
     def parse(update: dict) -> Inbound | None:
         """One update → one `Inbound`, or None for what is not a message to us."""
+        if cb := update.get("callback_query"):
+            sender, msg = cb.get("from") or {}, cb.get("message") or {}
+            chat = msg.get("chat") or {}
+            return Inbound(
+                channel="telegram",
+                conversation_id=str(chat.get("id", "")),
+                message_id=str(msg.get("message_id", "")),
+                sender_id=str(sender.get("id", "")),
+                sender_username=sender.get("username"),
+                private=chat.get("type") == "private",
+                callback=cb.get("data") or "",
+                callback_id=cb.get("id"),
+            )
         msg = update.get("message")
         if not msg:
-            return None   # edits, channel posts, callbacks (F4) — not captures
+            return None   # edits and channel posts are not messages to us
         sender = msg.get("from") or {}
         if sender.get("is_bot"):
             return None
@@ -113,6 +126,8 @@ class TelegramChannel:
             unsupported=not text and not sound,
             voice_file_id=sound.get("file_id"),
             voice_seconds=int(sound.get("duration") or 0),
+            reply_to_message_id=(str(msg["reply_to_message"]["message_id"])
+                                 if msg.get("reply_to_message") else None),
         )
 
     async def run(self, handler: Handler) -> None:
@@ -123,7 +138,7 @@ class TelegramChannel:
                 updates = await self._call(
                     "getUpdates",
                     {"offset": offset, "timeout": self.POLL_SECONDS,
-                     "allowed_updates": ["message"]},
+                     "allowed_updates": ["message", "callback_query"]},
                 )
                 failures = 0
             except ChannelError as e:
@@ -162,11 +177,33 @@ class TelegramChannel:
     async def send(self, conversation_id: str, text: str) -> None:
         await self._call("sendMessage", {"chat_id": conversation_id, "text": text})
 
-    async def reply(self, to: Inbound, text: str) -> None:
-        payload = {"chat_id": to.conversation_id, "text": text}
-        if to.message_id:
+    async def reply(self, to: Inbound, text: str, buttons: list[Button] | None = None
+                    ) -> str | None:
+        payload: dict = {"chat_id": to.conversation_id, "text": text}
+        if to.message_id and not to.callback:
             payload["reply_parameters"] = {
                 "message_id": int(to.message_id),
                 "allow_sending_without_reply": True,
             }
-        await self._call("sendMessage", payload)
+        if buttons:
+            payload["reply_markup"] = {
+                "inline_keyboard": [[{"text": b.label, "callback_data": b.data}
+                                     for b in buttons]]
+            }
+        sent = await self._call("sendMessage", payload)
+        return str(sent["message_id"]) if isinstance(sent, dict) and "message_id" in sent else None
+
+    async def answered(self, to: Inbound, text: str | None = None) -> None:
+        # Stop the button's spinner first: Telegram shows it until this call.
+        payload = {"callback_query_id": to.callback_id}
+        if text:
+            payload["text"] = text
+        await self._call("answerCallbackQuery", payload)
+        # Then take the buttons off, so the same action cannot be pressed twice.
+        try:
+            await self._call("editMessageReplyMarkup", {
+                "chat_id": to.conversation_id, "message_id": int(to.message_id),
+                "reply_markup": {"inline_keyboard": []},
+            })
+        except ChannelError as e:
+            log.info("could not remove the buttons: %s", e)

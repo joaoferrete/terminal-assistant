@@ -27,14 +27,15 @@ from datetime import datetime
 from pathlib import Path
 
 from . import agent as agent_mod
-from . import i18n, memory, receipts
+from . import i18n, memory, receipts, store
 from . import members as members_mod
 from .builtin_tools import ToolContext
-from .channel import Channel, ChannelError, Inbound
+from .channel import Button, Channel, ChannelError, Inbound
 from .i18n import t
 from .members import OWNER_ID
 from .speech import Transcriber, TranscriptionFailed
-from .tools import Tool, Turn, allowed
+from .tools import NotAllowed, Tool, Turn, allowed
+from .tools import run as run_tool
 
 log = logging.getLogger("ta.bot")
 
@@ -192,6 +193,9 @@ class Bot:
         member_id, just_paired = self._recognise(msg)
         if member_id is None:
             return
+        if msg.callback is not None:
+            await self._button(msg, member_id)
+            return
         if just_paired:
             await self.channel.reply(msg, t("bot.paired"))
             # The first thing a new Member needs is the board, and typing a
@@ -234,10 +238,19 @@ class Bot:
         due = getattr(note, "due", None)
         return t("bot.captured_due", id=note.id, due=due) if due else t("bot.captured", id=note.id)
 
-    async def _say(self, msg: Inbound, text: str) -> None:
-        await self.channel.reply(msg, text)
+    async def _say(self, msg: Inbound, text: str, buttons: list[Button] | None = None,
+                   receipt_ids: list[int] | None = None) -> None:
+        sent = await self.channel.reply(msg, text, buttons) if buttons else \
+            await self.channel.reply(msg, text)
         memory.record(self.conn, channel=msg.channel, conversation_id=msg.conversation_id,
-                      message_id=None, member_id=None, text=text)
+                      message_id=sent, member_id=None, text=text)
+        if sent and receipt_ids:
+            receipts.answered_by(self.conn, receipt_ids, sent)
+
+    def _receipt(self, msg: Inbound, member_id: int, **kw) -> int:
+        return receipts.record(self.conn, channel=msg.channel,
+                               conversation_id=msg.conversation_id,
+                               message_id=msg.message_id, member_id=member_id, **kw)
 
     async def _text(self, msg: Inbound, member_id: int, text: str) -> None:
         """A text (or a transcript) from a recognised Member: converse, or capture.
@@ -260,11 +273,18 @@ class Bot:
         ctx = ToolContext(conn=self.conn, turn=turn, channel=msg.channel,
                           services={**deps.services, "message": msg})
         available = [t_ for t_ in deps.registry().values() if allowed(t_, turn)]
+        about = None
+        if msg.reply_to_message_id:
+            # "What did you do here?" is answered from the Receipts, not from
+            # whatever the model remembers (D11).
+            about = [f"{r.summary} [{r.state}]" for r in receipts.for_message(
+                self.conn, channel=msg.channel, conversation_id=msg.conversation_id,
+                message_id=msg.reply_to_message_id)] or ["(nothing recorded)"]
         try:
             reply = await agent_mod.respond(
                 deps.llm, turn=turn, ctx=ctx, text=text, history=history,
                 available=available, persona=deps.persona(member_id),
-                house_rules=deps.house_rules(),
+                house_rules=deps.house_rules(), about=about,
             )
         except agent_mod.AgentFailed as e:
             log.warning("agent failed, capturing instead: %s", e)
@@ -272,28 +292,110 @@ class Bot:
             await self._say(msg, t("bot.captured_offline", line=self._captured_line(note)))
             return
 
-        parts = []
+        parts, buttons, rids = [], [], []
+        # What the Tools did this turn, each with its Receipt and the last one's undo.
+        for done in turn.receipts:
+            rid = self._receipt(msg, member_id, tool=done["tool"], summary=done["summary"],
+                                undo=done.get("undo"))
+            rids.append(rid)
+            if done.get("undo"):
+                buttons = [Button(t("bot.btn_undo"), f"undo:{rid}")]
         if reply.pending is not None:
-            parts.append(self._propose(msg, member_id, reply.pending))
+            rid, line = self._propose(msg, member_id, reply.pending)
+            rids.append(rid)
+            parts.append(line)
+            buttons = [Button(t("bot.btn_confirm"), f"ok:{rid}"),
+                       Button(t("bot.btn_cancel"), f"no:{rid}")]
         if reply.text:
             parts.append(reply.text)
         # A reply with nothing to say and nothing captured would drop the message.
         if reply.capture or not parts:
-            parts.append(self._captured_line(self.capture(text, owner_id=member_id)))
+            note = self.capture(text, owner_id=member_id)
+            rid = self._receipt(msg, member_id, tool="capture", summary=f"captured #{note.id}",
+                                undo={"kind": "delete_note", "note_id": note.id})
+            rids.append(rid)
+            parts.append(self._captured_line(note))
+            # D32: erring towards capture costs one tap, and this is the tap.
+            if not buttons:
+                buttons = [Button(t("bot.btn_not_note"), f"undo:{rid}")]
         if cited := agent_mod.format_sources(reply.sources):
             parts.append(cited)
-        await self._say(msg, "\n\n".join(parts))
+        await self._say(msg, "\n\n".join(parts), buttons or None, rids)
 
-    def _propose(self, msg: Inbound, member_id: int, pending) -> str:
+    def _propose(self, msg: Inbound, member_id: int, pending) -> tuple[int, str]:
         """Store an action waiting for the asker's button (D27) and describe it."""
-        receipts.record(
-            self.conn, channel=msg.channel, conversation_id=msg.conversation_id,
-            message_id=msg.message_id, member_id=member_id, tool=pending.tool.name,
-            args=pending.tool_args, state="pending",
+        rid = self._receipt(
+            msg, member_id, tool=pending.tool.name, args=pending.tool_args, state="pending",
             summary=f"{pending.tool.name} {json.dumps(pending.tool_args, ensure_ascii=False)}",
         )
-        return t("bot.confirm_needed", action=pending.tool.description,
-                 args=", ".join(f"{k}={v}" for k, v in pending.tool_args.items()))
+        return rid, t("bot.confirm_needed", action=pending.tool.description,
+                      args=", ".join(f"{k}={v}" for k, v in pending.tool_args.items()))
+
+    # ── Buttons (T4.4) ──────────────────────────────────────────────────────
+    async def _button(self, msg: Inbound, member_id: int) -> None:
+        """A pressed button. Only the Member the Receipt belongs to may press it:
+        a confirmation is the ASKER's (D27), not anybody's in the chat."""
+        kind, _, raw = (msg.callback or "").partition(":")
+        r = receipts.get(self.conn, int(raw)) if raw.isdigit() else None
+        if r is None or r.member_id != member_id:
+            await self.channel.answered(msg, t("bot.not_yours"))
+            return
+        if kind == "ok" and r.state == "pending":
+            await self.channel.answered(msg)
+            await self._confirmed(msg, member_id, r)
+        elif kind == "no" and r.state == "pending":
+            receipts.set_state(self.conn, r.id, "refused")
+            await self.channel.answered(msg, t("bot.cancelled"))
+        elif kind == "undo" and r.state == "done" and r.undo:
+            await self._undo(msg, member_id, r)
+            receipts.set_state(self.conn, r.id, "undone")
+            await self.channel.answered(msg, t("bot.undone"))
+        else:
+            await self.channel.answered(msg, t("bot.stale"))
+
+    def _turn(self, msg: Inbound, member_id: int) -> tuple[Turn, ToolContext]:
+        # Permissions are read AGAIN at press time: a Grant revoked between the
+        # proposal and the button must not be honoured by an old button.
+        turn = Turn(member_id=member_id, conversation_id=msg.conversation_id,
+                    in_group=not msg.private,
+                    permissions=self.agent.permissions(member_id) if self.agent else None)
+        ctx = ToolContext(conn=self.conn, turn=turn, channel=msg.channel,
+                          services={**(self.agent.services if self.agent else {}),
+                                    "message": msg})
+        return turn, ctx
+
+    async def _confirmed(self, msg: Inbound, member_id: int, r) -> None:
+        chosen = self.agent.registry().get(r.tool) if self.agent else None
+        if chosen is None:
+            receipts.set_state(self.conn, r.id, "refused")
+            await self._say(msg, t("bot.stale"))
+            return
+        turn, ctx = self._turn(msg, member_id)
+        try:
+            result = await run_tool(chosen, turn, ctx, r.args, confirmed=True)
+        except NotAllowed:
+            receipts.set_state(self.conn, r.id, "refused")
+            await self._say(msg, t("api.forbidden"))
+            return
+        receipts.set_state(self.conn, r.id, "done")
+        undo = (result.receipt or {}).get("undo")
+        receipts.set_undo(self.conn, r.id, undo)
+        buttons = [Button(t("bot.btn_undo"), f"undo:{r.id}")] if undo else None
+        await self._say(msg, result.text, buttons, [r.id])
+
+    async def _undo(self, msg: Inbound, member_id: int, r) -> None:
+        u = r.undo or {}
+        if u.get("kind") == "delete_note":
+            # Only a Note the presser owns: the Receipt is theirs, but the check is
+            # cheap and a forged button must not delete somebody else's words.
+            note = store.get_note(self.conn, u["note_id"], viewer=members_mod.Viewer(member_id))
+            if note.owner_id == member_id:
+                store.soft_delete(self.conn, note.id)
+        elif u.get("tool") and self.agent is not None:
+            chosen = self.agent.registry().get(u["tool"])
+            if chosen is not None:
+                turn, ctx = self._turn(msg, member_id)
+                await run_tool(chosen, turn, ctx, u.get("args", {}), confirmed=True)
 
     # ── Voice (F2) ──────────────────────────────────────────────────────────
     async def _voice(self, msg: Inbound, member_id: int) -> None:

@@ -54,8 +54,21 @@ def set_state(conn: sqlite3.Connection, receipt_id: int, state: str) -> None:
     conn.execute("UPDATE receipts SET state = ? WHERE id = ?", (state, receipt_id))
 
 
+def set_undo(conn: sqlite3.Connection, receipt_id: int, undo: dict | None) -> None:
+    conn.execute("UPDATE receipts SET undo = ? WHERE id = ?",
+                 (json.dumps(undo, ensure_ascii=False) if undo else None, receipt_id))
+
+
+def answered_by(conn: sqlite3.Connection, receipt_ids: list[int], bot_message_id: str) -> None:
+    conn.executemany("UPDATE receipts SET bot_message_id = ? WHERE id = ?",
+                     [(bot_message_id, rid) for rid in receipt_ids])
+
+
 def for_message(conn: sqlite3.Connection, *, channel: str, conversation_id: str,
                 message_id: str) -> list[Receipt]:
+    """What was done because of a message — whether `message_id` is the Member's
+    message or the bot's answer to it, since a reply can quote either."""
     return [_row(r) for r in conn.execute(
-        "SELECT * FROM receipts WHERE channel = ? AND conversation_id = ? AND message_id = ?"
-        " ORDER BY id", (channel, conversation_id, message_id))]
+        "SELECT * FROM receipts WHERE channel = ? AND conversation_id = ?"
+        " AND (message_id = ? OR bot_message_id = ?) ORDER BY id",
+        (channel, conversation_id, message_id, message_id))]

@@ -33,9 +33,16 @@ class FakeChannel:
 
     def __init__(self):
         self.sent: list[str] = []
+        self.buttons: list = []       # the buttons of each sent message, in order
+        self.acks: list = []
 
-    async def reply(self, to, text):
+    async def reply(self, to, text, buttons=None):
         self.sent.append(text)
+        self.buttons.append(buttons or [])
+        return f"bot{len(self.sent)}"
+
+    async def answered(self, to, text=None):
+        self.acks.append(text)
 
 
 @pytest.fixture
@@ -269,3 +276,38 @@ def test_the_daemon_capture_path_is_shared_with_the_bot(tmp_path):
     note = next(n for n in notes if n["text"].startswith("revisar PR"))
     assert note["due"] == "2026-10-01" and note["priority"] == "high"
     assert "2026-10-01" in ch.sent[-1]
+
+
+def test_a_pressed_button_becomes_an_inbound_with_its_data():
+    m = TelegramChannel.parse({"update_id": 9, "callback_query": {
+        "id": "cb7", "from": {"id": 1001, "username": "dono"}, "data": "ok:3",
+        "message": {"message_id": 44, "chat": {"id": 555, "type": "private"}}}})
+    assert (m.callback, m.callback_id, m.message_id, m.sender_id) == ("ok:3", "cb7", "44", "1001")
+
+
+def test_a_reply_to_a_message_carries_which_one():
+    m = TelegramChannel.parse(update(3, "o que você fez aqui?",
+                                     reply_to_message={"message_id": 12}))
+    assert m.reply_to_message_id == "12"
+
+
+def test_buttons_go_as_an_inline_keyboard_and_the_sent_id_comes_back():
+    from ta.channel import Button
+
+    calls = []
+    ch = telegram([{"ok": True, "result": {"message_id": 99}}], calls)
+    sent = asyncio.run(ch.reply(inbound(), "Confirma?", [Button("Sim", "ok:1")]))
+    assert sent == "99"
+    assert calls[0][1]["reply_markup"] == {
+        "inline_keyboard": [[{"text": "Sim", "callback_data": "ok:1"}]]}
+
+
+def test_answering_a_button_also_removes_the_keyboard():
+    calls = []
+    ch = telegram([{"ok": True, "result": True}, {"ok": True, "result": True}], calls)
+    press = TelegramChannel.parse({"update_id": 1, "callback_query": {
+        "id": "cb1", "from": {"id": 1}, "data": "x",
+        "message": {"message_id": 5, "chat": {"id": 7, "type": "private"}}}})
+    asyncio.run(ch.answered(press, "Feito."))
+    assert [p for p, _ in calls] == ["/bot123:SECRET/answerCallbackQuery",
+                                     "/bot123:SECRET/editMessageReplyMarkup"]

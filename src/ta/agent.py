@@ -89,13 +89,17 @@ def _tool_specs(available: list[Tool]) -> str:
     return "\n".join(t_.spec() for t_ in available) or "(none)"
 
 
-def _transcript(text: str, history: list[Message], steps: list[str]) -> str:
+def _transcript(text: str, history: list[Message], steps: list[str],
+                about: list[str] | None = None) -> str:
     parts = []
     if history:
         lines = [f"{'you' if m.member_id is None else 'member'}: {' '.join(m.text.split())}"
                  for m in history]
         parts.append("Recent messages in this conversation:\n<<<data\n"
                      + "\n".join(lines) + "\ndata>>>")
+    if about:
+        parts.append("The member is replying to an earlier message. What you did because "
+                     "of it, from your own records:\n<<<data\n" + "\n".join(about) + "\ndata>>>")
     parts.append(f'The member\'s new message: "{text}"')
     if steps:
         parts.append("What you did so far this turn:\n" + "\n".join(steps))
@@ -113,6 +117,7 @@ async def respond(
     available: list[Tool],
     persona: str = "",
     house_rules: str = "",
+    about: list[str] | None = None,
 ) -> Reply:
     # History from a group was written by other people (D33 + D27).
     if turn.in_group and history:
@@ -128,8 +133,8 @@ async def respond(
     for _ in range(MAX_STEPS):
         try:
             with for_task("agent"):
-                step = await llm._structured(_transcript(text, history, steps), AgentStep,
-                                             system=system)
+                step = await llm._structured(_transcript(text, history, steps, about),
+                                             AgentStep, system=system)
         except LLMUnavailable as e:
             raise AgentFailed(str(e)) from e
 

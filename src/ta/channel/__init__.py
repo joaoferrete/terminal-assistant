@@ -35,6 +35,18 @@ class Inbound:
     # bytes are not worth holding for messages the bot will ignore.
     voice_file_id: str | None = None
     voice_seconds: int = 0
+    # The message this one answers, if any: "what did you do here?" is a reply.
+    reply_to_message_id: str | None = None
+    # A button pressed on one of the bot's messages (T4.4). `message_id` is then
+    # the bot's message that carried the button, and `text` is empty.
+    callback: str | None = None
+    callback_id: str | None = None
+
+
+@dataclass(frozen=True)
+class Button:
+    label: str
+    data: str      # what comes back as `Inbound.callback` when pressed
 
 
 Handler = Callable[[Inbound], Awaitable[None]]
@@ -54,7 +66,12 @@ class Channel(Protocol):
         """Deliver inbound messages to `handler` until cancelled. Never returns
         on a transient failure: it waits and tries again."""
 
-    async def reply(self, to: Inbound, text: str) -> None: ...
+    async def reply(self, to: Inbound, text: str, buttons: list[Button] | None = None
+                    ) -> str | None:
+        """Send `text` as a reply, with optional buttons. Returns the sent id."""
+
+    async def answered(self, to: Inbound, text: str | None = None) -> None:
+        """Acknowledge a pressed button, and take its buttons away."""
 
     async def send(self, conversation_id: str, text: str) -> None:
         """A message nobody asked for — telling the Owner someone new paired."""
