@@ -142,17 +142,70 @@ A server has no GNOME session, so there the calendar is Google's API, with an
 OAuth client of your own ([ADR 0004](adr/0004-calendar-through-gnome-online-accounts.md),
 amendment). Each Member connects their own accounts, from the chat.
 
-1. In the Google Cloud Console, create a project, enable the **Google Calendar
-   API**, configure the OAuth consent screen, and create an OAuth client of type
-   **Desktop app**. Put its id and secret in `.env` as `GOOGLE_CLIENT_ID` and
-   `GOOGLE_CLIENT_SECRET`.
-2. **Publish the consent screen to Production.** In *Testing*, Google expires the
-   refresh tokens after seven days, and every calendar silently disconnects once
-   a week. In Production an unverified app shows a warning on the consent screen,
-   which is fine for a household.
-3. In the chat, send `/conectar_agenda`. Open the link, allow access, and when the
-   browser shows a page error at the end — that is expected, nothing listens on
-   `localhost` — copy the address bar and paste it back into the chat.
+Setting up the OAuth client takes about ten minutes in the
+[Google Cloud Console](https://console.cloud.google.com/), once per household.
+Google moves its menus around. If a name below does not match, the console's
+search bar finds each page by the name in bold.
+
+**A. The project and the APIs**
+
+1. At the top of the console, pick your project, or create one (**New project**;
+   the name is only for you).
+2. Open **APIs & Services → Library**. Search for **Google Calendar API**, open
+   it, and press **Enable**. For email too, do the same for the **Gmail API**.
+
+**B. The consent screen** (**Google Auth Platform**; older consoles call it
+**OAuth consent screen**)
+
+3. If it offers **Get started**, press it and fill in:
+   - **App information**: any app name (people see it on the consent screen, e.g.
+     "Casa"), and your email as the support email.
+   - **Audience**: **External**. *Internal* exists only for Workspace
+     organisations, and it would keep your personal Gmail out.
+   - **Contact information**: your email.
+   - Accept the policy, and press **Create**.
+4. **Data Access → Add or remove scopes.** Paste these into *Manually add scopes*,
+   press **Add to table**, then **Update**, then **Save**:
+   ```
+   https://www.googleapis.com/auth/calendar.events
+   https://www.googleapis.com/auth/calendar.calendarlist.readonly
+   https://www.googleapis.com/auth/gmail.readonly
+   ```
+   Leave out the last one if you do not want email.
+5. **Audience → Publish app**, and confirm. The status must say **In production**.
+   In *Testing*, Google expires the connection every seven days and the calendar
+   silently disconnects once a week. Google does not review a household app. The
+   consent screen shows "Google hasn't verified this app", and you go on through
+   **Advanced → Go to (app name)**.
+
+**C. The client**
+
+6. **Clients → Create client.** Pick **Desktop app** as the type (not *Web
+   application*: the paste-back flow needs Desktop's `localhost` redirect), give
+   it any name, and press **Create**.
+7. Copy the **Client ID** and the **Client secret** at once, or press **Download
+   JSON**. Newer consoles show the secret **only now**. If you lose it, add a new
+   secret to the same client.
+8. Put both in `.env`, never in a chat:
+   ```
+   GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=GOCSPX-...
+   ```
+   On a server, edit its `.env`, or use the config page's secrets, which are
+   write-only. Then restart the daemon.
+
+**D. In Google Calendar**
+
+9. Create a calendar named exactly **Terminal Assistant**: **Other calendars → +
+   → Create new calendar**. The bot creates its events there. Creating a
+   calendar would need the scope that can also delete calendars, so the bot does
+   not ask for it.
+
+**E. In the chat**
+
+10. In the chat, send `/conectar_agenda`. Open the link, allow access, and when the
+    browser shows a page error at the end — that is expected, nothing listens on
+    `localhost` — copy the address bar and paste it back into the chat.
 
 The bot asks for two scopes only: reading and creating events, and listing your
 calendars. It never asks for the scope that can delete a calendar. Events it
@@ -170,8 +223,8 @@ The same OAuth client also lets the bot **read** your Gmail when you ask ("tem
 e-mail do banco essa semana?"). It never reads on its own, never sends, deletes or
 marks anything as read, and keeps nothing but the connection.
 
-1. In the same Cloud project, enable the **Gmail API**, and add the
-   `gmail.readonly` scope to the consent screen.
+1. Enable the **Gmail API** (step 2 above), and add the `gmail.readonly` scope
+   (step 4). If the calendar was already connected, nothing else changes.
 2. In the chat, send `/conectar_email`, and do the same paste-back as for the
    calendar.
 
