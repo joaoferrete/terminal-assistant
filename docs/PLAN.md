@@ -69,10 +69,11 @@ reverse are also ADRs, linked where they apply.
   confirmation** (amendment to ADR 0007). Nothing was changed. The proposal: keep
   auto-creation, and have the bot tell the writer, "📅 created X on day Y",
   with [Undo]. The server has no desktop notifications, so today nobody sees it.
-- **F6 built** (`feat/satellite`), not deployed: `TA_SERVER` and the token for the
+- **F5 calendar code and F6 server side deployed** (2026-09-26, `1be629e`, schema v12).
+- **F6 built** (`feat/satellite`): `TA_SERVER` and the token for the
   CLI, the offline capture queue, `ta satellite login|run|status`, the hub and
   remote ring light/notifier on the server, and `make install-satellite`.
-  **Waiting on the user:** the server deploy (their yes), then on the laptop:
+  **Waiting on the user:** on the laptop,
   `TA_SERVER=http://192.168.68.189:7777` in `.env` (the Owner's `TA_TOKEN` is
   already there) and `make install-satellite`, which is their call (AGENTS §6).
 - **Next agent action:** nothing left that needs no user. Remaining: deploy F5
