@@ -476,6 +476,23 @@ MESSAGES: dict[str, dict[str, str]] = {
     "bot.done": {"pt": "Feito.", "en": "Done."},
     "bot.home_on_done": {"pt": "Feito · ligado: {what}", "en": "Done · on: {what}"},
     "bot.home_off_done": {"pt": "Feito · desligado: {what}", "en": "Done · off: {what}"},
+    # Scheduled actions (F9, D39).
+    "bot.btn_cancel_scheduled": {"pt": "Cancelar agendamento", "en": "Cancel schedule"},
+    "bot.scheduled_cancelled": {"pt": "Agendamento cancelado.", "en": "Schedule cancelled."},
+    "bot.scheduled_ran": {"pt": "⏰ {done}", "en": "⏰ {done}"},
+    "bot.scheduled_missed": {
+        "pt": "⏰ Não fiz “{what}”, marcado para {at}: passou da hora (o servidor estava fora).",
+        "en": "⏰ I skipped “{what}”, due at {at}: it was too late (the server was down).",
+    },
+    "bot.scheduled_refused": {
+        "pt": "⏰ Não fiz “{what}”: não dá mais (a permissão mudou, ou o alvo sumiu).",
+        "en": "⏰ I did not run “{what}”: it is no longer possible (the permission "
+              "changed, or the target is gone).",
+    },
+    "bot.scheduled_failed": {
+        "pt": "⏰ Tentei “{what}” e falhou. Tente de novo em instantes.",
+        "en": "⏰ I tried “{what}” and it failed. Try again in a moment.",
+    },
     "bot.budget_spent": {
         "pt": "{line}\n(o limite de uso do chat por hoje acabou, então só anotei)",
         "en": "{line}\n(today's chat budget is spent, so I only noted it)",

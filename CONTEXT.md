@@ -143,6 +143,12 @@ The record of what the bot did because of one message: which message, what chang
 and how to undo it.
 _Avoid_: log, action (an action belongs to a Rule), audit
 
+**Scheduled action**:
+A Tool call the bot was asked to make later, once or on a simple repetition
+(daily, weekdays, weekends): "turn the light on in 10 minutes". Stored, cancellable,
+and run with its author's Grant as it stands when it fires.
+_Avoid_: timer, cron, automation (an automation is a Rule), reminder (that is a Note role)
+
 ### Runtime
 
 **Server**:

@@ -29,7 +29,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from . import agent as agent_mod
-from . import builtin_tools, i18n, memory, prerouter, receipts, store
+from . import builtin_tools, i18n, memory, prerouter, receipts, scheduled, store
 from . import members as members_mod
 from .builtin_tools import ToolContext
 from .channel import Button, Channel, ChannelError, Inbound
@@ -424,6 +424,14 @@ class Bot:
                                conversation_id=msg.conversation_id,
                                message_id=msg.message_id, member_id=member_id, **kw)
 
+    @staticmethod
+    def _undo_button(rid: int, undo: dict) -> Button:
+        # Undoing a schedule is cancelling it, and the button should say so: a
+        # plain "Undo" under "I'll turn it on at 7" reads as undoing the light.
+        if undo.get("kind") == "cancel_scheduled":
+            return Button(t("bot.btn_cancel_scheduled"), f"undo:{rid}")
+        return Button(t("bot.btn_undo"), f"undo:{rid}")
+
     async def _text(self, msg: Inbound, member_id: int, text: str) -> None:
         """A text (or a transcript) from a recognised Member: converse, or capture.
 
@@ -485,7 +493,7 @@ class Bot:
                                 undo=done.get("undo"))
             rids.append(rid)
             if done.get("undo"):
-                buttons = [Button(t("bot.btn_undo"), f"undo:{rid}")]
+                buttons = [self._undo_button(rid, done["undo"])]
         if reply.pending is not None:
             rid, line = self._propose(msg, member_id, reply.pending)
             rids.append(rid)
@@ -613,7 +621,9 @@ class Bot:
         elif kind == "undo" and r.state == "done" and r.undo:
             await self._undo(msg, member_id, r)
             receipts.set_state(self.conn, r.id, "undone")
-            await self.channel.answered(msg, t("bot.undone"))
+            await self.channel.answered(msg, t(
+                "bot.scheduled_cancelled" if r.undo.get("kind") == "cancel_scheduled"
+                else "bot.undone"))
         else:
             await self.channel.answered(msg, t("bot.stale"))
 
@@ -644,7 +654,7 @@ class Bot:
         receipts.set_state(self.conn, r.id, "done")
         undo = (result.receipt or {}).get("undo")
         receipts.set_undo(self.conn, r.id, undo)
-        buttons = [Button(t("bot.btn_undo"), f"undo:{r.id}")] if undo else None
+        buttons = [self._undo_button(r.id, undo)] if undo else None
         # Not `result.text`: that is written for the model, in English.
         switched = (result.receipt or {}).get("entities")
         if switched:
@@ -656,7 +666,10 @@ class Bot:
 
     async def _undo(self, msg: Inbound, member_id: int, r) -> None:
         u = r.undo or {}
-        if u.get("kind") == "delete_note":
+        if u.get("kind") == "cancel_scheduled":
+            # `cancel` checks the owner itself: only the author's rows move.
+            scheduled.cancel(self.conn, u["id"], member_id)
+        elif u.get("kind") == "delete_note":
             # Only a Note the presser owns: the Receipt is theirs, but the check is
             # cheap and a forged button must not delete somebody else's words.
             note = store.get_note(self.conn, u["note_id"], viewer=members_mod.Viewer(member_id))
@@ -667,6 +680,79 @@ class Bot:
             if chosen is not None:
                 turn, ctx = self._turn(msg, member_id)
                 await run_tool(chosen, turn, ctx, u.get("args", {}), confirmed=True)
+
+    # ── Scheduled actions (F9, D39) ─────────────────────────────────────────
+    async def run_scheduled(self, now: datetime | None = None) -> int:
+        """Run what is due, each with its author's Grant as it is NOW.
+
+        The permissions are read at fire time, not copied from when it was
+        scheduled: a Grant revoked in between must win, as it does for a button
+        (T4.4). Each outcome is told in the conversation it was asked in, so
+        nothing happens in the house without a message saying so. Returns how
+        many ran.
+        """
+        if self.agent is None:
+            return 0
+        now = now or datetime.now()
+        ran = 0
+        for s in scheduled.due(self.conn, now):
+            late = scheduled.is_late(s, now)
+            # Moved on first: a Tool that hangs must not fire twice.
+            scheduled.advance(self.conn, s, now)
+            if late:
+                await self._tell_scheduled(s, t("bot.scheduled_missed", what=s.summary,
+                                                at=f"{s.next_at:%H:%M}"))
+                continue
+            chosen = self.agent.registry().get(s.tool)
+            turn = Turn(member_id=s.member_id, conversation_id=s.conversation_id,
+                        in_group=s.in_group, permissions=self.agent.permissions(s.member_id))
+            ctx = ToolContext(conn=self.conn, turn=turn, channel=s.channel,
+                              services=dict(self.agent.services))
+            try:
+                if chosen is None:
+                    raise NotAllowed(f"{s.tool} is gone")
+                result = await run_tool(chosen, turn, ctx, s.args)
+            except NotAllowed:
+                await self._tell_scheduled(s, t("bot.scheduled_refused", what=s.summary))
+                continue
+            except Exception:
+                log.exception("scheduled #%d (%s) failed", s.id, s.tool)
+                await self._tell_scheduled(s, t("bot.scheduled_failed", what=s.summary))
+                continue
+            if result.receipt is None:
+                # The acting Tools answer "nothing you may switch" instead of
+                # raising, and a Grant narrowed since scheduling ends up here. A
+                # "Done" for a light that stayed off would be a lie.
+                await self._tell_scheduled(s, t("bot.scheduled_refused", what=s.summary))
+                continue
+            ran += 1
+            done = result.receipt
+            rid = receipts.record(self.conn, channel=s.channel, conversation_id=s.conversation_id,
+                                  message_id=None, member_id=s.member_id, tool=s.tool,
+                                  summary=done.get("summary", s.summary), args=s.args,
+                                  undo=done.get("undo"))
+            switched = done.get("entities")
+            if switched:
+                key = "bot.home_on_done" if s.tool == "home_on" else "bot.home_off_done"
+                line = t(key, what=", ".join(switched))
+            else:
+                line = t("bot.done") + f" ({s.summary})"
+            undo = done.get("undo")
+            await self._tell_scheduled(s, t("bot.scheduled_ran", done=line),
+                                       [self._undo_button(rid, undo)] if undo else None, rid)
+        return ran
+
+    async def _tell_scheduled(self, s, text: str, buttons: list[Button] | None = None,
+                              rid: int | None = None) -> None:
+        try:
+            sent = await self.channel.send(s.conversation_id, text, buttons)
+        except ChannelError as e:
+            log.warning("could not tell about scheduled #%d: %s", s.id, e)
+            return
+        memory.record(self.conn, channel=s.channel, conversation_id=s.conversation_id,
+                      message_id=sent, member_id=None, text=text)
+        if sent and rid is not None:
+            receipts.answered_by(self.conn, [rid], sent)
 
     # ── Voice (F2) ──────────────────────────────────────────────────────────
     async def _voice(self, msg: Inbound, member_id: int) -> None:

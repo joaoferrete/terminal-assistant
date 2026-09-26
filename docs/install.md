@@ -237,6 +237,13 @@ your notes or about the world: it answers, searches the web when it needs to, an
 still captures what is a thought rather than a question. "Apaga a luz da sala"
 needs no model at all.
 
+It can also act later. "Liga a luz do quarto daqui 10 min" or "acende a luz todo
+dia às 7h" becomes a **scheduled action**, stored on the server, so a restart does
+not lose it. The confirmation has a button to cancel it, and "o que está
+agendado?" answers with how long is left. It runs with your permissions as they
+are when it fires. If the server was down and it is more than 15 minutes late, it
+is skipped, and the bot tells you.
+
 To use it in a household group:
 
 1. At @BotFather, `/setprivacy`, pick the bot, **Disable**. Otherwise Telegram only

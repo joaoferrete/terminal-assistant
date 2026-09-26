@@ -20,7 +20,7 @@ from pathlib import Path
 
 log = logging.getLogger("ta")
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 # The states of a Note. Stored in English because the rest of the vocabulary is
 # (see CONTEXT.md); the translated labels live in the interface.
@@ -381,6 +381,34 @@ MIGRATIONS: list[tuple[int, str]] = [
             vector      BLOB    NOT NULL
         );
         CREATE INDEX idx_rag_chunks_file ON rag_chunks(file_id);
+        """,
+    ),
+    (
+        14,
+        """
+        -- Actions the agent was asked to run later (F9, D39): "turn the light on
+        -- in 10 minutes", "every day at 7". Stored, so a restart does not lose
+        -- them. `tool` and `args` are what runs, with the author's Grant read
+        -- again at fire time; `repeat` is once | daily | weekdays | weekends, and
+        -- a recurring row keeps `time_of_day` so the next occurrence is computed
+        -- from the clock, not by adding 24 hours to a late run.
+        CREATE TABLE scheduled (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id       INTEGER NOT NULL REFERENCES members(id),
+            channel         TEXT    NOT NULL,
+            conversation_id TEXT    NOT NULL,
+            in_group        INTEGER NOT NULL DEFAULT 0,
+            tool            TEXT    NOT NULL,
+            args            TEXT    NOT NULL,
+            summary         TEXT    NOT NULL,
+            repeat          TEXT    NOT NULL DEFAULT 'once',
+            time_of_day     TEXT,
+            next_at         TEXT    NOT NULL,
+            state           TEXT    NOT NULL DEFAULT 'active',
+            created_at      TEXT    NOT NULL,
+            last_run_at     TEXT
+        );
+        CREATE INDEX idx_scheduled_due ON scheduled(state, next_at);
         """,
     ),
 ]

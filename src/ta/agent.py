@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -77,6 +78,8 @@ class Reply:
 SYSTEM = """{identity}You are the assistant of a household, talking to one of its members on a \
 messaging app. You can answer anything — about their own notes and lists, or general \
 questions — and you act only through the tools listed below.
+
+It is now {now}.
 
 Tools you may use now:
 {tools}
@@ -143,6 +146,9 @@ async def respond(
         intro += f"Your personality, in how you phrase things: {personality}\n\n"
     system = SYSTEM.format(
         identity=intro,
+        # Without it "amanhã às 8h" or "sexta" cannot become a date (F9); the
+        # weekday is spelled out because models get it wrong from a date alone.
+        now=datetime.now().strftime("%A %Y-%m-%d %H:%M"),
         tools=_tool_specs(available),
         persona=f"\nHow to address this member: {persona}" if persona else "",
         house_rules=f"\nHouse rules from the owner: {house_rules}" if house_rules else "",

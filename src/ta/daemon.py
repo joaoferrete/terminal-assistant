@@ -512,6 +512,17 @@ async def _digest_loop(app: Starlette, *, every: float = 60.0) -> None:
         await asyncio.sleep(every)
 
 
+async def _scheduled_loop(app: Starlette, *, every: float = 20.0) -> None:
+    """Run the scheduled actions that are due (F9, D39). Every 20 s: "in 10
+    minutes" should not mean eleven."""
+    while True:
+        try:
+            await app.state.bot.run_scheduled()
+        except Exception:
+            log.exception("scheduled round failed")
+        await asyncio.sleep(every)
+
+
 async def _send_due_digests(app: Starlette, now: datetime | None = None) -> int:
     now = now or datetime.now()
     conn, sent = app.state.conn, 0
@@ -1828,6 +1839,7 @@ def create_app(
                     app.state.channel.run(app.state.bot.handle), name="channel"
                 ))
                 tasks.append(asyncio.create_task(_digest_loop(app), name="digest"))
+                tasks.append(asyncio.create_task(_scheduled_loop(app), name="scheduled"))
         log.info(
             "daemon up on %s | %d rule(s), %d error(s)",
             cfg.base_url, len(app.state.rules), len(app.state.rule_errors),

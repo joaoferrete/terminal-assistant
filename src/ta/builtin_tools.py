@@ -338,3 +338,109 @@ async def docs_search(ctx: ToolContext, query: str) -> ToolResult:
         text="\n\n".join(f"{h.path}:\n{h.text}" for h in hits),
         sources=[Source("doc", h.path, h.path.rsplit("/", 1)[-1]) for h in hits],
     )
+
+
+# ── Scheduled actions (F9, D39) ─────────────────────────────────────────────
+def _now(ctx: ToolContext):
+    from datetime import datetime
+
+    return ctx.services.get("now", datetime.now)()
+
+
+def _schedulable(ctx: ToolContext, name: str):
+    """A Tool that may run later: one that acts, is not destructive (nobody is
+    there to press a confirmation at 07:00), is not scheduling itself, and is in
+    the asker's Grant now. The Grant is checked again when it fires."""
+    from .tools import allowed, registered
+
+    chosen = registered().get(name)
+    if (chosen is None or not chosen.changes_state or chosen.destructive
+            or chosen.name.startswith("schedule_") or not allowed(chosen, ctx.turn)):
+        return None
+    return chosen
+
+
+@tool(
+    description="Run one of your acting tools LATER: 'turn the light on in 10 minutes', "
+    "'every day at 7 turn on the bedroom light', 'on weekdays at 22:30 turn everything "
+    "off'. Give in_minutes for a delay, or at for a clock time. Changing the daily "
+    "summary's hour is digest_set, not this.",
+    args={"tool": "the acting tool to run, e.g. home_on",
+          "tool_args": "that tool's arguments, as a JSON object",
+          "in_minutes": "minutes from now, or empty",
+          "at": "HH:MM (the next one), or YYYY-MM-DD HH:MM, or empty",
+          "repeat": "once, daily, weekdays or weekends (a repeat needs at=HH:MM)"},
+    changes_state=True,
+)
+async def schedule_action(ctx: ToolContext, tool: str, tool_args: Any = "{}",
+                          in_minutes: str = "", at: str = "",
+                          repeat: str = "once") -> ToolResult:
+    import json
+
+    from . import scheduled
+
+    chosen = _schedulable(ctx, tool.strip())
+    if chosen is None:
+        return ToolResult(text=f"{tool!r} cannot be scheduled: it is not one of your "
+                               "acting tools, or it needs a confirmation")
+    try:
+        args = json.loads(tool_args) if isinstance(tool_args, str) else dict(tool_args or {})
+    except ValueError:
+        return ToolResult(text="tool_args is not a JSON object")
+    if not isinstance(args, dict) or set(args) - set(chosen.args):
+        return ToolResult(text=f"{chosen.name} takes only: {', '.join(chosen.args)}")
+    # A target nobody may switch should fail now, while the asker is here to read
+    # why — not at 07:00 in a message they may never see.
+    if chosen.grant == "home" and not await _targets(ctx, str(args.get("target", ""))):
+        return ToolResult(text=f"nothing you may switch matches {args.get('target', '')!r}")
+    now = _now(ctx)
+    try:
+        first, time_of_day = scheduled.when(in_minutes=in_minutes, at=at, repeat=repeat, now=now)
+    except scheduled.BadSchedule as e:
+        return ToolResult(text=f"not scheduled: {e}")
+    repeat = repeat.strip().lower() or "once"
+    summary = f"{chosen.name} " + ", ".join(f"{k}={v}" for k, v in args.items())
+    sid = scheduled.add(ctx.conn, member_id=ctx.turn.member_id, channel=ctx.channel,
+                        conversation_id=ctx.turn.conversation_id, in_group=ctx.turn.in_group,
+                        tool=chosen.name, args=args, summary=summary, next_at=first,
+                        repeat=repeat, time_of_day=time_of_day, now=now)
+    every = f", repeating {repeat} at {time_of_day}" if time_of_day else ""
+    return ToolResult(
+        text=f"scheduled #{sid}: {summary}, first at {first:%Y-%m-%d %H:%M} "
+             f"(in {scheduled.remaining(first, now)}){every}",
+        receipt={"summary": f"scheduled #{sid}: {summary}",
+                 "undo": {"kind": "cancel_scheduled", "id": sid}},
+    )
+
+
+@tool(
+    description="List the asker's scheduled actions with when each runs next and how "
+    "long until then. Use it for 'what is scheduled', 'how long until the light "
+    "turns on', 'quanto falta'.",
+)
+async def schedule_list(ctx: ToolContext) -> ToolResult:
+    from . import scheduled
+
+    now = _now(ctx)
+    rows = scheduled.active(ctx.conn, ctx.turn.member_id)
+    if not rows:
+        return ToolResult(text="nothing is scheduled")
+    lines = [f"#{s.id} {s.summary}: next {s.next_at:%Y-%m-%d %H:%M} "
+             f"(in {scheduled.remaining(s.next_at, now)})"
+             + (f", repeats {s.repeat} at {s.time_of_day}" if s.time_of_day else "")
+             for s in rows]
+    return ToolResult(text="\n".join(lines))
+
+
+@tool(
+    description="Cancel one of the asker's scheduled actions, by its number from schedule_list",
+    args={"id": "the scheduled action's number"},
+    changes_state=True,
+)
+async def schedule_cancel(ctx: ToolContext, id: str) -> ToolResult:  # noqa: A002
+    from . import scheduled
+
+    raw = str(id).strip().lstrip("#")
+    if not raw.isdigit() or not scheduled.cancel(ctx.conn, int(raw), ctx.turn.member_id):
+        return ToolResult(text=f"no active scheduled action #{raw} of yours")
+    return ToolResult(text=f"cancelled #{raw}", receipt={"summary": f"cancelled scheduled #{raw}"})

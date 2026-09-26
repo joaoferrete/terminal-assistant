@@ -79,6 +79,9 @@ in its tasks and in Discoveries; this section is only where things stand.*
 
 ### The agent's next actions
 
+- **F9 is in progress on `feat/agent-extras`** (D39–D41): colour and scheduled
+  actions are done and tested, but **not deployed**. Next is **T9.3**, Satellite
+  files, then T9.4, Gmail. Deploy together (T9.5), with the user's yes.
 - Open the PRs for the stack, in order, if the user asks. Each targets the branch
   below it, or everything goes to `main` one after another, whichever the user
   prefers.
@@ -103,6 +106,7 @@ in its tasks and in Discoveries; this section is only where things stand.*
 11. `feat/satellite` — F6
 12. `feat/rag` — F7 and the Rotombot personality
 13. `feat/config-page` — F8
+14. `feat/agent-extras` — F9
 
 A new task branches from the top of this list and is appended to it.
 
@@ -610,6 +614,66 @@ interview finished on 2026-09-26:
 - [x] **T8.5** The page itself, **seen** at desktop and phone width (AGENTS §5),
       plus [Restart].
 
+### F9 — The agent does more: colour, later, mail, files (D39–D41)
+
+Asked by the user on 2026-09-26, and decided in an interview the same day.
+
+**D39 — Scheduled actions: stored, cancellable, simple repetition.** "Turn the light
+on in 10 minutes" and "every day at 7 turn on the bedroom light" become a row in
+the database: which Tool, its arguments, and when. The repetitions are once, daily,
+weekdays and weekends, at a time of day, and nothing richer. *Why:* the user's call.
+A timer held only in memory would be lost on a restart, and cron-like expressions
+are more than a household needs.
+- It runs with the author's Grant, **read again at fire time**, as a button does
+  (T4.4).
+- Only Tools that act and are not destructive can be scheduled, because nobody is
+  there at 07:00 to press a confirmation.
+- Scheduling is itself a state change, so in a tainted turn it asks first (D27).
+- A run more than 15 minutes late (the server was down) is skipped, and the author
+  is told.
+- The confirmation carries [Cancel schedule]. "What is scheduled?" answers with
+  the time remaining, computed by the code.
+- Changing the Digest's hour is `digest_set` (F5), not this.
+
+**D40 — Email: Gmail, read-only, on demand, its own connection.** The `gmail.readonly`
+scope, connected with `/conectar_email`, through the same OAuth client and paste-back
+flow as the calendar (D14). *Why:* the user's call.
+- The agent reads mail only when the Member asks, never on its own, and never into
+  the Digest.
+- Private chats only. Each Member reads only their own mailbox.
+- Nothing is stored: not the messages, not an index.
+- Mail is third-party text, so it **taints** the turn. An email cannot make the bot
+  act.
+- *Risks:* `gmail.readonly` is a *restricted* scope. For an unverified app in
+  Production, Google shows a warning screen, and a Workspace admin may block it, as
+  in D14. Try the personal account first.
+
+**D41 — Files on a Satellite: list, read, send, live.** The agent asks the Member's
+**own** Satellite to list a folder, read a text file, or send a file through the
+Channel. *Why:* the user's call.
+- Only in folders the laptop's own config allows (`[files] folders`). The server
+  cannot widen that list.
+- Read-only. Secrets and hidden files are blocked, with the same filter as F7.
+- It needs the laptop online. When it is not, the agent says so.
+- Each Member reaches only their own computer, even the Owner, because D37's "the
+  Owner searches everything" was about an index, not live access. File contents
+  taint the turn.
+
+- [x] **T9.1** The agent changes a light's colour: a name, `#rrggbb`, or a white
+      temperature (`2700K`), through `home_on`'s `color`.
+- [x] **T9.2** Scheduled actions (D39): migration 14, `scheduled.py`, the Tools
+      `schedule_action` / `schedule_list` / `schedule_cancel`, the bot's
+      `run_scheduled` every 20 s, [Cancel schedule], and the current time in the
+      agent's prompt.
+- [ ] **T9.3** Satellite files (D41): `[files] folders` on the laptop, a
+      request/response over the Satellite's existing connection, the Tools
+      `files_list`, `files_read` and `files_send`, and `sendDocument` on the
+      Telegram Channel.
+- [ ] **T9.4** Gmail (D40): `/conectar_email`, a token per Member, and the
+      `mail_search` / `mail_read` Tools, tested against a fake Google as T5.1 was.
+- [ ] **T9.5** Deploy F9 to the server (with the user's yes), and try each
+      feature for real.
+
 ## Discoveries
 
 What contradicted the plan, as it happened. Decide per row whether it becomes an
@@ -672,3 +736,5 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T7.3 | Filtering "names starting with env" to keep `.env`-like files out also dropped `envio.md` | The filter is exact: hidden files, `env`, `env.*`, key/certificate suffixes, and names with secret words. It is conservative on purpose, so `tokenizer.py` is skipped too |
 | 2026-09-26 | T8.5 | Browser automation froze on screenshots again, one per tab at most. The page was checked by one desktop screenshot and by DOM measurement: every section present, comments kept, no overflow at 375 px, rows stacked on a phone | Two fixes from the look: the login no longer shows a red "log in" before anyone typed, and `llm.default` got an empty choice, since a blank select could not be put back |
 | 2026-09-26 | T8.5 | A test that monkeypatched `asyncio.get_running_loop` to catch the restart froze the whole suite, because it replaced the loop the test client runs on | The exit is scheduled by `_exit_soon`, which the test replaces instead |
+| 2026-09-26 | T9.2 | The suite read the author's real `~/.config/ta/config.toml`. `conftest.py` pinned the language but not the config, so a test switching "quarto" resolved the user's real `[aliases] quarto` and not the fake inventory's lamp. It passed on CI, which has no config file | `conftest.py` points `XDG_CONFIG_HOME` at a temporary directory for every test. The full suite still passes |
+| 2026-09-26 | T9.2 | The acting Tools answer "nothing you may switch" instead of raising `NotAllowed`. A scheduled run after a Grant was narrowed would have been reported as "⏰ Done" for a light that stayed off | A scheduled run with no Receipt is reported as not done. Tested with a revoked Grant |
