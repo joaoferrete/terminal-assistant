@@ -126,10 +126,10 @@ because a `python3 -m venv` typed from reflex produces an environment where
 
 It runs on one machine — your laptop — by default. It can also run on an always-on
 home server, where the core and Home Assistant keep working with the laptop
-closed, at the cost of the desktop-shaped integrations; see
-[Install → on a home server](docs/install.md#alternative-on-a-home-server).
-Bringing those back from the laptop, and adding other computers as clients, is
-the work in progress described in [the V2 plan](docs/PLAN.md).
+closed. Your computers then join it as **Satellites**, bringing back the microphone
+and the ring light; see
+[Install → on a home server](docs/install.md#alternative-on-a-home-server). What is
+still being built is in [the V2 plan](docs/PLAN.md).
 
 macOS and Windows are not supported. The core would probably run; nothing else
 would, and nobody has tried.

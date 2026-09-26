@@ -332,11 +332,10 @@ you want `ta` to keep running with your laptop closed. It is optional. The
 single-machine install above is still the default and still complete.
 
 On a server you get the notes, the board, the rules, the scheduler, Home Assistant
-and the AI. You do not get the desktop-shaped parts: the calendar (it reads your
-GNOME session), meeting detection (your laptop's microphone), the ringlight and
-desktop notifications. The plan to bring those back from the laptop is the
-*Satellite* in [PLAN.md](PLAN.md); until it lands, **the CLI on another machine
-cannot reach the server**, so you use the board from the browser.
+and the AI. The desktop-shaped parts come back from your laptop once it is a
+**Satellite** ([below](#your-computers-as-satellites)): meeting detection (its
+microphone), the ringlight and desktop notifications. The calendar comes from
+Google's API instead of your GNOME session ([calendar.md](calendar.md#on-a-server-google-calendar)).
 
 This was written from a real migration onto DietPi (Debian 12). Other Debian-like
 systems behave the same.
