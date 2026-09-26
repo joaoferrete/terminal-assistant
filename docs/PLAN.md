@@ -23,83 +23,93 @@ reverse are also ADRs, linked where they apply.
 
 ## Now
 
-- **Phase:** F1 is **closed** (2026-09-25), including the chatbot interview
-  (D25–D33). Its acceptance passed: a message from the phone appeared on the
-  board, the board survives a reload, and `llm_usage` shows the reviews ran on
-  `deepseek-flash` at about $0.001 each (an upper bound, at peak price). The
-  server runs `feat/board-link`. F0 was finished on 2026-09-25.
-- **Branch stack.** Each task branches from the previous one. **Merge in this
-  order**, each into `main` after the one before it:
-  1. `docs/v2-plan` — the plan, the glossary, the ADRs, F0 and the server docs
-  2. `feat/llm-providers` — T1.1
-  3. `feat/llm-usage` — T1.2
-  4. `feat/telegram-channel` — T1.3, T1.4, T1.5
-  5. `feat/board-link` — T1.7
-  6. `docs/chatbot-guardrails` — D25–D33, ADR 0019, and F1 closed
-  7. `feat/voice` — T2.1, T2.2
-  8. `feat/members` — T3.1–T3.5 (and the per-Member board session pulled from T6.4)
-  9. `feat/agent` — F4, in several commits
-  10. `feat/digest` — T5.3, T5.4, T5.1 (calendar code)
-  11. `feat/satellite` — F6
-  12. `feat/rag` — F7
-  13. `feat/config-page` — F8
-  The next task branches from the top of this list and is appended to it.
-- **F2 is closed** (2026-09-25). Voice notes are transcribed on the server at
-  about 0.46× real time. The server runs `feat/voice`.
-- **F3 deployed** (2026-09-26). The server runs `feat/members` at schema v9 (backup
-  `ta.db.v8-before-v9`). The Owner member is `joaoferrete`, and all 32 existing
-  Notes are the Owner's. The Telegram pairing is linked to the Owner, and the
-  `compras` List exists.
-- **F4 is built and deployed** (2026-09-26). The server runs `feat/agent`
-  (`c211cd1`) at schema v11 (backup `ta.db.v9-before-v11`). Smoke-tested against
-  real DeepSeek before the deploy.
-- **F4 accepted by the user** on 2026-09-26, after the `notes_due` fix (`6abb317`, the
-  version the server runs). Still open: web search waits on the user's Gemini
-  quota (429), and groups need privacy mode off at @BotFather plus the group id.
-- **F8 interview: paused** by the user after questions 1–3. Resume at question 4
-  (where settings are stored) and secrets, before F8 starts.
-- **F5 Digest deployed** (2026-09-26, `feat/digest`, schema v12, backup
-  `ta.db.v11-before-v12`). The weather is for São Mateus, ES (-18.72, -39.86), and
-  `ADGUARD_URL=http://localhost` is set on the server. The Owner's Digest is on at
-  07:00.
-- **T5.1 code is done** (`feat/digest`): OAuth paste-back from the chat with PKCE,
-  per-Member Google calendars behind the `Calendar` interface, tokens stored 0600.
-  **Waiting on the user:** create the OAuth client (docs/calendar.md), publish it
-  to Production, and try the work account first (the Workspace risk in D14).
-- **Open question for the user, T5.2:** the plan says to confirm events with a
-  button, but the V1 code records the user's choice to **create events without
-  confirmation** (amendment to ADR 0007). Nothing was changed. The proposal: keep
-  auto-creation, and have the bot tell the writer, "📅 created X on day Y",
-  with [Undo]. The server has no desktop notifications, so today nobody sees it.
-- **F7 and the Rotombot personality deployed** (2026-09-26, `feat/rag` at `970b94a`,
-  schema v13, backup `ta.db.v12-before-v13`). The `[rag]` extra is installed on the
-  server, and `[chat] bot_name`/`bot_personality` are set there. The laptop's Satellite
-  runs; the user adds `[rag] folders` on the laptop when they want folder search.
-- **F8 deployed** (2026-09-26, `4eeb037`). `/config` answers on the server.
-  **Waiting on the user:** `ta passwd` on the server, which is interactive and
-  theirs to run.
-- **Every phase is built.** What remains is the user's: the Google OAuth client, the
-  T5.2 decision, the Gemini quota, the group setup, and merging the stack in order.
-- **F5 calendar code and F6 server side deployed** (2026-09-26, `1be629e`, schema v12).
-- **F6 built** (`feat/satellite`): `TA_SERVER` and the token for the
-  CLI, the offline capture queue, `ta satellite login|run|status`, the hub and
-  remote ring light/notifier on the server, and `make install-satellite`.
-  **Waiting on the user:** on the laptop,
-  `TA_SERVER=http://192.168.68.189:7777` in `.env` (the Owner's `TA_TOKEN` is
-  already there) and `make install-satellite`, which is their call (AGENTS §6).
-- Still on the user: the OAuth client (Google), the T5.2 decision, and the Gemini
-  quota for web search. The AdGuard login is done (copied to the server on
-  2026-09-26).
-- **F8 interview:** before starting F8, not now. The user offered to run it now
-  and agreed to wait: most of what it configures (Grants, Lists, house rules, the
-  Digest) is still being built.
-- **Pending, the user's call (deferred on 2026-09-25):** rotate the Telegram bot
-  token. One line in the server's journal holds it, from before the httpx fix. The
-  steps: `/revoke` at @BotFather, update the laptop `.env`, then copy that one line
-  to the server and restart, with the user's yes. Pairing survives, because it is
-  bound to the user's id.
-- **Rule:** never run a command on the server without the user's yes, read-only
-  ones included.
+*Rewritten on 2026-09-26, at the end of a long session. The history of each phase is
+in its tasks and in Discoveries; this section is only where things stand.*
+
+### Where things stand
+
+- **Every phase, F0–F8, is built and deployed.** The server
+  (`root@192.168.68.189`) runs `feat/config-page` at `1be1f30`, schema **v13**, with
+  a copy of the database made before every migration (`ta.db.v*-before-v*`).
+- **Running on the server:** the daemon as a system unit, Home Assistant (Docker),
+  and the Telegram bot "Rotombot" with its personality (`[chat] bot_name`,
+  `bot_personality`). Voice notes are transcribed locally. The Digest goes to the
+  Owner at 07:00 (weather for São Mateus, ES; AdGuard with its login), and the
+  folder index (`[rag]` extra) is installed.
+- **Running on the laptop:** the Satellite (`ta-satellite`, a user unit). It is
+  connected to the server and relays the microphone, the ring light and
+  notifications. `ta note` queues offline.
+- **Accepted by the user in real use:** capture, voice, the agent's answers
+  ("quais são minhas notas vencidas?"), the board on the phone, and the Digest.
+- **Built, not yet used for real:** Google Calendar (no OAuth client yet), groups
+  (not set up), folder search (no folders configured), and the config page (no
+  password yet). Each is on the user's list below.
+
+### The user's to-do list (for the next session)
+
+1. **Config page password.** On the laptop, interactive:
+   `ssh -t root@192.168.68.189 'cd ~/terminal-assistant && .venv/bin/ta passwd'`,
+   then open `http://192.168.68.189:7777/config` in the browser where the board
+   is logged in.
+2. **Google Calendar.** Create the OAuth client (steps in
+   [calendar.md](calendar.md#on-a-server-google-calendar)). Enable the Calendar
+   API, choose an External consent screen with the two scopes, **publish it to
+   Production**, and use an app type of "Desktop app". Put `GOOGLE_CLIENT_ID` and
+   `GOOGLE_CLIENT_SECRET` in the laptop's `.env`, and ask the agent to copy them to
+   the server. Then send `/conectar_agenda` to the bot, and **try the work account
+   first**, because of the Workspace risk in D14.
+3. **Decide T5.2.** Keep creating events without confirmation (the V1 choice), and
+   have the bot say "📅 created X on day Y" with [Undo]? Or confirm by button?
+4. **Gemini quota.** Web search answers 429 RESOURCE_EXHAUSTED. In Google AI
+   Studio, check billing and quota for the project that owns `GEMINI_API_KEY`. No
+   code change is needed.
+5. **Household group (optional).** At @BotFather, `/setprivacy`, pick the bot, and
+   choose **Disable**. Add the bot to the group, and put its chat id in
+   `[channel.telegram] groups`. The config page can do that part.
+6. **Folder search (optional).** In the laptop's `~/.config/ta/config.toml`, add
+   `[rag] folders = ["~/notas", ...]`, then run `ta satellite sync`.
+7. **Invite housemates (optional).** Add `[members.<telegram_username>]` and a
+   Grant, from the config page or the file. The person messages the bot, and the
+   Owner is told.
+8. **Rotate the bot token (optional, deferred since 2026-09-25).** One line of
+   the server's journal holds the old token. Run `/revoke` at @BotFather, put the
+   new `TELEGRAM_BOT_TOKEN` in the laptop's `.env` (the config page can replace it
+   too), and restart.
+9. **Merge the branch stack**, in order (below). The agent can open the PRs.
+
+### The agent's next actions
+
+- Open the PRs for the stack, in order, if the user asks. Each targets the branch
+  below it, or everything goes to `main` one after another, whichever the user
+  prefers.
+- When the user brings the Google keys, copy them to the server (with a yes),
+  restart, and test `/conectar_agenda` together.
+- When the user decides T5.2, implement it.
+- Otherwise, fix what the user reports from real use. That is where the remaining
+  bugs are.
+
+### Branch stack — merge in this order
+
+1. `docs/v2-plan` — the plan, the glossary, the ADRs, F0 and the server docs
+2. `feat/llm-providers` — T1.1
+3. `feat/llm-usage` — T1.2
+4. `feat/telegram-channel` — T1.3, T1.4, T1.5
+5. `feat/board-link` — T1.7
+6. `docs/chatbot-guardrails` — D25–D33, ADR 0019, and F1 closed
+7. `feat/voice` — F2
+8. `feat/members` — F3 (with the per-Member board session from T6.4)
+9. `feat/agent` — F4
+10. `feat/digest` — T5.1, T5.3, T5.4
+11. `feat/satellite` — F6
+12. `feat/rag` — F7 and the Rotombot personality
+13. `feat/config-page` — F8
+
+A new task branches from the top of this list and is appended to it.
+
+### Rule
+
+Never run a command on the server without the user's yes, read-only ones
+included.
 
 ## Decisions
 
