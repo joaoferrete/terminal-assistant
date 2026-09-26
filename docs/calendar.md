@@ -163,3 +163,20 @@ user only.
 A **work account** may refuse: a Google Workspace admin can block unverified
 third-party apps. If the consent screen says so, that account stays out, and the
 personal one still works.
+
+### Email, with the same client
+
+The same OAuth client also lets the bot **read** your Gmail when you ask ("tem
+e-mail do banco essa semana?"). It never reads on its own, never sends, deletes or
+marks anything as read, and keeps nothing but the connection.
+
+1. In the same Cloud project, enable the **Gmail API**, and add the
+   `gmail.readonly` scope to the consent screen.
+2. In the chat, send `/conectar_email`, and do the same paste-back as for the
+   calendar.
+
+`gmail.readonly` is a *restricted* scope. An unverified app gets a stronger
+warning than for the calendar, and a work account is even more likely to refuse
+it. Try your personal account first. Mail works only in a private chat. Each
+person reads only their own mailbox, and what is in an email can never make the
+bot act without you confirming.

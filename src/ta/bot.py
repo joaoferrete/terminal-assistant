@@ -141,6 +141,7 @@ class Bot:
         audio_dir: Path | None = None,
         agent: AgentDeps | None = None,
         calendar_link=None,
+        mail_link=None,
         satellite_code: Callable[[int], str | None] = lambda member_id: None,
     ) -> None:
         self.conn = conn
@@ -160,6 +161,8 @@ class Bot:
         # Connecting a Google account from the chat (D14): the link out, the
         # pasted redirect back. None when there is no OAuth client configured.
         self.calendar_link = calendar_link
+        # The same flow for Gmail, read-only (D40), with its own consent link.
+        self.mail_link = mail_link
         # A one-time code a Satellite trades for its token (F6). Only the code goes
         # through the Channel, never the token: a chat is stored on its servers.
         self.satellite_code = satellite_code
@@ -272,6 +275,8 @@ class Bot:
                     msg, t("bot.satellite_code", code=code) if code else t("bot.board_unreachable"))
             elif command in ("/conectar_agenda", "/connect_calendar"):
                 await self._connect_calendar(msg, member_id)
+            elif command in ("/conectar_email", "/connect_email"):
+                await self._connect_mail(msg, member_id)
             elif command == "/board":
                 url = self.board_link(member_id)
                 await self.channel.reply(
@@ -283,8 +288,12 @@ class Bot:
 
         # The pasted consent redirect is a credential, not a thought: it is never
         # captured, never remembered, never sent to a model.
-        if self.calendar_link is not None and _looks_pasted(text):
-            await self._finish_calendar(msg, member_id, text)
+        if _looks_pasted(text) and (self.calendar_link or self.mail_link):
+            # The link's `state` says whether it was for the mail or the calendar.
+            if self.mail_link is not None and self.mail_link.connector.owns(text):
+                await self._finish_mail(msg, member_id, text)
+            elif self.calendar_link is not None:
+                await self._finish_calendar(msg, member_id, text)
             return
 
         await self._text(msg, member_id, text)
@@ -308,6 +317,25 @@ class Bot:
             await self.channel.reply(msg, t("bot.calendar_failed"))
             return
         await self.channel.reply(msg, t("bot.calendar_connected", account=account))
+
+    async def _connect_mail(self, msg: Inbound, member_id: int) -> None:
+        if self.mail_link is None or not self.mail_link.configured:
+            await self.channel.reply(msg, t("bot.calendar_unconfigured"))
+            return
+        if not msg.private:
+            return      # a consent link is personal; it never goes to a group
+        await self.channel.reply(msg, t("bot.mail_link", url=self.mail_link.consent(member_id)))
+
+    async def _finish_mail(self, msg: Inbound, member_id: int, text: str) -> None:
+        from .sensors.google_calendar import CalendarError
+
+        try:
+            account = await asyncio.to_thread(self.mail_link.finish, member_id, text)
+        except CalendarError as e:
+            log.warning("mail connection failed: %s", e)
+            await self.channel.reply(msg, t("bot.mail_failed"))
+            return
+        await self.channel.reply(msg, t("bot.mail_connected", account=account))
 
     # ── Groups (T4.6) ──────────────────────────────────────────────────────
     def _known(self, msg: Inbound) -> int | None:

@@ -573,6 +573,29 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "I couldn't connect the calendar. The link works once, for 10 minutes — "
               "send /connect_calendar again.",
     },
+    # Gmail, read-only (F9, D40).
+    "bot.mail_link": {
+        "pt": "Vou só LER seus e-mails, e só quando você pedir. Nada fica guardado.\n"
+              "1. Abra este link e autorize: {url}\n2. O Google pode avisar que o app não "
+              "foi verificado: é o seu próprio servidor, pode seguir em “Avançado”.\n"
+              "3. No fim, o navegador mostra um erro de página — é esperado. Copie o "
+              "endereço da barra e cole aqui.",
+        "en": "I will only READ your email, and only when you ask. Nothing is kept.\n"
+              "1. Open this link and allow access: {url}\n2. Google may warn the app is "
+              "unverified: it is your own server, go on through “Advanced”.\n"
+              "3. At the end the browser shows a page error — that is expected. Copy the "
+              "address bar and paste it here.",
+    },
+    "bot.mail_connected": {"pt": "E-mail conectado, só leitura: {account} ✓",
+                           "en": "Email connected, read-only: {account} ✓"},
+    "bot.mail_failed": {
+        "pt": "Não consegui conectar o e-mail. O link vale 10 minutos e uma vez só — "
+              "mande /conectar_email de novo. Numa conta de trabalho, o administrador "
+              "pode ter bloqueado apps não verificados.",
+        "en": "I couldn't connect the email. The link works once, for 10 minutes — "
+              "send /connect_email again. On a work account, the admin may have blocked "
+              "unverified apps.",
+    },
     "agent.sources": {"pt": "Fontes: {list}", "en": "Sources: {list}"},
     "cli.queued": {
         "pt": "Sem servidor agora — anotada aqui e enviada quando ele voltar ({n} na fila).",

@@ -520,3 +520,64 @@ async def files_send(ctx: ToolContext, path: str) -> ToolResult:
     await channel.send_document(ctx.turn.conversation_id, answer["name"],
                                 base64.b64decode(answer["data"]))
     return ToolResult(text=f"sent {answer['name']} to the member; it is in the chat now")
+
+
+# ── Mail (F9, D40) ──────────────────────────────────────────────────────────
+def _mailbox(ctx: ToolContext):
+    """The asker's own Gmail, or why there is none. Private chats only."""
+    if ctx.turn.in_group:
+        return "mail is private; ask in a private chat"
+    build = ctx.services.get("mail")
+    box = build(ctx.turn.member_id) if build else None
+    if box is None or not box.available:
+        return "no mailbox is connected; the member can send /conectar_email"
+    return box
+
+
+@tool(
+    description="Search the asker's own Gmail, only when they ask about their email. "
+    "Takes Gmail search syntax: words, from:, subject:, newer_than:7d, is:unread.",
+    args={"query": "a Gmail search, e.g. 'from:banco newer_than:7d'"},
+    # Mail is written by strangers: it taints the turn, so no email can make the
+    # bot act without the asker's confirmation (D27, D40).
+    third_party=True,
+)
+async def mail_search(ctx: ToolContext, query: str) -> ToolResult:
+    import asyncio
+
+    from .sensors.gmail import MailError
+
+    box = _mailbox(ctx)
+    if isinstance(box, str):
+        return ToolResult(text=box)
+    try:
+        found = await asyncio.to_thread(box.search, query)
+    except MailError as e:
+        return ToolResult(text=f"mail search failed: {e}")
+    if not found:
+        return ToolResult(text="no message matches")
+    return ToolResult(text="\n".join(
+        f"[{m['id']}] {m['date']} · {_quote(m['from'])} · {_quote(m['subject'])}: "
+        f"{_quote(m['snippet'])}" for m in found))
+
+
+@tool(
+    description="Read one of the asker's emails in full, by the id mail_search gave",
+    args={"id": "the message id, exactly as mail_search showed it"},
+    third_party=True,
+)
+async def mail_read(ctx: ToolContext, id: str) -> ToolResult:  # noqa: A002
+    import asyncio
+
+    from .sensors.gmail import MailError
+
+    box = _mailbox(ctx)
+    if isinstance(box, str):
+        return ToolResult(text=box)
+    try:
+        m = await asyncio.to_thread(box.read, id.strip().strip("[]"))
+    except MailError as e:
+        return ToolResult(text=f"could not read it: {e}")
+    more = "\n[truncated]" if m["truncated"] else ""
+    return ToolResult(text=f"From: {m['from']}\nDate: {m['date']}\nSubject: {m['subject']}"
+                           f"\n\n{m['text']}{more}")

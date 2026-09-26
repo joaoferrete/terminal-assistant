@@ -72,6 +72,7 @@ from .db import connect, default_db_path
 from .llm import LLM, LLMUnavailable, current_member, for_member
 from .members import OWNER, OWNER_ID, SYSTEM, Viewer
 from .scheduler import Scheduler, lateness_label, lateness_of
+from .sensors import gmail as gmail_mod
 from .sensors.calendar import Calendar
 from .sensors.google_calendar import Connector as GoogleConnector
 from .sensors.google_calendar import GoogleCalendar
@@ -435,6 +436,8 @@ def _agent_deps(app: Starlette) -> AgentDeps:
             "capture": lambda raw, owner_id=OWNER_ID, list_id=None: _capture(
                 app, raw, owner_id=owner_id, list_id=list_id),
             "digest": lambda member_id: _build_digest(app, member_id),
+            "mail": lambda member_id: gmail_mod.Gmail(
+                member_id, app.state.google_mail, app.state.mail_tokens),
         },
         persona=lambda member_id: builtin_tools.persona_line(app.state.conn, member_id),
         house_rules=lambda: chat_config()["house_rules"],
@@ -1779,6 +1782,10 @@ def create_app(
         app.state.llm.on_usage = _usage_recorder(app)
         app.state.google = GoogleConnector(cfg.google_client_id, cfg.google_client_secret)
         app.state.google_tokens = GoogleTokens(db_path_resolved.parent / "google")
+        # Gmail, read-only (D40): the same OAuth client, its own scope and tokens.
+        app.state.google_mail = GoogleConnector(cfg.google_client_id, cfg.google_client_secret,
+                                                scopes=gmail_mod.SCOPES)
+        app.state.mail_tokens = GoogleTokens(db_path_resolved.parent / "google-mail")
         app.state.cal_adapter = CalendarAdapter(_OwnerCalendar(app))
         # Injectable like `calendar`: a test hands in a fake and never reaches
         # Telegram.
@@ -1805,6 +1812,8 @@ def create_app(
             # text is captured, which is F1's behaviour and keeps invariant 1.
             agent=_agent_deps(app) if app.state.llm.configured else None,
             calendar_link=GoogleLink(app.state.google, app.state.google_tokens),
+            mail_link=GoogleLink(app.state.google_mail, app.state.mail_tokens,
+                                 account=gmail_mod.account_of),
             # Only when the daemon is reachable from other machines with a token:
             # otherwise there is no server for a Satellite to join.
             satellite_code=(lambda member_id: app.state.satellite_codes.issue(member_id))

@@ -63,7 +63,7 @@ See [ai.md](ai.md) for what each feature costs in model calls.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | *(none)* | Your own OAuth client, for the calendar on a server. Each Member then connects their accounts from the chat with `/conectar_agenda`. See [calendar.md](calendar.md#on-a-server-google-calendar) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | *(none)* | Your own OAuth client, for the calendar on a server. Each Member then connects their accounts from the chat with `/conectar_agenda`, and their Gmail (read-only) with `/conectar_email`. See [calendar.md](calendar.md#on-a-server-google-calendar) |
 
 ### Digest
 

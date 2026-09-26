@@ -58,6 +58,10 @@ in its tasks and in Discoveries; this section is only where things stand.*
    `GOOGLE_CLIENT_SECRET` in the laptop's `.env`, and ask the agent to copy them to
    the server. Then send `/conectar_agenda` to the bot, and **try the work account
    first**, because of the Workspace risk in D14.
+   For email (D40), also enable the **Gmail API** and add the `gmail.readonly`
+   scope in the same project, then send `/conectar_email`. Try the personal
+   account first, because the scope is restricted. The step-by-step walkthrough
+   is in [calendar.md](calendar.md#on-a-server-google-calendar).
 3. **Decide T5.2.** Keep creating events without confirmation (the V1 choice), and
    have the bot say "📅 created X on day Y" with [Undo]? Or confirm by button?
 4. **Gemini quota.** Web search answers 429 RESOURCE_EXHAUSTED. In Google AI
@@ -79,11 +83,12 @@ in its tasks and in Discoveries; this section is only where things stand.*
 
 ### The agent's next actions
 
-- **F9 is in progress on `feat/agent-extras`** (D39–D41): colour and scheduled
-  actions and Satellite files are done and tested, but **not deployed**. Next is
-  **T9.4**, Gmail. Deploy together (T9.5), with the user's yes. The laptop's
-  Satellite must be updated too (`git pull` there and restart `ta-satellite`, the
-  user's call), or file requests time out.
+- **F9 is built on `feat/agent-extras`** (D39–D41): colour, scheduled actions,
+  Satellite files and Gmail, all tested, but **not deployed**. Next is **T9.5**:
+  deploy to the server (migration 14, with the user's yes) and try each feature for
+  real. The laptop's Satellite must be updated too (restart `ta-satellite`, the
+  user's call), or file requests time out. Files also need `[files] folders` in the
+  laptop's config, and mail needs item 2 below.
 - Open the PRs for the stack, in order, if the user asks. Each targets the branch
   below it, or everything goes to `main` one after another, whichever the user
   prefers.
@@ -671,7 +676,7 @@ Channel. *Why:* the user's call.
       request/response over the Satellite's existing connection, the Tools
       `files_list`, `files_read` and `files_send`, and `sendDocument` on the
       Telegram Channel.
-- [ ] **T9.4** Gmail (D40): `/conectar_email`, a token per Member, and the
+- [x] **T9.4** Gmail (D40): `/conectar_email`, a token per Member, and the
       `mail_search` / `mail_read` Tools, tested against a fake Google as T5.1 was.
 - [ ] **T9.5** Deploy F9 to the server (with the user's yes), and try each
       feature for real.
@@ -742,3 +747,4 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T9.2 | The acting Tools answer "nothing you may switch" instead of raising `NotAllowed`. A scheduled run after a Grant was narrowed would have been reported as "⏰ Done" for a light that stayed off | A scheduled run with no Receipt is reported as not done. Tested with a revoked Grant |
 | 2026-09-26 | T9.3 | F7's file filter (`rag_sync.eligible`) also requires a text suffix, so reusing it would have stopped a PDF from being sent | The files module uses F7's lists (secret words, key suffixes, skipped folders) plus hidden names, without the suffix rule, and checks every path component after resolving symlinks |
 | 2026-09-26 | T9.3 | A Satellite running the older code ignores a request it does not know, so the agent would wait for nothing | A request times out after 30 s, and the agent says the Satellite "may need updating". Deploying F9 means updating the laptop too |
+| 2026-09-26 | T9.4 | The calendar's `account_of` reads the primary calendar, which a mail-only token cannot do, and one Connector held the calendar's scopes fixed | `Connector` takes its scopes, `Link` takes how to find the account (Gmail's `/profile` for mail), and `owns()` sends a pasted redirect to the Connector whose `state` it carries. The refresh exchange is shared. The calendar's 12 tests passed unchanged |

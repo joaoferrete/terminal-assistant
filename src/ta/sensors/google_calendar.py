@@ -70,8 +70,12 @@ class Connector:
     """Consent links waiting to be pasted back, keyed by their `state`."""
 
     def __init__(self, client_id: str | None, client_secret: str | None, *,
+                 scopes: tuple[str, ...] = SCOPES,
                  transport: httpx.BaseTransport | None = None) -> None:
         self.client_id, self.client_secret = client_id, client_secret
+        # One Connector per purpose (the calendar, the mail of F9), each asking
+        # only for its own scopes, with the same OAuth client (D40).
+        self.scopes = scopes
         self._pending: dict[str, Pending] = {}
         self._transport = transport
 
@@ -90,13 +94,18 @@ class Connector:
             hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
         return AUTH_URL + "?" + urlencode({
             "client_id": self.client_id, "redirect_uri": REDIRECT, "response_type": "code",
-            "scope": " ".join(SCOPES), "access_type": "offline", "prompt": "consent",
+            "scope": " ".join(self.scopes), "access_type": "offline", "prompt": "consent",
             "state": state, "code_challenge": challenge, "code_challenge_method": "S256",
         })
 
     @staticmethod
     def looks_pasted(text: str) -> bool:
         return text.strip().startswith(REDIRECT) and "code=" in text and "state=" in text
+
+    def owns(self, pasted: str) -> bool:
+        """Whether a pasted redirect answers a link THIS Connector issued. With a
+        calendar and a mail Connector, the `state` says which one it was for."""
+        return (parse_qs(urlparse(pasted.strip()).query).get("state") or [""])[0] in self._pending
 
     def exchange(self, pasted: str, member_id: int) -> dict:
         """The pasted redirect → the account's tokens. Only for the Member the link
@@ -122,8 +131,11 @@ class Link:
     """Connecting an account, end to end: the link out, the paste back."""
 
     def __init__(self, connector: Connector, store: TokenStore, *,
-                 transport: httpx.BaseTransport | None = None) -> None:
+                 transport: httpx.BaseTransport | None = None, account=None) -> None:
         self.connector, self.store, self._transport = connector, store, transport
+        # How to learn the account's address. The calendar asks its primary
+        # calendar; the mail asks Gmail's profile, since it has no calendar scope.
+        self.account = account or account_of
 
     @property
     def configured(self) -> bool:
@@ -135,7 +147,7 @@ class Link:
     def finish(self, member_id: int, pasted: str) -> str:
         """Exchange the pasted code and keep the refresh token. Returns the account."""
         tokens = self.connector.exchange(pasted, member_id)
-        account = account_of(tokens, transport=self._transport)
+        account = self.account(tokens, transport=self._transport)
         self.store.save(member_id, account, tokens["refresh_token"])
         return account
 
@@ -251,17 +263,11 @@ class GoogleCalendar:
         refresh = dict(self.store.accounts(self.member_id)).get(account)
         if refresh is None:
             raise CalendarError(f"{account} is not connected")
-        with httpx.Client(timeout=15, transport=self._transport) as c:
-            r = c.post(TOKEN_URL, data={
-                "client_id": self.connector.client_id,
-                "client_secret": self.connector.client_secret,
-                "refresh_token": refresh, "grant_type": "refresh_token"})
-        if r.status_code != 200:
-            # The usual cause: the OAuth app still in Testing, whose refresh
-            # tokens expire after seven days (D14). Say it, do not just fail.
-            self._error = f"Google refused the refresh token (HTTP {r.status_code})"
-            raise CalendarError(self._error)
-        data = r.json()
+        try:
+            data = refresh_access(self.connector, refresh, self._transport)
+        except CalendarError as e:
+            self._error = str(e)
+            raise
         self._access[account] = (data["access_token"], time_mod.time() + data.get("expires_in", 0))
         return data["access_token"]
 
@@ -278,6 +284,20 @@ class GoogleCalendar:
 
     def _get(self, account: str, path: str, params: dict | None = None) -> dict:
         return self._request(account, "GET", path, params=params or {})
+
+
+def refresh_access(connector: Connector, refresh: str,
+                   transport: httpx.BaseTransport | None = None) -> dict:
+    """A refresh token → a fresh access token (Google's JSON answer)."""
+    with httpx.Client(timeout=15, transport=transport) as c:
+        r = c.post(TOKEN_URL, data={
+            "client_id": connector.client_id, "client_secret": connector.client_secret,
+            "refresh_token": refresh, "grant_type": "refresh_token"})
+    if r.status_code != 200:
+        # The usual cause: the OAuth app still in Testing, whose refresh tokens
+        # expire after seven days (D14). Say it, do not just fail.
+        raise CalendarError(f"Google refused the refresh token (HTTP {r.status_code})")
+    return r.json()
 
 
 def account_of(tokens: dict, *, transport: httpx.BaseTransport | None = None) -> str:
