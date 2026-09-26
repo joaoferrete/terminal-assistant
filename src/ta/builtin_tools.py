@@ -414,22 +414,28 @@ async def schedule_action(ctx: ToolContext, tool: str, tool_args: Any = "{}",
 
 
 @tool(
-    description="List the asker's scheduled actions with when each runs next and how "
-    "long until then. Use it for 'what is scheduled', 'how long until the light "
-    "turns on', 'quanto falta'.",
+    description="List the asker's scheduled actions and pending reminders (timers), with "
+    "when each is due and how long until then. Use it for 'what is scheduled', 'how "
+    "long until the light turns on', 'quanto falta pro timer'.",
 )
 async def schedule_list(ctx: ToolContext) -> ToolResult:
+    from datetime import datetime
+
     from . import scheduled
 
     now = _now(ctx)
     rows = scheduled.active(ctx.conn, ctx.turn.member_id)
-    if not rows:
-        return ToolResult(text="nothing is scheduled")
-    lines = [f"#{s.id} {s.summary}: next {s.next_at:%Y-%m-%d %H:%M} "
+    lines = [f"action #{s.id} {s.summary}: next {s.next_at:%Y-%m-%d %H:%M} "
              f"(in {scheduled.remaining(s.next_at, now)})"
              + (f", repeats {s.repeat} at {s.time_of_day}" if s.time_of_day else "")
              for s in rows]
-    return ToolResult(text="\n".join(lines))
+    # Reminders ("daqui 10 min tirar o bolo") are timers too: "quanto falta?"
+    # means either, and only the asker's own.
+    for n in store.upcoming_reminders(ctx.conn, ctx.turn.member_id):
+        at = datetime.fromisoformat(n.remind_at)
+        lines.append(f"reminder (note #{n.id}) {_quote(n.text)}: at {at:%Y-%m-%d %H:%M} "
+                     f"(in {scheduled.remaining(at, now)})")
+    return ToolResult(text="\n".join(lines) or "nothing is scheduled")
 
 
 @tool(

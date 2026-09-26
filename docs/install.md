@@ -244,6 +244,13 @@ agendado?" answers with how long is left. It runs with your permissions as they
 are when it fires. If the server was down and it is more than 15 minutes late, it
 is skipped, and the bot tells you.
 
+Reminders ring in the chat too. "Me avisa daqui 10 min pra tirar o bolo", "timer
+de 15 min" or "me lembra às 15h de ligar pro dentista" becomes a note with a
+reminder, and when it is due the bot messages **the person who wrote it**, in
+private, with [Done] and [+10 min]. The owner's reminders also go to their desktop
+and the house speakers. Nobody else's do. "Quanto falta?" lists timers and
+scheduled actions together.
+
 To use it in a household group:
 
 1. At @BotFather, `/setprivacy`, pick the bot, **Disable**. Otherwise Telegram only

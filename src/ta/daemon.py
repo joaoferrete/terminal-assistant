@@ -1662,18 +1662,31 @@ async def _fire_reminders(app: Starlette, now: datetime) -> None:
     conn = app.state.conn
     for note in store.pending_reminders(conn, now=now):
         late = lateness_label(lateness_of(note.remind_at, now))
-        await app.state.notify.send("Lembrete", f"{note.text}{late}", urgency="critical")
-
-        for echo in app.state.config.echo_entities:
-            with contextlib.suppress(HomeError):
-                await app.state.home.announce(echo, f"Lembrete: {note.text}")
+        # The desktop, the house speakers and the Rules are the Owner's. Before F9
+        # every Member's Reminder went to them: a housemate's "ligar pro médico"
+        # would have popped up on the Owner's laptop, and been read aloud.
+        mine = note.owner_id == OWNER_ID
+        if mine:
+            await app.state.notify.send(i18n.t("reminder.title"), f"{note.text}{late}",
+                                        urgency="critical")
+            for echo in app.state.config.echo_entities:
+                with contextlib.suppress(HomeError):
+                    await app.state.home.announce(echo, f"{i18n.t('reminder.title')}: {note.text}")
 
         store.mark_fired(conn, note.id, now=now)
-        log.info("reminder #%s disparado%s", note.id, late)
-        await engine.dispatch(
-            app.state.rules,
-            _make_context(app, engine.Trigger("reminder", note.id), note=_note_json(note)),
-        )
+        log.info("reminder #%s fired%s", note.id, late)
+        # And to its writer's private chat, whoever they are (F9).
+        bot = getattr(app.state, "bot", None)
+        if bot is not None:
+            try:
+                await bot.remind(note, late)
+            except Exception:
+                log.exception("reminder #%s could not reach the chat", note.id)
+        if mine:
+            await engine.dispatch(
+                app.state.rules,
+                _make_context(app, engine.Trigger("reminder", note.id), note=_note_json(note)),
+            )
 
 
 def _wire_engine(app: Starlette) -> None:

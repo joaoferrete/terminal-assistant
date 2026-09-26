@@ -23,7 +23,7 @@ import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -435,6 +435,13 @@ class Bot:
             receipts.answered_by(self.conn, rids, sent)
 
     def _captured_line(self, note) -> str:
+        # A timer says when it will ring: "daqui 10 min" read wrong must show now,
+        # not when the reminder fails to come.
+        remind = getattr(note, "remind_at", None)
+        if remind:
+            at = datetime.fromisoformat(str(remind))
+            when = f"{at:%H:%M}" if at.date() == datetime.now().date() else f"{at:%d/%m %H:%M}"
+            return t("bot.captured_remind", id=note.id, at=when)
         due = getattr(note, "due", None)
         return t("bot.captured_due", id=note.id, due=due) if due else t("bot.captured", id=note.id)
 
@@ -643,6 +650,14 @@ class Bot:
             receipts.set_state(self.conn, r.id, "done")
             await self.channel.answered(msg, t("bot.split_done",
                                                ids=", ".join(f"#{n.id}" for n in created)))
+        elif kind in ("done", "snooze") and r.state == "pending" and r.tool == "reminder":
+            try:
+                answer = self._reminder_button(kind, member_id, r)
+            except KeyError:          # the Note was deleted meanwhile
+                receipts.set_state(self.conn, r.id, "refused")
+                await self.channel.answered(msg, t("bot.stale"))
+                return
+            await self.channel.answered(msg, answer)
         elif kind == "no" and r.state == "pending":
             receipts.set_state(self.conn, r.id, "refused")
             await self.channel.answered(msg, t("bot.cancelled"))
@@ -709,6 +724,41 @@ class Bot:
                 turn, ctx = self._turn(msg, member_id)
                 await run_tool(chosen, turn, ctx, u.get("args", {}), confirmed=True)
 
+    # ── Reminders on the chat (F9) ──────────────────────────────────────────
+    async def remind(self, note, late: str = "") -> bool:
+        """A due Reminder, to its writer's private chat, with [Done] and [+10 min].
+
+        Only to the writer: their Reminder is as private as their Note (D6).
+        False when they have no chat on this Channel yet.
+        """
+        if not getattr(self.channel, "configured", True) or not hasattr(self.channel, "send"):
+            return False
+        chat = _identity_of(self.conn, self.channel.name, note.owner_id)
+        if chat is None:
+            return False
+        rid = receipts.record(self.conn, channel=self.channel.name, conversation_id=chat,
+                              message_id=None, member_id=note.owner_id, tool="reminder",
+                              args={"note_id": note.id}, state="pending",
+                              summary=f"reminded of #{note.id}")
+        await self._push(self.channel.name, chat, t("bot.reminder", text=note.text, late=late),
+                         [Button(t("bot.btn_reminder_done"), f"done:{rid}"),
+                          Button(t("bot.btn_snooze"), f"snooze:{rid}")], rid)
+        return True
+
+    def _reminder_button(self, kind: str, member_id: int, r) -> str:
+        """[Done] or [+10 min] on a Reminder; returns what to answer."""
+        note = store.get_note(self.conn, r.args["note_id"], viewer=members_mod.Viewer(member_id))
+        if kind == "done":
+            store.mark_done(self.conn, note.id)
+            receipts.set_state(self.conn, r.id, "done")
+            return t("bot.reminder_done")
+        until = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=10)
+        store.snooze(self.conn, note.id, until)
+        # `done` for this button: the receipts table allows only four states, and
+        # the next ring comes with a Receipt of its own.
+        receipts.set_state(self.conn, r.id, "done")
+        return t("bot.reminder_snoozed", at=f"{until:%H:%M}")
+
     # ── Scheduled actions (F9, D39) ─────────────────────────────────────────
     async def run_scheduled(self, now: datetime | None = None) -> int:
         """Run what is due, each with its author's Grant as it is NOW.
@@ -772,12 +822,18 @@ class Bot:
 
     async def _tell_scheduled(self, s, text: str, buttons: list[Button] | None = None,
                               rid: int | None = None) -> None:
+        await self._push(s.channel, s.conversation_id, text, buttons, rid)
+
+    async def _push(self, channel: str, conversation_id: str, text: str,
+                    buttons: list[Button] | None = None, rid: int | None = None) -> None:
+        """A message nobody just asked for, kept in the conversation's memory and
+        tied to its Receipt, so "what was that?" in reply to it has an answer."""
         try:
-            sent = await self.channel.send(s.conversation_id, text, buttons)
+            sent = await self.channel.send(conversation_id, text, buttons)
         except ChannelError as e:
-            log.warning("could not tell about scheduled #%d: %s", s.id, e)
+            log.warning("could not send to %s: %s", conversation_id, e)
             return
-        memory.record(self.conn, channel=s.channel, conversation_id=s.conversation_id,
+        memory.record(self.conn, channel=channel, conversation_id=conversation_id,
                       message_id=sent, member_id=None, text=text)
         if sent and rid is not None:
             receipts.answered_by(self.conn, [rid], sent)

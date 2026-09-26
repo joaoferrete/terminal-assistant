@@ -84,7 +84,8 @@ in its tasks and in Discoveries; this section is only where things stand.*
 ### The agent's next actions
 
 - **F9 is built on `feat/agent-extras`** (D39–D41): colour, scheduled actions,
-  Satellite files and Gmail, all tested, but **not deployed**. Next is **T9.5**:
+  Satellite files, Gmail with drafts and reminders on the chat, all tested, but
+  **not deployed**. Next is **T9.5**:
   deploy to the server (migration 14, with the user's yes) and try each feature for
   real. The laptop's Satellite must be updated too (restart `ta-satellite`, the
   user's call), or file requests time out. Files also need `[files] folders` in the
@@ -687,6 +688,10 @@ the asker's button (D27). This amends D40's "read-only".
       Telegram Channel.
 - [x] **T9.6** Email drafts (D42): `gmail.compose`, the `mail_draft` Tool, replies
       kept in their thread, and `docs/privacy.md` for the consent screen's Branding.
+- [x] **T9.7** Reminders on the chat: a due Reminder goes to its writer's private
+      chat with [Done] and [+10 min]. The parser reads delays ("daqui 10 min",
+      "meia hora", "timer de 15 min", "in 10 minutes"). The desktop, speakers and
+      Rules get only the Owner's. `schedule_list` shows pending timers.
 - [x] **T9.4** Gmail (D40): `/conectar_email`, a token per Member, and the
       `mail_search` / `mail_read` Tools, tested against a fake Google as T5.1 was.
 - [ ] **T9.5** Deploy F9 to the server (with the user's yes), and try each
@@ -760,3 +765,5 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T9.3 | A Satellite running the older code ignores a request it does not know, so the agent would wait for nothing | A request times out after 30 s, and the agent says the Satellite "may need updating". Deploying F9 means updating the laptop too |
 | 2026-09-26 | T9.4 | The calendar's `account_of` reads the primary calendar, which a mail-only token cannot do, and one Connector held the calendar's scopes fixed | `Connector` takes its scopes, `Link` takes how to find the account (Gmail's `/profile` for mail), and `owns()` sends a pasted redirect to the Connector whose `state` it carries. The refresh exchange is shared. The calendar's 12 tests passed unchanged |
 | 2026-09-26 | T9.6 | Publishing the consent screen to Production requires, under Branding, a home page and a privacy policy URL. The walkthrough did not say so, and the user got stuck at "Publish app" | `docs/privacy.md` states what the software does with Google data, including that the relevant part of an email goes to the configured model (DeepSeek by default), which D40 had not said. The walkthrough points Branding at the public repository |
+| 2026-09-26 | T9.7 | **A privacy leak, in production since F3.** `_fire_reminders` sent every Member's Reminder to the Owner's desktop (the Satellite's notifier), read it aloud on the house speakers, and passed it to the Owner's Rules. A housemate's "ligar pro médico" would have popped up on the Owner's laptop. Nobody else used the bot yet, so nothing leaked | The desktop, the speakers and the Rules get only the Owner's Reminders. Every Reminder also goes to its writer's private chat. Tested with two Members |
+| 2026-09-26 | T9.7 | The parser had no relative times, so "daqui 10 min" was captured with no reminder at all, silently | `_nl_delay` in both languages, only after a lead-in ("daqui", "em", "timer de", "in"), so "leva 10 min" stays a duration. The capture reply now says when it will ring, so a misread shows at once |

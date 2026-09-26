@@ -441,6 +441,21 @@ def set_status(
     )
 
 
+def snooze(conn: sqlite3.Connection, note_id: int, until: datetime) -> None:
+    """Fire the Reminder again later ("+10 min" on the chat, F9)."""
+    conn.execute("UPDATE notes SET remind_at = ?, fired_at = NULL WHERE id = ?",
+                 (until.isoformat(timespec="seconds"), note_id))
+
+
+def upcoming_reminders(conn: sqlite3.Connection, member_id: int) -> list[Note]:
+    """A Member's own Reminders still to fire, soonest first ("quanto falta?")."""
+    rows = conn.execute(
+        "SELECT * FROM notes WHERE deleted_at IS NULL AND fired_at IS NULL"
+        " AND remind_at IS NOT NULL AND done_at IS NULL AND owner_id = ?"
+        " ORDER BY remind_at", (member_id,))
+    return [_row_to_note(r, []) for r in rows]
+
+
 def mark_done(conn: sqlite3.Connection, note_id: int, *, now: datetime | None = None) -> None:
     set_status(conn, note_id, "done", now=now)
 

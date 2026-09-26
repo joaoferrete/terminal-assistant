@@ -207,6 +207,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     "review.priority_removed": {"pt": "prioridade removida", "en": "priority removed"},
     "review.untitled": {"pt": "(sem título)", "en": "(untitled)"},
     "review.event_created": {"pt": "evento criado", "en": "event created"},
+    "reminder.title": {"pt": "Lembrete", "en": "Reminder"},
     "reminder.late_minutes": {"pt": " (atrasado {n} min)", "en": " ({n} min late)"},
     "reminder.late_hours": {"pt": " (atrasado {n} h)", "en": " ({n} h late)"},
     "reminder.very_late": {"pt": " (muito atrasado)", "en": " (very late)"},
@@ -411,6 +412,8 @@ MESSAGES: dict[str, dict[str, str]] = {
     },
     "bot.captured": {"pt": "Anotado · #{id}", "en": "Noted · #{id}"},
     "bot.captured_due": {"pt": "Anotado · #{id} · prazo {due}", "en": "Noted · #{id} · due {due}"},
+    "bot.captured_remind": {"pt": "Anotado · #{id} · te lembro às {at} ⏰",
+                            "en": "Noted · #{id} · I'll remind you at {at} ⏰"},
     "bot.unsupported": {
         "pt": "Por enquanto eu só leio texto.",
         "en": "For now I can only read text.",
@@ -476,6 +479,13 @@ MESSAGES: dict[str, dict[str, str]] = {
     "bot.done": {"pt": "Feito.", "en": "Done."},
     "bot.home_on_done": {"pt": "Feito · ligado: {what}", "en": "Done · on: {what}"},
     "bot.home_off_done": {"pt": "Feito · desligado: {what}", "en": "Done · off: {what}"},
+    # Reminders on the chat (F9).
+    "bot.reminder": {"pt": "⏰ Lembrete: {text}{late}", "en": "⏰ Reminder: {text}{late}"},
+    "bot.btn_reminder_done": {"pt": "Concluir", "en": "Done"},
+    "bot.btn_snooze": {"pt": "+10 min", "en": "+10 min"},
+    "bot.reminder_done": {"pt": "Concluída ✓", "en": "Done ✓"},
+    "bot.reminder_snoozed": {"pt": "Te lembro de novo às {at}.",
+                             "en": "I'll remind you again at {at}."},
     # Scheduled actions (F9, D39).
     "bot.btn_cancel_scheduled": {"pt": "Cancelar agendamento", "en": "Cancel schedule"},
     "bot.scheduled_cancelled": {"pt": "Agendamento cancelado.", "en": "Schedule cancelled."},
