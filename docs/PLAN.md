@@ -55,12 +55,13 @@ reverse are also ADRs, linked where they apply.
   quota (429), and groups need privacy mode off at @BotFather plus the group id.
 - **F8 interview: paused** by the user after questions 1–3. Resume at question 4
   (where settings are stored) and secrets, before F8 starts.
-- **F5 Digest built** (T5.3, T5.4) on `feat/digest`, not deployed. Only the Owner
-  receives it by default, at 07:00 (decided 2026-09-26); others ask the bot.
-- **Next agent action:** deploy the Digest with the user's yes, after getting from
-  them the house's location for the weather and AdGuard's address and login on
-  the server. Then T5.1/T5.2, the Google Calendar, which needs the user to create
-  an OAuth client in Google Cloud first (and the Workspace risk in D14).
+- **F5 Digest deployed** (2026-09-26, `feat/digest`, schema v12, backup
+  `ta.db.v11-before-v12`). The weather is for São Mateus, ES (-18.72, -39.86), and
+  `ADGUARD_URL=http://localhost` is set on the server. The Owner's Digest is on at
+  07:00.
+- **Next agent action:** T5.1/T5.2, the Google Calendar. It needs the user to
+  create an OAuth client in Google Cloud first; prepare a walkthrough. Check the
+  Workspace risk (D14) on the work account before anything else.
 - **F8 interview:** before starting F8, not now. The user offered to run it now
   and agreed to wait: most of what it configures (Grants, Lists, house rules, the
   Digest) is still being built.
