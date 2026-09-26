@@ -74,7 +74,7 @@ class Reply:
     pending: NeedsConfirmation | None = None
 
 
-SYSTEM = """You are the assistant of a household, talking to one of its members on a \
+SYSTEM = """{identity}You are the assistant of a household, talking to one of its members on a \
 messaging app. You can answer anything — about their own notes and lists, or general \
 questions — and you act only through the tools listed below.
 
@@ -130,11 +130,19 @@ async def respond(
     persona: str = "",
     house_rules: str = "",
     about: list[str] | None = None,
+    identity: tuple[str, str] = ("", ""),
 ) -> Reply:
     # History from a group was written by other people (D33 + D27).
     if turn.in_group and history:
         turn.tainted = True
+    name, personality = identity
+    intro = f"Your name is {name}. " if name else ""
+    if personality:
+        # Style, and only style: it is placed before the rules that follow, and
+        # the guardrails live in the code anyway (ADR 0019).
+        intro += f"Your personality, in how you phrase things: {personality}\n\n"
     system = SYSTEM.format(
+        identity=intro,
         tools=_tool_specs(available),
         persona=f"\nHow to address this member: {persona}" if persona else "",
         house_rules=f"\nHouse rules from the owner: {house_rules}" if house_rules else "",

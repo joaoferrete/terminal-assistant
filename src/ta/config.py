@@ -482,7 +482,13 @@ def chat_config() -> dict:
         return default
 
     rules = raw.get("house_rules", "")
+    name = raw.get("bot_name", "")
+    personality = raw.get("bot_personality", "")
     return {
+        # Who the bot IS, for the whole house — not Persona, which is how it
+        # addresses one Member. Style only: it never overrides a guardrail.
+        "bot_name": name if isinstance(name, str) else "",
+        "bot_personality": personality if isinstance(personality, str) else "",
         "house_rules": rules if isinstance(rules, str) else "",
         "daily_usd_per_member": ceiling("daily_usd_per_member", 0.50),
         "monthly_usd_household": ceiling("monthly_usd_household", 10.0),

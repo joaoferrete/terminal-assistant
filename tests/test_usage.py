@@ -219,3 +219,27 @@ def test_house_rules_reach_the_agents_system_prompt(tmp_path):
     asyncio.run(b.handle(inbound("o que é uma febre de 39?")))
     assert "Nunca dê diagnóstico médico." in llm.prompts[0][0]
 
+
+def test_the_bots_name_and_personality_reach_the_system_prompt(tmp_path):
+    import asyncio
+
+    from test_agent import ScriptedLLM, answer
+    from test_bot import FakeChannel, inbound
+
+    from ta import store
+    from ta.bot import AgentDeps, Bot
+    from ta.grants import OWNER_PERMISSIONS
+    from ta.tools import registered
+
+    conn = db.connect(tmp_path / "t.db")
+    llm = ScriptedLLM(answer("Bzzzt! Oi!"))
+    b = Bot(conn, FakeChannel(), owner_username="dono",
+            capture=lambda text, owner_id=1: store.add_note(conn, text, owner_id=owner_id),
+            agent=AgentDeps(llm=llm, registry=registered,
+                            permissions=lambda m: OWNER_PERMISSIONS,
+                            identity=lambda: ("Rotombot", "animado, diz Bzzzt")))
+    asyncio.run(b.handle(inbound("/start")))
+    asyncio.run(b.handle(inbound("oi, tudo bem?")))
+    system = llm.prompts[0][0]
+    assert system.startswith("Your name is Rotombot.") and "Bzzzt" in system
+    assert system.index("Bzzzt") < system.index("How to work:"), "style comes before the rules"

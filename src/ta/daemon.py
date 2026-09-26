@@ -433,6 +433,7 @@ def _agent_deps(app: Starlette) -> AgentDeps:
         },
         persona=lambda member_id: builtin_tools.persona_line(app.state.conn, member_id),
         house_rules=lambda: chat_config()["house_rules"],
+        identity=lambda: (chat_config()["bot_name"], chat_config()["bot_personality"]),
         within_budget=lambda member_id: _within_budget(app.state.conn, member_id),
     )
 

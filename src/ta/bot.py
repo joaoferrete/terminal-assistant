@@ -119,6 +119,8 @@ class AgentDeps:
     services: dict = field(default_factory=dict)
     persona: Callable[[int], str] = lambda member_id: ""
     house_rules: Callable[[], str] = lambda: ""
+    # (name, personality) of the bot itself, from `[chat]`.
+    identity: Callable[[], tuple[str, str]] = lambda: ("", "")
     # True while the Member's day and the household's month are under the
     # ceilings (D30). Checked before every model call the chat makes.
     within_budget: Callable[[int], bool] = lambda member_id: True
@@ -467,6 +469,7 @@ class Bot:
                     deps.llm, turn=turn, ctx=ctx, text=text, history=history,
                     available=available, persona=deps.persona(member_id),
                     house_rules=deps.house_rules(), about=about,
+                    identity=deps.identity(),
                 )
         except agent_mod.AgentFailed as e:
             log.warning("agent failed, capturing instead: %s", e)

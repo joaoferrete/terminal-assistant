@@ -164,6 +164,10 @@ folders = ["~/notas"]
 # ceilings are hard: when one is spent, chat and web search stop for the day (or
 # month) and every message is still captured as a note. The owner is told once.
 [chat]
+# Who the bot is, for everyone: a name and a personality, in how it phrases
+# things. Style only — the guardrails do not bend to it.
+bot_name = "Rotombot"
+bot_personality = "Animado e prestativo como um Rotom Phone; solta um 'Bzzzt!' de vez em quando."
 house_rules = "Não dê diagnóstico médico; sugira procurar um profissional."
 daily_usd_per_member = 0.50
 monthly_usd_household = 10.0
