@@ -75,9 +75,9 @@ reverse are also ADRs, linked where they apply.
   schema v13, backup `ta.db.v12-before-v13`). The `[rag]` extra is installed on the
   server, and `[chat] bot_name`/`bot_personality` are set there. The laptop's Satellite
   runs; the user adds `[rag] folders` on the laptop when they want folder search.
-- **F8 built** (`feat/config-page`), not deployed. The deploy needs `make install`
-  (tomlkit is a new dependency) and a restart. After it, the user runs `ta passwd`
-  **on the server**, which is interactive and theirs to run.
+- **F8 deployed** (2026-09-26, `4eeb037`). `/config` answers on the server.
+  **Waiting on the user:** `ta passwd` on the server, which is interactive and
+  theirs to run.
 - **Every phase is built.** What remains is the user's: the Google OAuth client, the
   T5.2 decision, the Gemini quota, the group setup, and merging the stack in order.
 - **F5 calendar code and F6 server side deployed** (2026-09-26, `1be629e`, schema v12).
