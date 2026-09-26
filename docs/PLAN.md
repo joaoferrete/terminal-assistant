@@ -52,8 +52,9 @@ reverse are also ADRs, linked where they apply.
 - **F4 accepted by the user** on 2026-09-26, after the `notes_due` fix (`6abb317`, the
   version the server runs). Still open: web search waits on the user's Gemini
   quota (429), and groups need privacy mode off at @BotFather plus the group id.
-- **Next agent action:** the **F8 interview** (web configuration), now, at the
-  user's request. Then F5 (calendar and the pushed Digest, with AdGuard, D35).
+- **F8 interview: paused** by the user after questions 1–3. Resume at question 4
+  (where settings are stored) and secrets, before F8 starts.
+- **Next agent action:** F5, the pushed Digest and the calendar.
 - **F8 interview:** before starting F8, not now. The user offered to run it now
   and agreed to wait: most of what it configures (Grants, Lists, house rules, the
   Digest) is still being built.
@@ -529,7 +530,7 @@ standard library), never encrypted and never in plain text, so the hash can live
 `.env` (`TA_ADMIN_PASSWORD_HASH`, set by a CLI command that prompts for the
 password).
 
-**Open, and to be asked of the user before designing:**
+**Interview paused on 2026-09-26 at the user's request (resume before F8):**
 1. ~~What it edits.~~ **Answered (user, 2026-09-25): everything `ta` can be
    configured with**, served by the daemon. That covers all of `config.toml`
    (aliases, groups, Lists, Members, Grants, LLM routes and prices, house rules,
@@ -539,11 +540,13 @@ password).
    The proposal is that the page can *replace* a secret but never *show* one: it
    shows only "set" or "not set", as `/health` does. Settings that only apply on a
    restart say so, and the page offers the restart.
-2. Who logs in: only the Owner, or any Member whose Grant says admin.
-3. How it relates to D20. The board is entered by magic link from the Channel.
-   Should the config page reuse that session and ask for the password on top
-   (proposed: two factors for the part that controls permissions), or stand on
-   its own?
+2. ~~Who logs in.~~ **Answered (2026-09-26): only the Owner.** The page edits
+   Grants and Members, so another admin could grant themselves more.
+3. ~~How it relates to D20.~~ **Answered (2026-09-26): the board session plus a
+   password.** That is two factors: the Owner's board session (magic link, token
+   or loopback), and a config password stored as a scrypt hash in `.env`
+   (`TA_ADMIN_PASSWORD_HASH`, set by `ta passwd`). The config session expires after
+   30 minutes.
 4. Whether it writes `config.toml` in place, which loses the comments in it, or
    keeps settings in the database with `config.toml` as seed.
 
