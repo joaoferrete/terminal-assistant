@@ -54,6 +54,8 @@ class TelegramChannel:
         self._transport = transport
         self._sleep = sleep
         self._client: httpx.AsyncClient | None = None
+        # The bot's own account (getMe), to tell when a group message mentions it.
+        self.me: dict = {}
 
     @property
     def configured(self) -> bool:
@@ -89,7 +91,7 @@ class TelegramChannel:
         return body.get("result")
 
     @staticmethod
-    def parse(update: dict) -> Inbound | None:
+    def parse(update: dict, me: dict | None = None) -> Inbound | None:
         """One update → one `Inbound`, or None for what is not a message to us."""
         if cb := update.get("callback_query"):
             sender, msg = cb.get("from") or {}, cb.get("message") or {}
@@ -112,6 +114,12 @@ class TelegramChannel:
             return None
         chat = msg.get("chat") or {}
         text = msg.get("text") or msg.get("caption") or ""
+        me = me or {}
+        replied = msg.get("reply_to_message") or {}
+        mentioned = bool(
+            (me.get("username") and f"@{me['username']}".lower() in text.lower())
+            or (me.get("id") and (replied.get("from") or {}).get("id") == me["id"])
+        )
         # `voice` is a note recorded in Telegram; `audio` is a file someone sent.
         # Both are speech to transcribe as far as capture is concerned.
         sound = msg.get("voice") or msg.get("audio") or {}
@@ -128,10 +136,20 @@ class TelegramChannel:
             voice_seconds=int(sound.get("duration") or 0),
             reply_to_message_id=(str(msg["reply_to_message"]["message_id"])
                                  if msg.get("reply_to_message") else None),
+            mentioned=mentioned,
         )
 
     async def run(self, handler: Handler) -> None:
         offset: int | None = None
+        failures = 0
+        while not self.me:
+            try:
+                self.me = await self._call("getMe", {}) or {}
+            except ChannelError as e:
+                wait = self.BACKOFF[min(failures, len(self.BACKOFF) - 1)]
+                failures += 1
+                log.warning("%s; retrying in %ss", e, wait)
+                await self._sleep(wait)
         failures = 0
         while True:
             try:
@@ -152,7 +170,7 @@ class TelegramChannel:
                 # Advance past it before handling: a message that crashes the
                 # handler must not come back on every poll forever.
                 offset = update["update_id"] + 1
-                inbound = self.parse(update)
+                inbound = self.parse(update, self.me)
                 if inbound is None:
                     continue
                 try:
@@ -177,9 +195,11 @@ class TelegramChannel:
     async def send(self, conversation_id: str, text: str) -> None:
         await self._call("sendMessage", {"chat_id": conversation_id, "text": text})
 
-    async def reply(self, to: Inbound, text: str, buttons: list[Button] | None = None
-                    ) -> str | None:
+    async def reply(self, to: Inbound, text: str, buttons: list[Button] | None = None,
+                    *, quiet: bool = False) -> str | None:
         payload: dict = {"chat_id": to.conversation_id, "text": text}
+        if quiet:
+            payload["disable_notification"] = True
         if to.message_id and not to.callback:
             payload["reply_parameters"] = {
                 "message_id": int(to.message_id),

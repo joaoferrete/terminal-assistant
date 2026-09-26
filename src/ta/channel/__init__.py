@@ -41,6 +41,9 @@ class Inbound:
     # the bot's message that carried the button, and `text` is empty.
     callback: str | None = None
     callback_id: str | None = None
+    # In a group: the bot was @mentioned, or this replies to one of its messages.
+    # Only then is a group message addressed to the bot (T4.6).
+    mentioned: bool = False
 
 
 @dataclass(frozen=True)
@@ -66,9 +69,10 @@ class Channel(Protocol):
         """Deliver inbound messages to `handler` until cancelled. Never returns
         on a transient failure: it waits and tries again."""
 
-    async def reply(self, to: Inbound, text: str, buttons: list[Button] | None = None
-                    ) -> str | None:
-        """Send `text` as a reply, with optional buttons. Returns the sent id."""
+    async def reply(self, to: Inbound, text: str, buttons: list[Button] | None = None,
+                    *, quiet: bool = False) -> str | None:
+        """Send `text` as a reply, with optional buttons. Returns the sent id.
+        `quiet` sends it without a notification, for acknowledgements in groups."""
 
     async def answered(self, to: Inbound, text: str | None = None) -> None:
         """Acknowledge a pressed button, and take its buttons away."""

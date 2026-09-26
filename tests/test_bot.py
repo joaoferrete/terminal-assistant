@@ -36,9 +36,10 @@ class FakeChannel:
         self.buttons: list = []       # the buttons of each sent message, in order
         self.acks: list = []
 
-    async def reply(self, to, text, buttons=None):
+    async def reply(self, to, text, buttons=None, *, quiet=False):
         self.sent.append(text)
         self.buttons.append(buttons or [])
+        self.quiet = quiet
         return f"bot{len(self.sent)}"
 
     async def answered(self, to, text=None):
@@ -184,6 +185,10 @@ def test_other_bots_and_non_messages_are_skipped():
     assert TelegramChannel.parse({"update_id": 1, "edited_message": {}}) is None
 
 
+# The bot's own account, which the loop asks for before its first poll.
+ME = {"ok": True, "result": {"id": 4242, "username": "TA_bot", "is_bot": True}}
+
+
 def telegram(responses, calls):
     """A Telegram that answers `responses` in order, then cancels the loop."""
     pending = list(responses)
@@ -203,7 +208,7 @@ def telegram(responses, calls):
 
 def test_the_loop_delivers_and_advances_the_offset():
     calls, got = [], []
-    ch = telegram([{"ok": True, "result": [update(5), update(6)]}], calls)
+    ch = telegram([ME, {"ok": True, "result": [update(5), update(6)]}], calls)
 
     async def handler(m):
         got.append(m.text)
@@ -211,12 +216,12 @@ def test_the_loop_delivers_and_advances_the_offset():
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(ch.run(handler))
     assert got == ["oi", "oi"]
-    assert calls[1][1]["offset"] == 7, "the next poll must not redeliver 5 and 6"
+    assert calls[2][1]["offset"] == 7, "the next poll must not redeliver 5 and 6"
 
 
 def test_a_handler_that_crashes_does_not_stop_the_loop_or_repeat_the_message():
     calls, got = [], []
-    ch = telegram([{"ok": True, "result": [update(5), update(6)]}], calls)
+    ch = telegram([ME, {"ok": True, "result": [update(5), update(6)]}], calls)
 
     async def handler(m):
         got.append(m.message_id)
@@ -226,7 +231,7 @@ def test_a_handler_that_crashes_does_not_stop_the_loop_or_repeat_the_message():
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(ch.run(handler))
     assert got == ["50", "60"]
-    assert calls[1][1]["offset"] == 7
+    assert calls[2][1]["offset"] == 7
 
 
 def test_an_outage_is_retried_and_the_token_never_reaches_the_log(caplog):
@@ -311,3 +316,15 @@ def test_answering_a_button_also_removes_the_keyboard():
     asyncio.run(ch.answered(press, "Feito."))
     assert [p for p, _ in calls] == ["/bot123:SECRET/answerCallbackQuery",
                                      "/bot123:SECRET/editMessageReplyMarkup"]
+
+
+def test_a_group_message_that_mentions_the_bot_is_addressed_to_it():
+    me = {"id": 4242, "username": "TA_bot"}
+    m = TelegramChannel.parse(update(3, "@ta_bot o que tem na lista?", chat_type="group"), me)
+    assert m.mentioned and not m.private
+    plain = TelegramChannel.parse(update(4, "acabou o café", chat_type="group"), me)
+    assert not plain.mentioned
+    replying = TelegramChannel.parse(update(5, "e agora?", chat_type="group",
+                                            reply_to_message={"message_id": 1,
+                                                              "from": {"id": 4242}}), me)
+    assert replying.mentioned, "replying to the bot addresses it too"

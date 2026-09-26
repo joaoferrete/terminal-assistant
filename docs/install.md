@@ -230,6 +230,31 @@ silence. Your username is only used for that first pairing. After it, the bot
 recognises your account by its numeric id, so someone who later takes your old
 username is still a stranger.
 
+### Talking to it, and groups
+
+With a model configured (Layer 4), the bot is also a chat. Ask it anything, about
+your notes or about the world: it answers, searches the web when it needs to, and
+still captures what is a thought rather than a question. "Apaga a luz da sala"
+needs no model at all.
+
+To use it in a household group:
+
+1. At @BotFather, `/setprivacy`, pick the bot, **Disable**. Otherwise Telegram only
+   shows it messages that mention it, and "acabou o detergente" never reaches it.
+2. Add the bot to the group, and put the group's chat id in `config.toml`:
+   ```toml
+   [channel.telegram]
+   groups = [-1001234567890]
+   ```
+   The id shows in the daemon's log the first time the group writes, or in
+   @RawDataBot.
+
+In the group it answers when **mentioned** (or when someone replies to it), with
+the household's data only — nobody's private notes, the asker's included. It turns
+"ran out of X" into an item on a household List, quietly, with an undo button.
+It acts only for Members, pairs nobody there (pairing is private), and keeps nothing
+from people in the group who are not Members.
+
 ### Voice notes
 
 Send the bot a voice note and it is transcribed **on your machine** — the audio

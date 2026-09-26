@@ -26,13 +26,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from pydantic import BaseModel, Field
+
 from . import agent as agent_mod
 from . import builtin_tools, i18n, memory, prerouter, receipts, store
 from . import members as members_mod
 from .builtin_tools import ToolContext
 from .channel import Button, Channel, ChannelError, Inbound
 from .i18n import t
-from .llm import for_member
+from .llm import for_member, for_task
 from .members import OWNER_ID
 from .speech import Transcriber, TranscriptionFailed
 from .tools import NotAllowed, Tool, Turn, allowed
@@ -78,6 +80,26 @@ def _identity_of(conn: sqlite3.Connection, channel: str, member_id: int) -> str 
         (channel, member_id),
     ).fetchone()
     return row[0] if row else None
+
+
+class GroupCapture(BaseModel):
+    actionable: bool = Field(description="true only if the message asks for something to be "
+                             "bought or added to one of the lists")
+    list: str = Field(default="", description="which of the offered lists")
+    item: str = Field(default="", description="the item, short: 'detergente', 'leite'")
+    confidence: float = Field(default=0.0, description="0 to 1")
+
+
+_CLASSIFY = """Lists this person may add to: {lists}.
+Group message: "{text}"
+
+Is this message asking for something to go on one of those lists — something that ran \
+out, or needs buying? A question about whether someone bought it, a joke, or news is \
+not. If it is, name the list and the item."""
+
+# Below this the classifier's guess is not acted on: a wrong item in the shared
+# shopping List, unasked for, is worse than a missed one somebody can still add.
+PROACTIVE_MIN_CONFIDENCE = 0.7
 
 
 @dataclass
@@ -191,11 +213,9 @@ class Bot:
 
     async def handle(self, msg: Inbound) -> None:
         if not msg.private:
-            # Only allowlisted groups are listened to at all (D8). What the bot
-            # does in them — proactive capture, answering a mention — is F4's;
-            # until then an allowlisted group is heard and left alone.
-            if msg.conversation_id not in self.allowed_groups():
-                return
+            # Only allowlisted groups are listened to at all (D8).
+            if msg.conversation_id in self.allowed_groups():
+                await self._group(msg)
             return
         member_id, just_paired = self._recognise(msg)
         if member_id is None:
@@ -240,6 +260,103 @@ class Bot:
             return
 
         await self._text(msg, member_id, text)
+
+    # ── Groups (T4.6) ──────────────────────────────────────────────────────
+    def _known(self, msg: Inbound) -> int | None:
+        """A Member already paired — never pairing here. Pairing answers with the
+        Member's own board link, and in a group everybody would see it."""
+        row = self.conn.execute(
+            "SELECT member_id, role FROM channel_identities WHERE channel = ? AND external_id = ?",
+            (msg.channel, msg.sender_id),
+        ).fetchone()
+        if row is None:
+            return None
+        member_id = row[0] if row[0] is not None else (OWNER_ID if row[1] == "owner" else None)
+        if member_id not in (None, OWNER_ID):
+            member = members_mod.get(self.conn, member_id)
+            if member is None or member.handle not in self.invited():
+                return None
+        return member_id
+
+    async def _group(self, msg: Inbound) -> None:
+        member_id = self._known(msg)
+        # Somebody in the group who is not a Member: nothing of theirs is kept or
+        # acted on. They never agreed to be remembered by this bot.
+        if member_id is None:
+            return
+        if msg.callback is not None:
+            await self._button(msg, member_id)
+            return
+        text = msg.text.strip()
+        if not text:
+            return
+        if msg.mentioned or text.startswith("/"):
+            # Addressed to the bot: the agent, seeing only the household's data
+            # (invariant 3), with the group's history counting as tainted (D33).
+            for mention in self._mentions():
+                text = text.replace(mention, "").strip()
+            await self._text(msg, member_id, text or msg.text.strip())
+            return
+        memory.record(self.conn, channel=msg.channel, conversation_id=msg.conversation_id,
+                      message_id=msg.message_id, member_id=member_id, text=text)
+        if self.agent is not None and self.agent.within_budget(member_id):
+            await self._proactive(msg, member_id, text)
+
+    def _mentions(self) -> list[str]:
+        me = getattr(self.channel, "me", {}) or {}
+        return [f"@{me['username']}"] if me.get("username") else []
+
+    async def _proactive(self, msg: Inbound, member_id: int, text: str) -> None:
+        """A group message nobody addressed to the bot, that may still be a List
+        item: "acabou o detergente" (D10, D11).
+
+        It goes straight into a household List the author may add to, acknowledged
+        quietly with an undo button. Only `list_add` is reachable from here, and
+        the Turn is marked proactive, so a destructive Tool could never run even if
+        one were asked for (invariant 7). A failure is silent: the message was
+        not addressed to the bot, so there is nobody waiting for an answer.
+        """
+        deps = self.agent
+        perms = deps.permissions(member_id)
+        writable = [lv for lv in store.lists_for(self.conn, viewer=members_mod.Viewer(
+                    member_id, in_group=True)) if lv.scope == "household" and perms.list_(lv.name)]
+        chosen = deps.registry().get("list_add")
+        if not writable or chosen is None:
+            return
+        try:
+            with for_member(member_id), for_task("classify"):
+                found = await deps.llm._structured(
+                    _CLASSIFY.format(lists=", ".join(lv.name for lv in writable), text=text),
+                    GroupCapture,
+                    system="You sort a household group chat's messages. Most are "
+                    "conversation and are not items. Be conservative.",
+                )
+        except Exception as e:
+            log.info("proactive classifier unavailable: %s", e)
+            return
+        lv = next((x for x in writable if x.name.lower() == found.list.strip().lower()), None)
+        if not found.actionable or found.confidence < PROACTIVE_MIN_CONFIDENCE or lv is None \
+                or not found.item.strip():
+            return
+        turn = Turn(member_id=member_id, conversation_id=msg.conversation_id, in_group=True,
+                    permissions=perms, proactive=True)
+        ctx = ToolContext(conn=self.conn, turn=turn, channel=msg.channel,
+                          services={**deps.services, "message": msg})
+        try:
+            await run_tool(chosen, turn, ctx, {"list": lv.name, "item": found.item.strip()})
+        except Exception as e:
+            log.warning("proactive capture failed: %s", e)
+            return
+        rids, buttons = [], None
+        for done in turn.receipts:
+            rid = self._receipt(msg, member_id, tool=done["tool"], summary=done["summary"],
+                                undo=done.get("undo"))
+            rids.append(rid)
+            buttons = [Button(t("bot.btn_undo"), f"undo:{rid}")]
+        sent = await self.channel.reply(
+            msg, t("bot.proactive", item=found.item.strip(), list=lv.name), buttons, quiet=True)
+        if sent:
+            receipts.answered_by(self.conn, rids, sent)
 
     def _captured_line(self, note) -> str:
         due = getattr(note, "due", None)

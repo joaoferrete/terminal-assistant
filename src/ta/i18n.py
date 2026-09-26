@@ -439,6 +439,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Member #{who} hit the chat's cost ceiling. Notes still work; the limit is "
               "under [chat] in config.toml.",
     },
+    "bot.proactive": {"pt": "👌 {item} → {list}", "en": "👌 {item} → {list}"},
     "agent.sources": {"pt": "Fontes: {list}", "en": "Sources: {list}"},
     "bot.hello": {
         "pt": "Oi! Tudo o que você mandar aqui vira nota.",

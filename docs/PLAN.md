@@ -455,7 +455,7 @@ how `ta` is installed, configured or used also updates the README,
       reply to the message.
 - [x] **T4.5 Conversation Memory.** Stored per conversation with retention; search
       confined to the current conversation. Invariant 3 tested.
-- [ ] **T4.6 Proactive group capture.** Classifier per group message →
+- [x] **T4.6 Proactive group capture.** Classifier per group message →
       actionable into a household List with ✅ and undo; the rest to memory only.
       Invariant 7 tested.
 - [ ] **T4.7 Split proposal** (D5), with buttons.
@@ -580,3 +580,7 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T4.9 | Grounding with Google Search and a response schema do not combine in one Gemini call | `web_search` is a plain-text call. Its links are read from the grounding metadata, never from the text, so the model cannot invent a source |
 | 2026-09-26 | T4.11 | Gemini's price, verified on 2026-09-25 for `gemini-flash-latest` (3.8 Flash): $0.75 per 1M tokens in and $3.75 out, **doubling on 2027-01-01**. Grounding: 5,000 free searches a month, then $14 per 1,000 | Gemini now has a default price, and every search adds $0.014 with the free allowance ignored, as an upper bound. The 2027 change is noted in `usage.py` |
 | 2026-09-26 | T4.11 | The per-Member ceiling needs to know whose request each call served, and `llm_usage` (migration 7, already in production) did not record it | Migration 11 adds `member_id`, set through a ContextVar the same way the task is, and backfills the Owner. A review counts against the Note's writer |
+| 2026-09-26 | T4.6 | A Telegram reaction cannot carry a button, so D11's "react with ✅ **and** offer undo" does not fit one message | Proactive capture answers with a short **silent** reply (`disable_notification`), "👌 leite → compras", with the undo button on it |
+| 2026-09-26 | T4.6 | Pairing in a group would answer with the new Member's own board link, visible to everyone there | Members pair only in private. In a group only already-paired Members are recognised, and nothing is kept from non-Members |
+| 2026-09-26 | T4.6 | The bot must know its own username to tell a mention from a message, and Telegram does not say it in every update | The Channel asks `getMe` before its first poll. A reply to one of the bot's messages also counts as addressing it |
+| 2026-09-26 | T4.6 | The user must disable the bot's **privacy mode** at @BotFather, or Telegram hides from it every group message that does not mention it | In install.md. Remind the user when groups are first set up |

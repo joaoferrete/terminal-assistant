@@ -100,7 +100,8 @@ fallback = "gemini"
 
 # Per task, overriding the default. The tasks: review_capture (the second pass
 # over each capture), organize, detect_event, digest_prose, priorities, agent (the
-# chat), web_search (always Gemini: it is the one with Google Search grounding).
+# chat), web_search (always Gemini: it is the one with Google Search grounding),
+# classify (the cheap pass over group messages that finds List items).
 [llm.tasks]
 organize = "gemini"
 
