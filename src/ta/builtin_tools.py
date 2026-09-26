@@ -210,6 +210,43 @@ async def list_add(ctx: ToolContext, list: str, item: str) -> ToolResult:  # noq
 
 
 @tool(
+    description="Mark tasks as done, or List items as bought/done, by their numbers — "
+    "take them from notes_search, notes_due or list_show first. For 'comprei o leite', "
+    "'terminei o relatório', 'pode tirar o pão da lista'.",
+    args={"ids": "the note numbers, comma-separated, e.g. '12, 15'"},
+    grant="lists",
+    changes_state=True,
+)
+async def notes_done(ctx: ToolContext, ids: str) -> ToolResult:
+    wanted = [int(x) for x in str(ids).replace("#", " ").replace(",", " ").split() if x.isdigit()]
+    names = {lv.id: lv.name for lv in store.lists_for(ctx.conn, viewer=ctx.viewer)}
+    done, refused = [], []
+    for note_id in dict.fromkeys(wanted):
+        try:
+            note = store.get_note(ctx.conn, note_id, viewer=ctx.viewer)
+        except KeyError:
+            refused.append(f"#{note_id} (not found)")
+            continue
+        # Somebody else's item on a household List needs that List in the Grant,
+        # as adding to it does. One's own Notes are always one's own to finish.
+        if note.owner_id != ctx.turn.member_id and not (
+                note.list_id in names and ctx.turn.permissions.list_(names[note.list_id])):
+            refused.append(f"#{note_id} (not yours to change)")
+            continue
+        if note.status != "done":
+            store.mark_done(ctx.conn, note_id)
+            done.append(note)
+    lines = [f"done: #{n.id} {_quote(n.text)}" for n in done] + [f"skipped {r}" for r in refused]
+    return ToolResult(
+        text="\n".join(lines) or "nothing to mark",
+        receipt={"summary": "marked done " + ", ".join(f"#{n.id}" for n in done),
+                 "notes": [n.id for n in done],
+                 "undo": {"kind": "reopen_notes", "ids": [n.id for n in done]}}
+        if done else None,
+    )
+
+
+@tool(
     description="Remember how to address this member: a name to call them, and a tone",
     args={"name": "what to call them, or empty to keep", "tone": "how to talk, or empty"},
     changes_state=True,

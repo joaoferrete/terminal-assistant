@@ -688,6 +688,9 @@ the asker's button (D27). This amends D40's "read-only".
       chat with [Done] and [+10 min]. The parser reads delays ("daqui 10 min",
       "meia hora", "timer de 15 min", "in 10 minutes"). The desktop, speakers and
       Rules get only the Owner's. `schedule_list` shows pending timers.
+- [x] **T9.8** The agent marks things done: `notes_done` finishes one's own tasks,
+      and items on a household List with that List in the Grant ("comprei o
+      leite"). [Undo] reopens them.
 - [x] **T9.4** Gmail (D40): `/conectar_email`, a token per Member, and the
       `mail_search` / `mail_read` Tools, tested against a fake Google as T5.1 was.
 - [ ] **T9.5** Deploy F9 to the server (with the user's yes), and try each

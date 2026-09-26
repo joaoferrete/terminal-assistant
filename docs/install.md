@@ -251,6 +251,9 @@ private, with [Done] and [+10 min]. The owner's reminders also go to their deskt
 and the house speakers. Nobody else's do. "Quanto falta?" lists timers and
 scheduled actions together.
 
+It can also close things. "Comprei o leite" or "terminei o relatório" marks them
+done, with an [Undo] button.
+
 To use it in a household group:
 
 1. At @BotFather, `/setprivacy`, pick the bot, **Disable**. Otherwise Telegram only

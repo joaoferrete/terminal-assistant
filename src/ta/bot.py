@@ -709,7 +709,15 @@ class Bot:
 
     async def _undo(self, msg: Inbound, member_id: int, r) -> None:
         u = r.undo or {}
-        if u.get("kind") == "delete_event":
+        if u.get("kind") == "reopen_notes":
+            viewer = members_mod.Viewer(member_id)
+            for note_id in u.get("ids", []):
+                try:
+                    store.get_note(self.conn, note_id, viewer=viewer)   # still visible?
+                except KeyError:
+                    continue
+                store.mark_undone(self.conn, note_id)
+        elif u.get("kind") == "delete_event":
             remove = (self.agent.services if self.agent else {}).get("delete_event")
             if remove is not None:
                 await remove(member_id, u["note_id"])
