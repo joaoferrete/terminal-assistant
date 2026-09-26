@@ -47,7 +47,7 @@ in its tasks and in Discoveries; this section is only where things stand.*
 
 ### The user's to-do list (for the next session)
 
-1. **Config page password.** On the laptop, interactive:
+1. ~~Config page password~~ — set by the user on 2026-09-26. **Config page password.** On the laptop, interactive:
    `ssh -t root@192.168.68.189 'cd ~/terminal-assistant && .venv/bin/ta passwd'`,
    then open `http://192.168.68.189:7777/config` in the browser where the board
    is logged in.
@@ -61,11 +61,8 @@ in its tasks and in Discoveries; this section is only where things stand.*
    **personal account first**, because a Workspace admin may block the app. The
    privacy link in Branding points at `main`, so it returns 404 until the stack is
    merged (item 9).
-3. **Decide T5.2.** Keep creating events without confirmation (the V1 choice), and
-   have the bot say "📅 created X on day Y" with [Undo]? Or confirm by button?
-4. **Gemini quota.** Web search answers 429 RESOURCE_EXHAUSTED. In Google AI
-   Studio, check billing and quota for the project that owns `GEMINI_API_KEY`. No
-   code change is needed.
+3. ~~Decide T5.2~~ — decided 2026-09-26, and built.
+4. ~~Gemini quota~~ — billing fixed by the user on 2026-09-26; the new key is on the server.
 5. **Household group (optional).** At @BotFather, `/setprivacy`, pick the bot, and
    choose **Disable**. Add the bot to the group, and put its chat id in
    `[channel.telegram] groups`. The config page can do that part.
@@ -561,7 +558,7 @@ how `ta` is installed, configured or used also updates the README,
       Portuguese aliases must keep working — [AGENTS §3](../AGENTS.md#3-a-rename-can-break-code-that-is-not-in-this-repository)).
       OAuth paste-back through `/conectar_agenda`; refresh token per Member, file
       mode 0600 at minimum.
-- [ ] **T5.2** ADR 0007's propose-and-confirm through Channel buttons.
+- [x] **T5.2** Decided 2026-09-26: keep creating events with no confirmation (ADR 0007 amendment); the writer is told in their private chat, with [Undo], which deletes the event.
 - [x] **T5.3 Digest sections** as independent sources: calendar, chaseable Notes,
       household Lists, weather (confirm Open-Meteo's terms), server health from
       `/proc`, `/sys/class/thermal`, disk and `llm_usage`, and AdGuard's
@@ -766,3 +763,4 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T9.6 | Publishing the consent screen to Production requires, under Branding, a home page and a privacy policy URL. The walkthrough did not say so, and the user got stuck at "Publish app" | `docs/privacy.md` states what the software does with Google data, including that the relevant part of an email goes to the configured model (DeepSeek by default), which D40 had not said. The walkthrough points Branding at the public repository |
 | 2026-09-26 | T9.7 | **A privacy leak, in production since F3.** `_fire_reminders` sent every Member's Reminder to the Owner's desktop (the Satellite's notifier), read it aloud on the house speakers, and passed it to the Owner's Rules. A housemate's "ligar pro médico" would have popped up on the Owner's laptop. Nobody else used the bot yet, so nothing leaked | The desktop, the speakers and the Rules get only the Owner's Reminders. Every Reminder also goes to its writer's private chat. Tested with two Members |
 | 2026-09-26 | T9.7 | The parser had no relative times, so "daqui 10 min" was captured with no reminder at all, silently | `_nl_delay` in both languages, only after a lead-in ("daqui", "em", "timer de", "in"), so "leva 10 min" stays a duration. The capture reply now says when it will ring, so a misread shows at once |
+| 2026-09-26 | T5.2 | The review's "#12 reviewed: event created: Dentista" went to the Owner's desktop for every Member's Note, the same leak T9.7 found in the Reminders | Only the Owner's Notes are announced on the desktop. A created event is announced in its writer's private chat, with [Undo], which deletes it through `calendar.events` |

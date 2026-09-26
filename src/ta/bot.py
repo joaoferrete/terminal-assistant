@@ -709,7 +709,11 @@ class Bot:
 
     async def _undo(self, msg: Inbound, member_id: int, r) -> None:
         u = r.undo or {}
-        if u.get("kind") == "cancel_scheduled":
+        if u.get("kind") == "delete_event":
+            remove = (self.agent.services if self.agent else {}).get("delete_event")
+            if remove is not None:
+                await remove(member_id, u["note_id"])
+        elif u.get("kind") == "cancel_scheduled":
             # `cancel` checks the owner itself: only the author's rows move.
             scheduled.cancel(self.conn, u["id"], member_id)
         elif u.get("kind") == "delete_note":
@@ -758,6 +762,22 @@ class Bot:
         # the next ring comes with a Receipt of its own.
         receipts.set_state(self.conn, r.id, "done")
         return t("bot.reminder_snoozed", at=f"{until:%H:%M}")
+
+    async def event_created(self, note, title: str, start: datetime) -> bool:
+        """The review put an event in the writer's calendar (T5.2): say so in
+        their private chat, with [Undo]. No confirmation was asked — this message
+        is what makes that autonomy visible."""
+        chat = _identity_of(self.conn, self.channel.name, note.owner_id)
+        if chat is None or not hasattr(self.channel, "send"):
+            return False
+        undo = {"kind": "delete_event", "note_id": note.id}
+        rid = receipts.record(self.conn, channel=self.channel.name, conversation_id=chat,
+                              message_id=None, member_id=note.owner_id, tool="calendar",
+                              summary=f"created event {title!r} from #{note.id}", undo=undo)
+        await self._push(self.channel.name, chat,
+                         t("bot.event_created", title=title, at=f"{start:%d/%m %H:%M}"),
+                         [self._undo_button(rid, undo)], rid)
+        return True
 
     # ── Scheduled actions (F9, D39) ─────────────────────────────────────────
     async def run_scheduled(self, now: datetime | None = None) -> int:

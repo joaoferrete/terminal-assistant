@@ -436,6 +436,7 @@ def _agent_deps(app: Starlette) -> AgentDeps:
             "capture": lambda raw, owner_id=OWNER_ID, list_id=None: _capture(
                 app, raw, owner_id=owner_id, list_id=list_id),
             "digest": lambda member_id: _build_digest(app, member_id),
+            "delete_event": lambda member_id, note_id: _delete_event(app, member_id, note_id),
             "mail": lambda member_id: gmail_mod.Gmail(
                 member_id, app.state.google_mail, app.state.mail_tokens),
         },
@@ -807,8 +808,19 @@ async def _review_one(app: Starlette, note_id: int) -> None:
         uid = await _create_event_automatically(app, note_id, r, targets)
         if uid:
             changes.append(f"{i18n.t('review.event_created')}: {r.title}")
+            # T5.2, decided 2026-09-26: no confirmation, but said in the writer's
+            # chat at once, with [Undo] (ADR 0007 amendment).
+            bot = getattr(app.state, "bot", None)
+            if bot is not None:
+                try:
+                    await bot.event_created(note, r.title or i18n.t("review.untitled"),
+                                            datetime.fromisoformat(r.start))
+                except Exception:
+                    log.exception("could not tell about the event of #%s", note_id)
 
-    if changes:
+    # The desktop is the Owner's: a housemate's Note, and the event made from
+    # it, is not announced there (the same leak T9.7 found in the Reminders).
+    if changes and note.owner_id == OWNER_ID:
         # Invisible autonomy is worse than none: if the app touched your note or
         # wrote to your calendar, you find out immediately.
         await app.state.notify.send(
@@ -871,6 +883,20 @@ async def _create_event_automatically(app: Starlette, note_id: int, r, targets) 
             (note_id, uid, chosen.uid, datetime.now().isoformat(timespec="seconds")),
         )
     return uid
+
+
+async def _delete_event(app: Starlette, member_id: int, note_id: int) -> bool:
+    """Undo an event the review created from the Member's own Note (T5.2)."""
+    conn = app.state.conn
+    row = conn.execute(
+        "SELECT l.uid, l.source_uid FROM calendar_links l JOIN notes n ON n.id = l.note_id"
+        " WHERE l.note_id = ? AND n.owner_id = ?", (note_id, member_id)).fetchone()
+    cal = _calendar_for(app, member_id)
+    if row is None or not hasattr(cal, "delete_event"):
+        return False
+    await asyncio.to_thread(cal.delete_event, row["source_uid"], row["uid"])
+    conn.execute("DELETE FROM calendar_links WHERE note_id = ?", (note_id,))
+    return True
 
 
 def _iso_date(s: str) -> date | None:

@@ -479,6 +479,8 @@ MESSAGES: dict[str, dict[str, str]] = {
     "bot.done": {"pt": "Feito.", "en": "Done."},
     "bot.home_on_done": {"pt": "Feito · ligado: {what}", "en": "Done · on: {what}"},
     "bot.home_off_done": {"pt": "Feito · desligado: {what}", "en": "Done · off: {what}"},
+    "bot.event_created": {"pt": "📅 Criei na agenda: {title} · {at}",
+                          "en": "📅 Added to your calendar: {title} · {at}"},
     # Reminders on the chat (F9).
     "bot.reminder": {"pt": "⏰ Lembrete: {text}{late}", "en": "⏰ Reminder: {text}{late}"},
     "bot.btn_reminder_done": {"pt": "Concluir", "en": "Done"},

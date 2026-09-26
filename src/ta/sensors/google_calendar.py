@@ -255,6 +255,12 @@ class GoogleCalendar:
         created = self._request(account, "POST", f"/calendars/{_q(cal_id)}/events", json=body)
         return created.get("id")
 
+    def delete_event(self, source_uid: str, uid: str) -> None:
+        """The [Undo] of an event the review created (T5.2). `calendar.events`
+        allows it; the calendar itself can never be deleted with that scope."""
+        account, _, cal_id = source_uid.partition("|")
+        self._request(account, "DELETE", f"/calendars/{_q(cal_id)}/events/{_q(uid)}")
+
     # Plumbing ────────────────────────────────────────────────────────────────
     def _token(self, account: str) -> str:
         cached = self._access.get(account)
