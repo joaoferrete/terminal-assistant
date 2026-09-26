@@ -70,6 +70,12 @@ reverse are also ADRs, linked where they apply.
   confirmation** (amendment to ADR 0007). Nothing was changed. The proposal: keep
   auto-creation, and have the bot tell the writer, "📅 created X on day Y",
   with [Undo]. The server has no desktop notifications, so today nobody sees it.
+- **F7 and the Rotombot personality deployed** (2026-09-26, `feat/rag` at `970b94a`,
+  schema v13, backup `ta.db.v12-before-v13`). The `[rag]` extra is installed on the
+  server, and `[chat] bot_name`/`bot_personality` are set there. The laptop's Satellite
+  runs; the user adds `[rag] folders` on the laptop when they want folder search.
+- **Next agent action:** resume the **F8 interview** at question 4 (where settings
+  are stored) and secrets, then build F8.
 - **F5 calendar code and F6 server side deployed** (2026-09-26, `1be629e`, schema v12).
 - **F6 built** (`feat/satellite`): `TA_SERVER` and the token for the
   CLI, the offline capture queue, `ta satellite login|run|status`, the hub and
@@ -77,9 +83,9 @@ reverse are also ADRs, linked where they apply.
   **Waiting on the user:** on the laptop,
   `TA_SERVER=http://192.168.68.189:7777` in `.env` (the Owner's `TA_TOKEN` is
   already there) and `make install-satellite`, which is their call (AGENTS §6).
-- **Next agent action:** nothing left that needs no user. Remaining: deploy F5
-  calendar and F6 (yes), the OAuth client (user), T5.2 decision (user), the F8
-  interview (user), the AdGuard login (user). F7 (RAG) is unplanned on purpose.
+- Still on the user: the OAuth client (Google), the T5.2 decision, and the Gemini
+  quota for web search. The AdGuard login is done (copied to the server on
+  2026-09-26).
 - **F8 interview:** before starting F8, not now. The user offered to run it now
   and agreed to wait: most of what it configures (Grants, Lists, house rules, the
   Digest) is still being built.
@@ -88,11 +94,6 @@ reverse are also ADRs, linked where they apply.
   steps: `/revoke` at @BotFather, update the laptop `.env`, then copy that one line
   to the server and restart, with the user's yes. Pairing survives, because it is
   bound to the user's id.
-- **Reminder for the user, which they asked for on 2026-09-26:** put `ADGUARD_USER` and
-  `ADGUARD_PASSWORD` in the laptop's `.env`, then have them copied to the server's.
-  AdGuard's web UI listens on port 80 there (`ADGUARD_URL=http://localhost`).
-  Until then, the Digest's AdGuard section is skipped. Remind them at every status
-  summary until it is done.
 - **Rule:** never run a command on the server without the user's yes, read-only
   ones included.
 
