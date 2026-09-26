@@ -69,6 +69,11 @@ reverse are also ADRs, linked where they apply.
   steps: `/revoke` at @BotFather, update the laptop `.env`, then copy that one line
   to the server and restart, with the user's yes. Pairing survives, because it is
   bound to the user's id.
+- **Reminder for the user, which they asked for on 2026-09-26:** put `ADGUARD_USER` and
+  `ADGUARD_PASSWORD` in the laptop's `.env`, then have them copied to the server's.
+  AdGuard's web UI listens on port 80 there (`ADGUARD_URL=http://localhost`).
+  Until then, the Digest's AdGuard section is skipped. Remind them at every status
+  summary until it is done.
 - **Rule:** never run a command on the server without the user's yes, read-only
   ones included.
 
