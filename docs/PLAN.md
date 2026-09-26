@@ -38,6 +38,7 @@ reverse are also ADRs, linked where they apply.
   6. `docs/chatbot-guardrails` — D25–D33, ADR 0019, and F1 closed
   7. `feat/voice` — T2.1, T2.2
   8. `feat/members` — T3.1–T3.5 (and the per-Member board session pulled from T6.4)
+  9. `feat/agent` — F4, in several commits
   The next task branches from the top of this list and is appended to it.
 - **F2 is closed** (2026-09-25). Voice notes are transcribed on the server at
   about 0.46× real time. The server runs `feat/voice`.
@@ -439,7 +440,7 @@ how `ta` is installed, configured or used also updates the README,
 
 ### F4 — Agent, Tools, Receipts, groups
 
-- [ ] **T4.1 `@tool`.** Decorator and loader for `~/.config/ta/tools/`, loading
+- [x] **T4.1 `@tool`.** Decorator and loader for `~/.config/ta/tools/`, loading
       each file in isolation like `engine.load_rules`. Metadata: Grant, destructive,
       description, argument schema.
 - [ ] **T4.2 Built-in Tools.** Home (over `actuators/home.py`, Grant-checked),
@@ -458,7 +459,7 @@ how `ta` is installed, configured or used also updates the README,
       actionable into a household List with ✅ and undo; the rest to memory only.
       Invariant 7 tested.
 - [ ] **T4.7 Split proposal** (D5), with buttons.
-- [ ] **T4.8 Taint tracking** (D27). Each agent turn carries a taint flag that
+- [x] **T4.8 Taint tracking** (D27). Each agent turn carries a taint flag that
       Tools set when they return third-party content. The confirmation gate on
       state-changing Tools reads it. Invariant 8 is tested with a web result
       that says to turn off every light.
@@ -567,3 +568,5 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-25 | T3.4 | Only household Lists can be declared in `[lists]`. A personal List belongs to one Member, and the config has no good way to say whose | Personal Lists are created from the chat or the board, in F4. A `personal` entry in `[lists]` is logged and ignored |
 | 2026-09-25 | T3.5 | Browser automation froze the tab on every **mouse click** (CDP screenshot timeouts), and the database showed no click ever reached the page. The same interactions, driven by JavaScript, worked, and fresh tabs rendered fine | Verified by screenshot at desktop width, and at 375 px by measurement (no horizontal overflow; filters and "review everything" hidden). Nothing in the board's code loops, so this is a tooling problem to remember, not a bug |
 | 2026-09-25 | T3.5 | List items would still have been reviewed, later: skipped at capture, but left in the backlog queue with `reviewed_at` NULL | They are marked reviewed at capture. A test checks the column |
+| 2026-09-26 | T4.6 | Telegram accepts only a fixed set of reaction emojis from bots, and ✅ is not in it | Proactive capture reacts with 👌. D11's "✅" stays the idea; the character is Telegram's call |
+| 2026-09-26 | T4.1 | A household Tool file could define a Tool with a built-in's name and silently replace it — for instance a `home_off` with no Grant check | Loading refuses a name that is already built in, and reports it. Tested |
