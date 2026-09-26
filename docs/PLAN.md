@@ -39,7 +39,8 @@ reverse are also ADRs, linked where they apply.
   7. `feat/voice` — T2.1, T2.2
   8. `feat/members` — T3.1–T3.5 (and the per-Member board session pulled from T6.4)
   9. `feat/agent` — F4, in several commits
-  10. `feat/digest` — T5.3, T5.4
+  10. `feat/digest` — T5.3, T5.4, T5.1 (calendar code)
+  11. `feat/satellite` — F6
   The next task branches from the top of this list and is appended to it.
 - **F2 is closed** (2026-09-25). Voice notes are transcribed on the server at
   about 0.46× real time. The server runs `feat/voice`.
@@ -68,8 +69,15 @@ reverse are also ADRs, linked where they apply.
   confirmation** (amendment to ADR 0007). Nothing was changed. The proposal: keep
   auto-creation, and have the bot tell the writer, "📅 created X on day Y",
   with [Undo]. The server has no desktop notifications, so today nobody sees it.
-- **Next agent action:** F6, the Satellite (T6.1–T6.3, T6.5), which needs nothing
-  from the user until it is installed on the laptop.
+- **F6 built** (`feat/satellite`), not deployed: `TA_SERVER` and the token for the
+  CLI, the offline capture queue, `ta satellite login|run|status`, the hub and
+  remote ring light/notifier on the server, and `make install-satellite`.
+  **Waiting on the user:** the server deploy (their yes), then on the laptop:
+  `TA_SERVER=http://192.168.68.189:7777` in `.env` (the Owner's `TA_TOKEN` is
+  already there) and `make install-satellite`, which is their call (AGENTS §6).
+- **Next agent action:** nothing left that needs no user. Remaining: deploy F5
+  calendar and F6 (yes), the OAuth client (user), T5.2 decision (user), the F8
+  interview (user), the AdGuard login (user). F7 (RAG) is unplanned on purpose.
 - **F8 interview:** before starting F8, not now. The user offered to run it now
   and agreed to wait: most of what it configures (Grants, Lists, house rules, the
   Digest) is still being built.
@@ -523,15 +531,15 @@ how `ta` is installed, configured or used also updates the README,
 
 ### F6 — Satellite
 
-- [ ] **T6.1** Per-Member Satellite token issued through the Channel; the CLI
+- [x] **T6.1** Per-Member Satellite token issued through the Channel; the CLI
       addresses the remote server.
-- [ ] **T6.2** Local capture queue, flushed with original timestamps. Invariant 5
+- [x] **T6.2** Local capture queue, flushed with original timestamps. Invariant 5
       tested.
-- [ ] **T6.3** Satellite process: microphone watcher → server; a persistent
+- [x] **T6.3** Satellite process: microphone watcher → server; a persistent
       outbound connection receives local actions (Lighter, notification). The
       meeting Rule works again, running on the server.
-- [ ] **T6.4** Magic link for the board (D20).
-- [ ] **T6.5 Document Satellites.** In [`install.md`](install.md) and the README:
+- [x] **T6.4** Magic link for the board (D20).
+- [x] **T6.5 Document Satellites.** In [`install.md`](install.md) and the README:
       what a Satellite is, how to add a computer (install, get the token from the
       Channel, point it at the server), what works offline, and how to remove one.
       Update [`configuration.md`](configuration.md) with every new variable.
@@ -624,3 +632,6 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T5.3 | Open-Meteo's terms, checked: free with no key for personal home automation, 10,000 calls a day, data under CC BY 4.0 | One call a day is well inside the limit. The weather line credits "(Open-Meteo)" |
 | 2026-09-26 | T5.2 | The plan's "propose and confirm with buttons" contradicts an earlier decision recorded in the V1 code: "The user chose to give up the confirmation step (amendment to ADR 0007)" | Behaviour unchanged, and asked of the user (see Now) |
 | 2026-09-26 | T5.1 | Least privilege is possible: `calendar.events` and `calendar.calendarlist.readonly` cover reading, creating and finding the dedicated calendar. The full `calendar` scope, which can delete whole calendars, is not needed | The consent asks for those two, and a test forbids the full scope. The `Terminal Assistant` calendar must already exist in the account, because creating it would take the full scope |
+| 2026-09-26 | T6.2 | `POST /notes` gave every capture to the Owner. The board of a housemate, and now their Satellite, would have filed their Notes under the Owner, which is a leak the other way round. F3 missed it because every capture path used to be the Owner's | Captures belong to the viewer. Tested through a Satellite token |
+| 2026-09-26 | T6.1 | A Satellite token over the Channel would be a long-lived credential in Telegram's chat history | The bot sends a one-time code, valid for 5 minutes, and `ta satellite login` trades it for the token directly with the server. The Owner's laptop simply uses `TA_TOKEN` |
+| 2026-09-26 | T6.3 | A Rule acting on the ring light while the laptop is off would "succeed" into a queue nobody reads | The remote actuators report unavailable when the Satellite has not polled for 90 s, and a queue holds at most 50 actions, dropping the oldest |

@@ -139,6 +139,7 @@ class Bot:
         audio_dir: Path | None = None,
         agent: AgentDeps | None = None,
         calendar_link=None,
+        satellite_code: Callable[[int], str | None] = lambda member_id: None,
     ) -> None:
         self.conn = conn
         self.channel = channel
@@ -157,6 +158,9 @@ class Bot:
         # Connecting a Google account from the chat (D14): the link out, the
         # pasted redirect back. None when there is no OAuth client configured.
         self.calendar_link = calendar_link
+        # A one-time code a Satellite trades for its token (F6). Only the code goes
+        # through the Channel, never the token: a chat is stored on its servers.
+        self.satellite_code = satellite_code
         # Where audio that could not be transcribed is kept, so nothing said is
         # lost (invariant 1). None keeps nothing, which is what tests want.
         self.audio_dir = audio_dir
@@ -260,6 +264,10 @@ class Bot:
             if command == "/start":
                 if not just_paired:
                     await self.channel.reply(msg, t("bot.hello"))
+            elif command == "/satellite":
+                code = self.satellite_code(member_id)
+                await self.channel.reply(
+                    msg, t("bot.satellite_code", code=code) if code else t("bot.board_unreachable"))
             elif command in ("/conectar_agenda", "/connect_calendar"):
                 await self._connect_calendar(msg, member_id)
             elif command == "/board":

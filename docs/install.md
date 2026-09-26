@@ -418,6 +418,38 @@ ssh you@server 'mkdir -p ~/.local/share/ta && cat > ~/.local/share/ta/ta.db' < /
 tar -C ~/.config -cz ta | ssh you@server 'tar -C ~/.config -xz'
 ```
 
+### Your computers as Satellites
+
+With `ta` on a server, your laptop becomes a **Satellite**. It reports what only it
+can sense (the microphone, so the meeting Rule works again) and does what only it
+can do: the ring light, desktop notifications. The server runs the Rules. The
+laptop opens the connection, so it needs no open port, and can be off or away.
+
+On the laptop, in the clone's `.env`:
+
+```bash
+TA_SERVER=http://<server-ip>:7777
+```
+
+The **Owner's** laptop authenticates with the same `TA_TOKEN` as the server. Anyone
+else asks the bot for `/satellite`. It answers with a one-time code, valid for
+five minutes, and then:
+
+```bash
+ta satellite login <code>     # trades the code for this machine's own token
+make install-satellite         # a user service: `ta satellite run`
+ta satellite status            # server, credential, and what is queued
+```
+
+`ta note` on a Satellite **never waits for the server**. If it does not answer,
+the note is kept in a local queue and sent later, with the moment you typed it,
+so "tomorrow" still means the right day. Only capture queues: `ta list` and the
+board need the server, and say so.
+
+To remove a computer, `systemctl --user disable --now ta-satellite` and delete
+`~/.config/ta/satellite.json`. Rotating the server's `TA_TOKEN` revokes every
+Satellite token at once.
+
 ### Did it work?
 
 ```bash

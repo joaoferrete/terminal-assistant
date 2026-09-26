@@ -248,6 +248,10 @@ MESSAGES: dict[str, dict[str, str]] = {
               "\n"
               "To go back to local-only access, remove TA_HOST from your .env.",
     },
+    "api.bad_captured_at": {
+        "pt": "captured_at inválido (no futuro, ou mais de 31 dias atrás)",
+        "en": "invalid captured_at (in the future, or more than 31 days ago)",
+    },
     "api.list_missing": {"pt": "essa lista não existe", "en": "that list does not exist"},
     "api.forbidden": {
         "pt": "Você não tem permissão para isso. Quem administra a casa define isso no config.",
@@ -487,6 +491,12 @@ MESSAGES: dict[str, dict[str, str]] = {
                        "en": "{queries} queries · {blocked} blocked ({pct}%)"},
     "digest.adguard_top": {"pt": "mais bloqueados: {domains}\nclientes mais ativos: {clients}",
                            "en": "most blocked: {domains}\nmost active clients: {clients}"},
+    "bot.satellite_code": {
+        "pt": "No seu computador, rode:\nta satellite login {code}\n"
+              "O código vale 5 minutos e funciona uma vez só.",
+        "en": "On your computer, run:\nta satellite login {code}\n"
+              "The code works once, for 5 minutes.",
+    },
     "bot.calendar_unconfigured": {
         "pt": "A agenda do Google ainda não foi configurada no servidor (GOOGLE_CLIENT_ID).",
         "en": "Google Calendar is not set up on the server yet (GOOGLE_CLIENT_ID).",
@@ -506,6 +516,28 @@ MESSAGES: dict[str, dict[str, str]] = {
               "send /connect_calendar again.",
     },
     "agent.sources": {"pt": "Fontes: {list}", "en": "Sources: {list}"},
+    "cli.queued": {
+        "pt": "Sem servidor agora — anotada aqui e enviada quando ele voltar ({n} na fila).",
+        "en": "No server right now — kept here and sent when it is back ({n} queued).",
+    },
+    "cli.flushed": {"pt": "{n} nota(s) da fila enviada(s).", "en": "{n} queued note(s) sent."},
+    "cli.satellite_no_server": {
+        "pt": "Defina TA_SERVER (ex.: http://192.168.0.10:7777) para usar esta máquina como "
+              "Satellite.",
+        "en": "Set TA_SERVER (e.g. http://192.168.0.10:7777) to use this machine as a Satellite.",
+    },
+    "cli.satellite_need_code": {
+        "pt": "Falta o código: peça ao bot com /satellite.",
+        "en": "The code is missing: ask the bot with /satellite.",
+    },
+    "cli.satellite_logged_in": {"pt": "Pronto. Token guardado em {path}.",
+                                "en": "Done. Token kept in {path}."},
+    "cli.satellite_status": {
+        "pt": "servidor: {server}\ncredencial: {token}\nna fila: {queued}",
+        "en": "server: {server}\ncredential: {token}\nqueued: {queued}",
+    },
+    "cli.yes": {"pt": "sim", "en": "yes"},
+    "cli.no": {"pt": "não", "en": "no"},
     "bot.hello": {
         "pt": "Oi! Tudo o que você mandar aqui vira nota.",
         "en": "Hi! Everything you send here becomes a note.",

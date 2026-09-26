@@ -10,6 +10,7 @@ project, and it cost an afternoon.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tomllib
@@ -89,6 +90,9 @@ class Config:
     # Unset, it is guessed from this machine's LAN address, which is right for a
     # home server and wrong behind a reverse proxy.
     public_url: str | None = None
+    # A Satellite's server (F6): set on the laptop, the CLI talks to it instead of
+    # to a daemon on this machine, e.g. http://192.168.68.189:7777.
+    server: str | None = None
     # The daemon's OWN credential, not a third party's. Only required when the
     # bind leaves loopback; on loopback it stays None and local use is unchanged.
     token: str | None = None
@@ -114,6 +118,7 @@ class Config:
             google_client_id=os.environ.get("GOOGLE_CLIENT_ID") or None,
             google_client_secret=os.environ.get("GOOGLE_CLIENT_SECRET") or None,
             public_url=os.environ.get("TA_PUBLIC_URL") or None,
+            server=(os.environ.get("TA_SERVER") or "").rstrip("/") or None,
             token=os.environ.get("TA_TOKEN") or None,
             auto_review=os.environ.get("TA_AUTO_REVIEW", "1") not in ("0", "false", "no"),
             echo_entities=tuple(
@@ -123,9 +128,19 @@ class Config:
 
     @property
     def base_url(self) -> str:
-        """The address the CLI uses to reach the daemon."""
+        """The address the CLI uses to reach the daemon — the server's, on a Satellite."""
+        if self.server:
+            return self.server
         host = "127.0.0.1" if self.host in ("0.0.0.0", "::") else self.host  # noqa: S104
         return f"http://{host}:{self.port}"
+
+    def credential(self) -> str | None:
+        """What the CLI presents to a remote server: this Member's Satellite token
+        if `ta satellite login` ran, else `TA_TOKEN` (which only the Owner has).
+        Loopback needs neither (ADR 0012)."""
+        if not self.server:
+            return None
+        return satellite_token() or self.token
 
     @property
     def exposed(self) -> bool:
@@ -489,3 +504,23 @@ def digest_weather() -> dict | None:
     if not (isinstance(lat, int | float) and isinstance(lon, int | float)):
         return None
     return {"latitude": lat, "longitude": lon, "place": str(raw.get("place", ""))}
+
+
+def satellite_file() -> Path:
+    return config_dir() / "satellite.json"
+
+
+def satellite_token() -> str | None:
+    try:
+        return json.loads(satellite_file().read_text()).get("token")
+    except (OSError, ValueError):
+        return None
+
+
+def save_satellite_token(token: str) -> Path:
+    path = satellite_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"token": token}, f)
+    return path

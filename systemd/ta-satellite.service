@@ -1,0 +1,25 @@
+[Unit]
+Description=Terminal Assistant — this machine as a Satellite of a server
+Documentation=file://@@PROJECT_DIR@@/docs/install.md
+
+# Same limits as the daemon's unit, and in [Unit] for the same reason.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# A user unit on purpose: the Satellite exists to reach the desktop session —
+# the Lighter through gsettings, notifications through notify-send — which is
+# exactly what the server does not have.
+
+[Service]
+Type=simple
+WorkingDirectory=@@PROJECT_DIR@@
+# TA_SERVER, and TA_TOKEN if this is the Owner's machine, come from here.
+EnvironmentFile=-@@PROJECT_DIR@@/.env
+ExecStart=@@PROJECT_DIR@@/.venv/bin/ta satellite run
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

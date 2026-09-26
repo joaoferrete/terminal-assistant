@@ -16,6 +16,7 @@ import webbrowser
 
 import httpx
 
+from . import outbox
 from .config import Config, load_env_file
 from .i18n import LANGS, lang, lang_source, reset_cache, t
 
@@ -34,6 +35,10 @@ class Problem(Exception):
     """An error to show the user, with no traceback."""
 
 
+class Offline(Problem):
+    """The daemon (or the server, on a Satellite) did not answer at all."""
+
+
 def _request(
     cfg: Config,
     method: str,
@@ -43,12 +48,14 @@ def _request(
     timeout: float = TIMEOUT,
 ) -> httpx.Response:
     url = f"{cfg.base_url}{path}"
+    token = cfg.credential()
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
-        r = httpx.request(method, url, json=payload, timeout=timeout)
+        r = httpx.request(method, url, json=payload, timeout=timeout, headers=headers)
     except httpx.ConnectError as e:
-        raise Problem(f"{t('daemon.down')} ({cfg.base_url})") from e
+        raise Offline(f"{t('daemon.down')} ({cfg.base_url})") from e
     except httpx.TimeoutException as e:
-        raise Problem(t("cli.timeout", s=f"{timeout:.0f}", url=cfg.base_url)) from e
+        raise Offline(t("cli.timeout", s=f"{timeout:.0f}", url=cfg.base_url)) from e
 
     if r.status_code >= 400:
         try:
@@ -88,9 +95,27 @@ def cmd_note(cfg: Config, args) -> int:
     text = " ".join(args.text).strip()
     if not text:
         raise Problem(t("cli.nothing_to_capture"))
-    note = _request(cfg, "POST", "/notes", {"text": text}).json()
+    if cfg.server:
+        _flush_outbox(cfg)
+    try:
+        note = _request(cfg, "POST", "/notes", {"text": text}).json()
+    except Offline:
+        # On a Satellite capture never waits for the server (invariant 5): the
+        # Note is kept here and sent, with this moment, when the server is back.
+        if not cfg.server:
+            raise
+        outbox.add(text)
+        print(t("cli.queued", n=len(outbox.pending())))
+        return 0
     print(_fmt_note(note))
     return 0
+
+
+def _flush_outbox(cfg: Config) -> int:
+    sent, left = outbox.flush(lambda item: _request(cfg, "POST", "/notes", item))
+    if sent:
+        print(t("cli.flushed", n=sent))
+    return left
 
 
 def cmd_list(cfg: Config, args) -> int:
@@ -379,6 +404,33 @@ def cmd_today(cfg: Config, args) -> int:
             late = f"  {t('cli.overdue')}" if n.get("horizon") == "overdue" else ""
             prio = _prio_label(n["priority"])
             print(f"    {prio} #{n['id']} {n['text']}{late}")
+    return 0
+
+
+def cmd_satellite(cfg: Config, args) -> int:
+    """This machine as a Satellite of a server (F6)."""
+    from .config import satellite_token, save_satellite_token
+
+    if not cfg.server:
+        raise Problem(t("cli.satellite_no_server"))
+    if args.action == "login":
+        if not args.code:
+            raise Problem(t("cli.satellite_need_code"))
+        token = _request(cfg, "POST", "/satellite/redeem", {"code": args.code}).json()["token"]
+        print(t("cli.satellite_logged_in", path=save_satellite_token(token)))
+        return 0
+    if args.action == "status":
+        print(t("cli.satellite_status", server=cfg.server,
+                token=t("cli.yes") if (satellite_token() or cfg.token) else t("cli.no"),
+                queued=len(outbox.pending())))
+        return 0
+    import asyncio
+    import logging
+
+    from .satellite_client import Satellite
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    asyncio.run(Satellite(cfg).run())
     return 0
 
 
@@ -679,7 +731,7 @@ HELP_GROUPS = (
     ("calendar", "Calendar", "today event"),
     ("ai", "AI", "init priorities organize prose revise event"),
     ("lighter", "Ringlight", "lighter"),
-    (None, "Tooling", "doctor lang rules capture-popup"),
+    (None, "Tooling", "doctor lang rules capture-popup satellite"),
 )
 
 
@@ -830,6 +882,10 @@ def build_parser() -> argparse.ArgumentParser:
     ev.add_argument("text", nargs="*")
     ev.set_defaults(func=cmd_event)
 
+    sat = sub.add_parser("satellite", help="this machine as a Satellite of a server")
+    sat.add_argument("action", choices=["login", "run", "status"])
+    sat.add_argument("code", nargs="?", help="the one-time code from the bot's /satellite")
+    sat.set_defaults(func=cmd_satellite)
     rl = sub.add_parser("rules", help="list or validate the rules")
     rl.add_argument(
         "check", nargs="?", const=True, default=False, help="validate without the daemon"

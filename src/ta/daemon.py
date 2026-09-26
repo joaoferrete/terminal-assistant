@@ -38,6 +38,7 @@ from . import digest as digest_mod
 from . import members as members_mod
 from . import memory as memory_mod
 from . import notes as notes_mod
+from . import satellite as satellite_mod
 from . import tools as tools_mod
 from .actuators.home import Home, HomeError, StateWatcher
 from .actuators.lighter import Lighter
@@ -163,12 +164,19 @@ class TokenAuth(BaseHTTPMiddleware):
         presented = self._presented(request)
         if presented and hmac.compare_digest(presented, self._token):
             return OWNER_ID   # TA_TOKEN is the Owner's own credential
+        # A Satellite's token is a signed session, sent as a Bearer (T6.1).
+        if presented and (member := board_access.session_member(self._token, presented)):
+            return member
         return OWNER_ID if _peer_local(request) else None
 
     async def dispatch(self, request: Request, call_next):
         code = request.query_params.get("code")
         if request.url.path == "/board" and code:
             return self._redeem(request, code)
+        # Trading a one-time code for a Satellite token needs no credential: the
+        # code IS the credential, issued privately by the bot.
+        if request.url.path == "/satellite/redeem":
+            return await call_next(request)
         member = self._member(request)
         request.state.viewer = Viewer(member) if member is not None else None
         if member is None:
@@ -379,8 +387,30 @@ async def notes_create(request: Request) -> JSONResponse:
     raw = (body.get("text") or "").strip()
     if not raw:
         return JSONResponse({"error": i18n.t("api.empty_text")}, status_code=400)
-    note = _capture(request.app, raw)
+    try:
+        captured_at = _captured_at(body.get("captured_at"))
+    except ValueError:
+        return JSONResponse({"error": i18n.t("api.bad_captured_at")}, status_code=400)
+    # The viewer's: before this, a housemate's capture on the board became the
+    # Owner's Note, since every capture path used to be the Owner's.
+    note = _capture(request.app, raw, owner_id=_viewer(request).member_id, now=captured_at)
     return JSONResponse(_note_json(note), status_code=201)
+
+
+def _captured_at(raw) -> datetime | None:
+    """When a queued capture was really written (T6.2, invariant 5).
+
+    A Satellite that was offline sends its Notes later, with the moment they were
+    typed — "amanhã" written on Monday must mean Tuesday, not the day it arrived.
+    Bounded: not in the future, and not older than a month.
+    """
+    if not raw:
+        return None
+    at = datetime.fromisoformat(raw)
+    now = datetime.now()
+    if at > now + timedelta(minutes=5) or at < now - timedelta(days=31):
+        raise ValueError(raw)
+    return at
 
 
 def _agent_deps(app: Starlette) -> AgentDeps:
@@ -539,7 +569,8 @@ def _board_link(app: Starlette, cfg: Config, member_id: int = OWNER_ID) -> str |
 
 
 def _capture(
-    app: Starlette, raw: str, *, owner_id: int = OWNER_ID, list_id: int | None = None
+    app: Starlette, raw: str, *, owner_id: int = OWNER_ID, list_id: int | None = None,
+    now: datetime | None = None,
 ) -> store.Note:
     """Capture a Note: the one path shared by `POST /notes` and the bot.
 
@@ -547,7 +578,7 @@ def _capture(
     waits for the network (ADR 0003). Whatever it changes shows up on the board
     at the next reload.
     """
-    note = store.add_note(app.state.conn, raw, owner_id=owner_id, list_id=list_id)
+    note = store.add_note(app.state.conn, raw, owner_id=owner_id, list_id=list_id, now=now)
     if list_id is not None:
         # A List item is never reviewed: a model call so "leite" gains a deadline
         # and a tag is cost with no use. Marking it reviewed is what keeps it out
@@ -885,6 +916,37 @@ async def notes_list(request: Request) -> JSONResponse:
     reference_day = date.today()
     notes = store.by_urgency(notes, today=reference_day)
     return JSONResponse({"notes": [_note_json(n, today=reference_day) for n in notes]})
+
+
+async def satellite_signal(request: Request) -> JSONResponse:
+    """A Satellite reports its microphone (T6.3). Only the Owner's: the machine
+    signals drive the Owner's Rules, and a housemate's laptop joining a call is
+    not a reason to turn on the Owner's ring light."""
+    viewer = _viewer(request)
+    if viewer.member_id != OWNER_ID:
+        return _forbidden()
+    body = await request.json()
+    request.app.state.hub.seen(viewer.member_id)
+    if "mic" in body:
+        await request.app.state.on_mic(bool(body["mic"]), list(body.get("apps") or []))
+    return JSONResponse({"ok": True})
+
+
+async def satellite_actions(request: Request) -> JSONResponse:
+    """Long poll: the actions waiting for this Member's Satellite (T6.3)."""
+    wait = min(float(request.query_params.get("wait", 25)), 50)
+    actions = await request.app.state.hub.next(_viewer(request).member_id, wait)
+    return JSONResponse({"actions": actions})
+
+
+async def satellite_redeem(request: Request) -> JSONResponse:
+    """A one-time code from the bot (`/satellite`) → this Member's Satellite token."""
+    code = ((await request.json()).get("code") or "").strip()
+    member = request.app.state.satellite_codes.redeem(code)
+    token = request.app.state.config.token
+    if member is None or not token:
+        return JSONResponse({"error": i18n.t("auth.code_used")}, status_code=401)
+    return JSONResponse({"token": board_access.session_cookie(token, member)})
 
 
 async def lists_route(request: Request) -> JSONResponse:
@@ -1456,6 +1518,9 @@ def _wire_engine(app: Starlette) -> None:
         )
 
     app.state.mic = MicWatcher(on_mic)
+    # The same callback serves a Satellite's report (F6): the meeting Rule does
+    # not know whether the microphone is on this machine or on the Owner's laptop.
+    app.state.on_mic = on_mic
     app.state.scheduler = Scheduler(on_time, lambda now: _fire_reminders(app, now))
     app.state.state_watcher = StateWatcher(app.state.home, on_state)
 
@@ -1522,8 +1587,16 @@ def create_app(
         # every test that boots the app runs a real `gsettings` and changes the
         # user's extension settings — including leaving `auto-switch` on at
         # shutdown. A test does not touch the desktop.
+        app.state.hub = satellite_mod.Hub()
+        app.state.satellite_codes = board_access.BoardCodes()
         app.state.lighter = lighter if lighter is not None else Lighter()
         app.state.notify = Notifier()
+        # On a server there is no desktop: the Owner's Satellite is the ring light
+        # and the notification (F6). A laptop running the daemon keeps its own.
+        if not app.state.lighter.available:
+            app.state.lighter = satellite_mod.RemoteLighter(app.state.hub, OWNER_ID)
+        if not app.state.notify.available:
+            app.state.notify = satellite_mod.RemoteNotifier(app.state.hub, OWNER_ID)
         app.state.calendar = calendar if calendar is not None else Calendar()
         app.state.llm = LLM.from_config(cfg)
         app.state.llm.on_usage = _usage_recorder(app)
@@ -1555,6 +1628,10 @@ def create_app(
             # text is captured, which is F1's behaviour and keeps invariant 1.
             agent=_agent_deps(app) if app.state.llm.configured else None,
             calendar_link=GoogleLink(app.state.google, app.state.google_tokens),
+            # Only when the daemon is reachable from other machines with a token:
+            # otherwise there is no server for a Satellite to join.
+            satellite_code=(lambda member_id: app.state.satellite_codes.issue(member_id))
+            if cfg.exposed and cfg.token else (lambda member_id: None),
         )
 
         report = engine.load_rules(rules_path)
@@ -1620,6 +1697,9 @@ def create_app(
             Route("/notes", notes_create, methods=["POST"]),
             Route("/notes", notes_list, methods=["GET"]),
             Route("/lists", lists_route),
+            Route("/satellite/signal", satellite_signal, methods=["POST"]),
+            Route("/satellite/actions", satellite_actions),
+            Route("/satellite/redeem", satellite_redeem, methods=["POST"]),
             Route("/lists/{list_id:int}/items", list_add, methods=["POST"]),
             Route("/notes/{note_id:int}/move", notes_move, methods=["POST"]),
             Route("/notes/{note_id:int}/done", notes_done, methods=["POST"]),

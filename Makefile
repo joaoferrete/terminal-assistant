@@ -6,7 +6,7 @@ VENV       = .venv
 PY         = $(VENV)/bin/python
 PIP        = $(VENV)/bin/pip
 
-.PHONY: help venv install check-gi lint test run demo install-service install-server-service clean
+.PHONY: help venv install check-gi lint test run demo install-service install-server-service install-satellite clean
 
 help:
 	@echo "make venv            cria a venv no python do sistema"
@@ -18,6 +18,7 @@ help:
 	@echo "make demo            daemon isolado com dados ficticios, na porta 7778"
 	@echo "make install-service instala e habilita o systemd user unit"
 	@echo "make install-server-service  o mesmo, como servico de sistema (servidor)"
+	@echo "make install-satellite       este computador como Satellite de um servidor"
 
 # --system-site-packages nao e opcional: e o que faz a venv enxergar o
 # python3-gi instalado pelo apt em /usr/lib/python3/dist-packages.
@@ -85,6 +86,16 @@ install-server-service:
 	sudo systemctl daemon-reload
 	sudo systemctl enable --now ta
 	@echo "servico de pe. logs: journalctl -u ta -f"
+
+# The laptop side of a server install (F6): reports the microphone, runs the ring
+# light and the notifications the server asks for, flushes the capture queue.
+install-satellite:
+	mkdir -p $(HOME)/.config/systemd/user
+	sed "s|@@PROJECT_DIR@@|$(CURDIR)|g" systemd/ta-satellite.service \
+		> $(HOME)/.config/systemd/user/ta-satellite.service
+	systemctl --user daemon-reload
+	systemctl --user enable --now ta-satellite
+	@echo "satellite de pe. logs: journalctl --user -u ta-satellite -f"
 
 clean:
 	rm -rf $(VENV) .pytest_cache .ruff_cache src/*.egg-info
