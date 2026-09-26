@@ -387,7 +387,6 @@ MESSAGES: dict[str, dict[str, str]] = {
               "To open it on a phone, see TA_HOST and TA_TOKEN.",
     },
     "bot.voice_listening": {"pt": "Ouvindo…", "en": "Listening…"},
-    "bot.voice_captured": {"pt": "Anotado · #{id}\n“{text}”", "en": "Noted · #{id}\n“{text}”"},
     "bot.voice_placeholder": {
         "pt": "🎤 áudio sem transcrição ({reason}) · arquivo: {path}",
         "en": "🎤 untranscribed audio ({reason}) · file: {path}",
@@ -408,6 +407,16 @@ MESSAGES: dict[str, dict[str, str]] = {
         "pt": "{who} acabou de entrar no bot. Pode mandar notas a partir de agora.",
         "en": "{who} just joined the bot, and can send notes from now on.",
     },
+    "bot.voice_heard": {"pt": "🎤 “{text}”", "en": "🎤 “{text}”"},
+    "bot.captured_offline": {
+        "pt": "{line}\n(o modelo está fora agora, então só anotei)",
+        "en": "{line}\n(the model is unavailable right now, so I only noted it)",
+    },
+    "bot.confirm_needed": {
+        "pt": "Antes de fazer, preciso da sua confirmação: {action} ({args}).",
+        "en": "Before I do it, I need your confirmation: {action} ({args}).",
+    },
+    "agent.sources": {"pt": "Fontes: {list}", "en": "Sources: {list}"},
     "bot.hello": {
         "pt": "Oi! Tudo o que você mandar aqui vira nota.",
         "en": "Hi! Everything you send here becomes a note.",

@@ -23,13 +23,25 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from starlette.routing import Route
 
-from . import board_access, capabilities, engine, grants, i18n, priorities, store, usage
+from . import (
+    board_access,
+    builtin_tools,  # noqa: F401 - registers the built-in Tools
+    capabilities,
+    engine,
+    grants,
+    i18n,
+    priorities,
+    store,
+    usage,
+)
 from . import members as members_mod
+from . import memory as memory_mod
 from . import notes as notes_mod
+from . import tools as tools_mod
 from .actuators.home import Home, HomeError, StateWatcher
 from .actuators.lighter import Lighter
 from .actuators.notify import Notifier
-from .bot import Bot
+from .bot import AgentDeps, Bot
 from .channel.telegram import TelegramChannel
 from .config import (
     LOOPBACK,
@@ -195,8 +207,11 @@ def _viewer(request: Request) -> Viewer:
 def _permissions(request: Request) -> grants.Permissions:
     """What the viewer may do (D12). Read from config.toml each time: it is
     cached by `_user_config`, and a Grant edited there applies on restart."""
-    viewer = _viewer(request)
-    member = members_mod.get(request.app.state.conn, viewer.member_id)
+    return _member_permissions(request.app.state.conn, _viewer(request).member_id)
+
+
+def _member_permissions(conn, member_id: int) -> grants.Permissions:
+    member = members_mod.get(conn, member_id)
     if member is None:
         return grants.NOTHING
     invited, defined = grants_config()
@@ -359,6 +374,19 @@ async def notes_create(request: Request) -> JSONResponse:
         return JSONResponse({"error": i18n.t("api.empty_text")}, status_code=400)
     note = _capture(request.app, raw)
     return JSONResponse(_note_json(note), status_code=201)
+
+
+def _agent_deps(app: Starlette) -> AgentDeps:
+    """The agent's collaborators (F4): the built-in Tools plus the household's."""
+    report = tools_mod.load_tools(config_dir() / "tools")
+    for filename, err in report.errors:
+        log.error("tool file %s: %s", filename, err)
+    return AgentDeps(
+        llm=app.state.llm,
+        registry=tools_mod.registered,
+        permissions=lambda member_id: _member_permissions(app.state.conn, member_id),
+        services={"app": app},
+    )
 
 
 def _sync_household(conn) -> None:
@@ -1373,6 +1401,10 @@ def create_app(
             cfg.telegram_token
         )
         _sync_household(app.state.conn)
+        # Conversation Memory has a retention (D13). At boot is enough: the daemon
+        # restarts on every deploy, and a few extra days of memory harm nothing.
+        if forgotten := memory_mod.forget_older(app.state.conn):
+            log.info("forgot %d message(s) past the retention", forgotten)
         app.state.board_codes = board_access.BoardCodes()
         app.state.bot = Bot(
             app.state.conn,
@@ -1384,6 +1416,9 @@ def create_app(
             allowed_groups=telegram_groups,
             transcriber=Transcriber(),
             audio_dir=db_path_resolved.parent / "audio",
+            # The agent only when a model is there to drive it: without one, every
+            # text is captured, which is F1's behaviour and keeps invariant 1.
+            agent=_agent_deps(app) if app.state.llm.configured else None,
         )
 
         report = engine.load_rules(rules_path)

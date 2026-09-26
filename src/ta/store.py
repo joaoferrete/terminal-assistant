@@ -604,3 +604,20 @@ def lists_for(conn: sqlite3.Connection, *, viewer) -> list[ListView]:
         ).fetchall()
         out.append(ListView(r["id"], r["name"], r["scope"], [_row_to_note(x, []) for x in rows]))
     return out
+
+
+def search_notes(conn: sqlite3.Connection, query: str, *, viewer, limit: int = 8) -> list[Note]:
+    """Notes containing every word of `query`, among those `viewer` may see.
+
+    Visibility is applied by the SQL first (invariant 9) and the words matched
+    after, in Python, without accents or case — see `memory.py` for why this is
+    not FTS5.
+    """
+    from .memory import fold, words
+
+    wanted = words(query)
+    if not wanted:
+        return []
+    found = [n for n in list_notes(conn, viewer=viewer, include_done=True)
+             if all(w in fold(n.text) for w in wanted)]
+    return found[:limit]

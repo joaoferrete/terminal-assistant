@@ -20,7 +20,7 @@ from pathlib import Path
 
 log = logging.getLogger("ta")
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 # The states of a Note. Stored in English because the rest of the vocabulary is
 # (see CONTEXT.md); the translated labels live in the interface.
@@ -292,6 +292,44 @@ MIGRATIONS: list[tuple[int, str]] = [
         -- Priorities are one person's description of what matters to them.
         ALTER TABLE priorities ADD COLUMN member_id INTEGER REFERENCES members(id);
         UPDATE priorities SET member_id = 1;
+        """,
+    ),
+    (
+        10,
+        """
+        -- Conversation Memory (D13): what was said, per conversation, searchable
+        -- only from inside that conversation. It holds both sides — what a
+        -- Member wrote and what the bot answered — because "what did you tell me
+        -- about X" is a question about the bot's side.
+        CREATE TABLE messages (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel          TEXT    NOT NULL,
+            conversation_id  TEXT    NOT NULL,
+            message_id       TEXT,
+            member_id        INTEGER REFERENCES members(id),   -- NULL = the bot
+            text             TEXT    NOT NULL,
+            at               TEXT    NOT NULL
+        );
+        CREATE INDEX idx_messages_conversation ON messages(channel, conversation_id, at);
+
+        -- What the bot did because of a message (Receipt): the undo, and the
+        -- answer to "what did you do here?" (D11, T4.4). `pending` holds an action
+        -- waiting for the asker's button (D27); it runs only when pressed.
+        CREATE TABLE receipts (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel          TEXT    NOT NULL,
+            conversation_id  TEXT    NOT NULL,
+            message_id       TEXT,
+            member_id        INTEGER NOT NULL REFERENCES members(id),
+            tool             TEXT    NOT NULL,
+            args             TEXT,             -- JSON: what a pending action will run with
+            summary          TEXT    NOT NULL,
+            undo             TEXT,             -- JSON: how to undo, NULL = cannot
+            state            TEXT    NOT NULL DEFAULT 'done'
+                             CHECK (state IN ('done', 'pending', 'undone', 'refused')),
+            at               TEXT    NOT NULL
+        );
+        CREATE INDEX idx_receipts_message ON receipts(channel, conversation_id, message_id);
         """,
     ),
 ]

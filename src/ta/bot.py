@@ -17,19 +17,24 @@ Two rules from the plan already hold here:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sqlite3
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import i18n
+from . import agent as agent_mod
+from . import i18n, memory, receipts
 from . import members as members_mod
+from .builtin_tools import ToolContext
 from .channel import Channel, ChannelError, Inbound
 from .i18n import t
 from .members import OWNER_ID
 from .speech import Transcriber, TranscriptionFailed
+from .tools import Tool, Turn, allowed
 
 log = logging.getLogger("ta.bot")
 
@@ -73,6 +78,19 @@ def _identity_of(conn: sqlite3.Connection, channel: str, member_id: int) -> str 
     return row[0] if row else None
 
 
+@dataclass
+class AgentDeps:
+    """What the bot needs to converse (F4). Without it, every text is captured —
+    which is exactly F1's behaviour, and what tests of capture want."""
+
+    llm: object
+    registry: Callable[[], dict[str, Tool]]
+    permissions: Callable[[int], object]
+    services: dict = field(default_factory=dict)
+    persona: Callable[[int], str] = lambda member_id: ""
+    house_rules: Callable[[], str] = lambda: ""
+
+
 class Bot:
     def __init__(
         self,
@@ -86,6 +104,7 @@ class Bot:
         allowed_groups: Callable[[], set[str]] = set,
         transcriber: Transcriber | None = None,
         audio_dir: Path | None = None,
+        agent: AgentDeps | None = None,
     ) -> None:
         self.conn = conn
         self.channel = channel
@@ -100,6 +119,7 @@ class Bot:
         # Issues a one-time code each call, so it is a function, not a string.
         self.board_link = board_link
         self.transcriber = transcriber
+        self.agent = agent
         # Where audio that could not be transcribed is kept, so nothing said is
         # lost (invariant 1). None keeps nothing, which is what tests want.
         self.audio_dir = audio_dir
@@ -208,13 +228,72 @@ class Bot:
                 await self.channel.reply(msg, t("bot.unknown_command"))
             return
 
-        # The sender owns what they wrote (D6).
-        note = self.capture(text, owner_id=member_id)
+        await self._text(msg, member_id, text)
+
+    def _captured_line(self, note) -> str:
         due = getattr(note, "due", None)
-        await self.channel.reply(
-            msg,
-            t("bot.captured_due", id=note.id, due=due) if due else t("bot.captured", id=note.id),
+        return t("bot.captured_due", id=note.id, due=due) if due else t("bot.captured", id=note.id)
+
+    async def _say(self, msg: Inbound, text: str) -> None:
+        await self.channel.reply(msg, text)
+        memory.record(self.conn, channel=msg.channel, conversation_id=msg.conversation_id,
+                      message_id=None, member_id=None, text=text)
+
+    async def _text(self, msg: Inbound, member_id: int, text: str) -> None:
+        """A text (or a transcript) from a recognised Member: converse, or capture.
+
+        Invariant 1 holds on every path out of here: the message was answered, or it
+        became a Note — and when the agent fails, it becomes a Note.
+        """
+        history = memory.recent(self.conn, channel=msg.channel,
+                                conversation_id=msg.conversation_id)
+        memory.record(self.conn, channel=msg.channel, conversation_id=msg.conversation_id,
+                      message_id=msg.message_id, member_id=member_id, text=text)
+        if self.agent is None:
+            # The sender owns what they wrote (D6).
+            await self._say(msg, self._captured_line(self.capture(text, owner_id=member_id)))
+            return
+
+        deps = self.agent
+        turn = Turn(member_id=member_id, conversation_id=msg.conversation_id,
+                    in_group=not msg.private, permissions=deps.permissions(member_id))
+        ctx = ToolContext(conn=self.conn, turn=turn, channel=msg.channel,
+                          services={**deps.services, "message": msg})
+        available = [t_ for t_ in deps.registry().values() if allowed(t_, turn)]
+        try:
+            reply = await agent_mod.respond(
+                deps.llm, turn=turn, ctx=ctx, text=text, history=history,
+                available=available, persona=deps.persona(member_id),
+                house_rules=deps.house_rules(),
+            )
+        except agent_mod.AgentFailed as e:
+            log.warning("agent failed, capturing instead: %s", e)
+            note = self.capture(text, owner_id=member_id)
+            await self._say(msg, t("bot.captured_offline", line=self._captured_line(note)))
+            return
+
+        parts = []
+        if reply.pending is not None:
+            parts.append(self._propose(msg, member_id, reply.pending))
+        if reply.text:
+            parts.append(reply.text)
+        # A reply with nothing to say and nothing captured would drop the message.
+        if reply.capture or not parts:
+            parts.append(self._captured_line(self.capture(text, owner_id=member_id)))
+        if cited := agent_mod.format_sources(reply.sources):
+            parts.append(cited)
+        await self._say(msg, "\n\n".join(parts))
+
+    def _propose(self, msg: Inbound, member_id: int, pending) -> str:
+        """Store an action waiting for the asker's button (D27) and describe it."""
+        receipts.record(
+            self.conn, channel=msg.channel, conversation_id=msg.conversation_id,
+            message_id=msg.message_id, member_id=member_id, tool=pending.tool.name,
+            args=pending.tool_args, state="pending",
+            summary=f"{pending.tool.name} {json.dumps(pending.tool_args, ensure_ascii=False)}",
         )
+        return t("bot.confirm_needed", action=pending.tool.description,
+                 args=", ".join(f"{k}={v}" for k, v in pending.tool_args.items()))
 
     # ── Voice (F2) ──────────────────────────────────────────────────────────
     async def _voice(self, msg: Inbound, member_id: int) -> None:
@@ -249,8 +328,11 @@ class Bot:
                 log.warning("transcription failed: %s", e)
                 reason = "failed"
             else:
-                note = self.capture(text, owner_id=member_id)
-                await self.channel.reply(msg, t("bot.voice_captured", id=note.id, text=text))
+                # A spoken message is handled like a typed one (D34): a question
+                # gets an answer, a thought becomes a Note. What was heard is shown
+                # first, so a wrong transcript is visible before anything else.
+                await self.channel.reply(msg, t("bot.voice_heard", text=text))
+                await self._text(msg, member_id, text)
                 return
 
         await self._capture_placeholder(msg, self._keep(msg, audio), reason, member_id)

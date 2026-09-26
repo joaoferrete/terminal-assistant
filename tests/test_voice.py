@@ -80,7 +80,8 @@ def test_a_voice_note_becomes_a_note_with_its_transcript(tmp_path):
     run_voice(b, voice())
     assert b.captured == ["lembrar de pagar o IPTU"]
     assert tr.calls == [(AUDIO, "pt")], "the language follows the installation (ADR 0013)"
-    assert "lembrar de pagar o IPTU" in b.channel.sent[-1], "the user sees what was heard"
+    assert any("lembrar de pagar o IPTU" in m for m in b.channel.sent), \
+        "the user sees what was heard"
     assert not (tmp_path / "audio").exists(), "a transcribed note keeps no audio"
 
 

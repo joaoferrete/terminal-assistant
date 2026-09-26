@@ -453,7 +453,7 @@ how `ta` is installed, configured or used also updates the README,
 - [ ] **T4.4 Receipts.** `receipts` (conversation, message id, Member, action,
       payload, undo payload, at). An undo button, and "what did you do here?" as a
       reply to the message.
-- [ ] **T4.5 Conversation Memory.** Stored per conversation with retention; search
+- [x] **T4.5 Conversation Memory.** Stored per conversation with retention; search
       confined to the current conversation. Invariant 3 tested.
 - [ ] **T4.6 Proactive group capture.** Classifier per group message →
       actionable into a household List with ✅ and undo; the rest to memory only.
@@ -472,7 +472,7 @@ how `ta` is installed, configured or used also updates the README,
 - [ ] **T4.11 House rules and cost ceilings** (D29, D30). `[chat] house_rules`,
       a daily cap per Member and a monthly cap for the household. A spent budget
       degrades to capture-only. Gemini's default price is verified and added.
-- [ ] **T4.12 Live-conversation context** (D33). The last messages go along only
+- [x] **T4.12 Live-conversation context** (D33). The last messages go along only
       within the window.
 
 ### F5 — Calendar and the pushed Digest
@@ -570,3 +570,6 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-25 | T3.5 | List items would still have been reviewed, later: skipped at capture, but left in the backlog queue with `reviewed_at` NULL | They are marked reviewed at capture. A test checks the column |
 | 2026-09-26 | T4.6 | Telegram accepts only a fixed set of reaction emojis from bots, and ✅ is not in it | Proactive capture reacts with 👌. D11's "✅" stays the idea; the character is Telegram's call |
 | 2026-09-26 | T4.1 | A household Tool file could define a Tool with a built-in's name and silently replace it — for instance a `home_off` with no Grant check | Loading refuses a name that is already built in, and reports it. Tested |
+| 2026-09-26 | T4.2 | D17 said SQLite FTS5 for search. FTS5 works in the laptop's Python, but could not be confirmed in the server's (uv's build) without asking, and a migration that fails there stops the daemon from starting | Search scans the rows the viewer may see and matches accent- and case-folded words in Python. At a household's volume it is instant. FTS5 can come back as an index if that ever changes |
+| 2026-09-26 | T4.3 | The agent loop is ours, not a vendor's function calling. Each step is a structured `AgentStep` through the existing provider layer | DeepSeek and Gemini both drive it with no new code per vendor, and ADR 0018's fallback applies to the chat unchanged |
+| 2026-09-26 | T4.3 | Voice transcripts now go through the agent too, not straight to capture. That is D34: a spoken question gets an answer | The bot shows "🎤 “…”" first, so a wrong transcript is visible before the answer to it |

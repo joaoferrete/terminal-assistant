@@ -47,7 +47,8 @@ log = logging.getLogger("ta.llm")
 DEFAULT_MODEL = GEMINI_DEFAULT_MODEL
 
 # The routable tasks, as `config.toml` names them under `[llm.tasks]`.
-TASKS = ("review_capture", "organize", "detect_event", "digest_prose", "priorities")
+TASKS = ("review_capture", "organize", "detect_event", "digest_prose", "priorities",
+         "agent", "web_search")
 
 # Which task the current call belongs to. A context variable rather than an
 # argument to `_structured`, because tests subclass `LLM` and override
