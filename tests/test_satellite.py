@@ -237,3 +237,28 @@ def test_everything_queued_for_a_member_is_theirs_only(server):
     r = server.get("/satellite/actions?wait=0.1", headers=bearer(token))
     assert r.json() == {"actions": []}
     assert SYSTEM is not None
+
+
+def test_the_satellites_warnings_reach_its_journal(monkeypatch):
+    """`main()` sets logging to ERROR first; the Satellite must override it, or a
+    server that went away would never show in `journalctl --user -u ta-satellite`."""
+    import logging
+
+    from ta import cli
+    from ta.config import Config
+
+    logging.basicConfig(level=logging.ERROR, force=True)
+
+    class Stop(Exception):
+        pass
+
+    def fake_run(coro):
+        coro.close()
+        raise Stop
+
+    monkeypatch.setattr("asyncio.run", fake_run)
+    with pytest.raises(Stop):
+        cli.cmd_satellite(Config(server="http://srv", token=TOKEN),
+                          SimpleNamespace(action="run", code=None))
+    assert logging.getLogger().getEffectiveLevel() == logging.INFO
+    assert logging.getLogger("httpx").getEffectiveLevel() == logging.WARNING

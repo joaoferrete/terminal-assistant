@@ -429,7 +429,13 @@ def cmd_satellite(cfg: Config, args) -> int:
 
     from .satellite_client import Satellite
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    # `force`: `main()` already configured logging at ERROR for the CLI, and a
+    # second basicConfig is silently a no-op — the first Satellite ran with every
+    # warning ("server unreachable") invisible in its journal.
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
+                        force=True)
+    # One request line every 25 s per poll would bury the journal.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     asyncio.run(Satellite(cfg).run())
     return 0
 
