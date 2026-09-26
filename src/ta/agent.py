@@ -192,7 +192,9 @@ def format_sources(sources: list[Source]) -> str:
     if not sources:
         return ""
     notes = [f"#{s.ref}" for s in sources if s.kind == "note"]
-    links = [s.ref for s in sources if s.kind == "web"]
+    # The grounding URLs are long redirects; the title (usually the site) says
+    # what the link is before anybody taps it.
+    links = [f"{s.title} {s.ref}".strip() for s in sources if s.kind == "web"]
     parts = []
     if notes:
         parts.append(", ".join(notes))

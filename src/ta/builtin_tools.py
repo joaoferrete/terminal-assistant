@@ -212,3 +212,26 @@ def persona_line(conn, member_id: int) -> str:
     if p.get("tone"):
         bits.append(f"tone: {p['tone']}")
     return "; ".join(bits)
+
+
+@tool(
+    description="Search the web for current or factual information the notes do not "
+    "have: news, weather, opening hours, prices, anything recent",
+    args={"question": "what to find out, as a full question"},
+    third_party=True,
+)
+async def web_search(ctx: ToolContext, question: str) -> ToolResult:
+    """A summary with links, never raw pages (D26). Its text was written by
+    strangers, so it taints the turn (D27) — through `third_party`, which the
+    code honours whatever the page says."""
+    app = ctx.services.get("app")
+    llm = ctx.services.get("llm") or (app.state.llm if app is not None else None)
+    if llm is None:
+        return ToolResult(text="web search is not available here")
+    from .providers import LLMUnavailable
+
+    try:
+        text, links = await llm.search(question)
+    except LLMUnavailable as e:
+        return ToolResult(text=f"web search failed: {e}")
+    return ToolResult(text=text, sources=[Source("web", uri, title) for uri, title in links])

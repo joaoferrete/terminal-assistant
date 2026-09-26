@@ -266,6 +266,20 @@ class LLM:
         assert failure is not None
         raise failure
 
+    async def search(self, question: str) -> tuple[str, list[tuple[str, str]]]:
+        """Web search (D26). Only a provider that can ground answers in a search
+        engine does it — Gemini today — whatever `[llm.tasks]` says."""
+        provider = next((p for p in self.providers.values()
+                         if p.configured and hasattr(p, "search")), None)
+        if provider is None:
+            raise LLMUnavailable(i18n.t("ai.no_search"))
+        text, links, usage = await provider.search(
+            question, self._system("Answer briefly, from the search results. Say when "
+                                   "the results do not answer the question."))
+        if self.on_usage is not None:
+            self.on_usage(provider.name, provider.model, "web_search", usage)
+        return text, links
+
     async def list_models(self) -> list[str]:
         chain = self.chain()
         if not chain:

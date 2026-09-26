@@ -123,6 +123,10 @@ MESSAGES: dict[str, dict[str, str]] = {
         "pt": "O modelo falhou: {erro}",
         "en": "The model failed: {erro}",
     },
+    "ai.no_search": {
+        "pt": "A busca na web precisa da GEMINI_API_KEY no .env.",
+        "en": "Web search needs GEMINI_API_KEY in your .env.",
+    },
     "ai.off_schema": {
         "pt": "O modelo respondeu fora do formato pedido.",
         "en": "The model answered outside the requested schema.",

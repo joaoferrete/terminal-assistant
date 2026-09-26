@@ -116,6 +116,41 @@ class GeminiProvider:
         )
         return resp.parsed, usage
 
+    async def search(self, question: str, system: str) -> tuple[str, list[tuple[str, str]], Usage]:
+        """Answer from the web, with Google Search grounding (D26).
+
+        Plain text, not a schema: grounding and a response schema do not combine,
+        and what the agent needs is a short summary plus where it came from. The
+        sources are read from the grounding metadata, never from the text.
+        """
+        from google.genai import types
+
+        client = self._get()
+        cfg = types.GenerateContentConfig(
+            tools=[types.Tool(google_search=types.GoogleSearch())],
+            system_instruction=system,
+        )
+        try:
+            resp = await asyncio.to_thread(
+                client.models.generate_content, model=self.model, contents=question, config=cfg
+            )
+        except Exception as e:
+            raise LLMUnavailable(i18n.t("ai.failed", erro=e)) from e
+        text = (getattr(resp, "text", None) or "").strip()
+        if not text:
+            raise LLMUnavailable(i18n.t("ai.off_schema"))
+        links: list[tuple[str, str]] = []
+        for cand in getattr(resp, "candidates", None) or []:
+            meta = getattr(cand, "grounding_metadata", None)
+            for chunk in getattr(meta, "grounding_chunks", None) or []:
+                web = getattr(chunk, "web", None)
+                if web is not None and getattr(web, "uri", None):
+                    links.append((web.uri, getattr(web, "title", "") or ""))
+        meta = getattr(resp, "usage_metadata", None)
+        usage = Usage(getattr(meta, "prompt_token_count", 0) or 0,
+                      getattr(meta, "candidates_token_count", 0) or 0)
+        return text, links[:5], usage
+
     async def list_models(self) -> list[str]:
         client = self._get()
         models = await asyncio.to_thread(lambda: list(client.models.list()))

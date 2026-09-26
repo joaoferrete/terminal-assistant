@@ -463,7 +463,7 @@ how `ta` is installed, configured or used also updates the README,
       Tools set when they return third-party content. The confirmation gate on
       state-changing Tools reads it. Invariant 8 is tested with a web result
       that says to turn off every light.
-- [ ] **T4.9 `web_search`** (D25, D26). A Tool that asks Gemini with Google Search
+- [x] **T4.9 `web_search`** (D25, D26). A Tool that asks Gemini with Google Search
       grounding and returns a summary with links. It is routed as task
       `web_search`, and it taints the turn.
 - [x] **T4.10 Answer assembly** (D31, D32). Citations are built from Tool
@@ -577,3 +577,4 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T4.4 | A confirmation button proposed before a Grant was revoked could still run the action | Permissions are read again when the button is pressed, and only the Member the Receipt belongs to may press it. Both are tested |
 | 2026-09-26 | T4.3 | A switching verb alone does not mean the house. "Apaga aquela nota" starts like "apaga a luz", and "ligar pro dentista" is a phone call | The pre-router's match is only a candidate. It acts only if the target resolves to something the asker may switch; otherwise the message goes to the agent. Tested both ways |
 | 2026-09-26 | T4.2 | `home_off` of several entities has no undo. Some of them may have been off already, and "turn them all back on" would light up what nobody had lit | Undo is offered for a single Entity, and for any `home_on`, whose targets were all turned on by it |
+| 2026-09-26 | T4.9 | Grounding with Google Search and a response schema do not combine in one Gemini call | `web_search` is a plain-text call. Its links are read from the grounding metadata, never from the text, so the model cannot invent a source |
