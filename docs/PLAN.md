@@ -301,6 +301,12 @@ with no synthesised voice. *Why:* the user's call on 2026-09-25. Text is
 readable later and searchable, and speaking back would add a TTS dependency and a
 cost for little gain.
 
+**D35 — AdGuard in the Digest, for admins only.** The Digest gains a section
+from AdGuard Home's local API (`/control/stats`): queries, how many were blocked,
+the top blocked domains and the most active clients. It is admin-only, like server
+health. *Why:* the user's call on 2026-09-26. The most active clients are each
+person's devices, which is not the household's business.
+
 ### Delivery
 
 **D23 — Vertical slice, Owner first.** The Owner uses a Telegram capture on the
@@ -489,7 +495,8 @@ how `ta` is installed, configured or used also updates the README,
 - [ ] **T5.2** ADR 0007's propose-and-confirm through Channel buttons.
 - [ ] **T5.3 Digest sections** as independent sources: calendar, chaseable Notes,
       household Lists, weather (confirm Open-Meteo's terms), server health from
-      `/proc`, `/sys/class/thermal`, disk and `llm_usage` (admins only).
+      `/proc`, `/sys/class/thermal`, disk and `llm_usage`, and AdGuard's
+      `/control/stats` (D35). Server health and AdGuard are for admins only.
 - [ ] **T5.4 Schedule** per Member in `scheduler.py`, with no retroactive flood
       after downtime. The prose is optional.
 
@@ -590,3 +597,4 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T4.6 | The user must disable the bot's **privacy mode** at @BotFather, or Telegram hides from it every group message that does not mention it | In install.md. Remind the user when groups are first set up |
 | 2026-09-26 | F4 | First run against the real providers (a throwaway database, a stub home): DeepSeek drove the agent correctly. It answered without capturing, captured with [Not a note], cited the right `#1`, set the Persona, and the pre-router switched the stub light. Two Tool texts, written in English for the model, reached the user ("Feito · turned on: light.sala") | The pre-router's reply and the post-confirmation reply come from the catalogue now. A test asserts the Tool's text does not show |
 | 2026-09-26 | T4.9 | The user's Gemini key answered **429 RESOURCE_EXHAUSTED** to a grounded search, and 503 to a plain call. It is quota or billing on the account, not code. The agent said search had failed and invented nothing | Web search waits on the user's Google AI account (billing or quota). Everything else runs on DeepSeek |
+| 2026-09-26 | T4.2 | The user's first real question, "quais são minhas notas vencidas?", ran out of steps. With only a word search, "vencidas" matched nothing, and the model kept searching. The fallback then said "the model is down", which was false, since the model was up | A `notes_due` Tool lists open tasks by Horizon. The last step tells the model to answer with what it has. The fallback message says "the model is down" only when the provider failed. Confirmed against real DeepSeek |
