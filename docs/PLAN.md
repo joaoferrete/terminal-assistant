@@ -46,15 +46,14 @@ reverse are also ADRs, linked where they apply.
   `ta.db.v8-before-v9`). The Owner member is `joaoferrete`, and all 32 existing
   Notes are the Owner's. The Telegram pairing is linked to the Owner, and the
   `compras` List exists.
-- **F4 is built** (2026-09-26), on `feat/agent`, in eight commits: Tools and taint,
-  the agent, buttons and Receipts, acting Tools and the pre-router, web search,
-  house rules and ceilings, groups, the split proposal. Not deployed yet.
-- **Next agent action:** deploy F4 with the user's yes. Migrations 10–11 run on the
-  live database, after the automatic copy. Then test with the user: a question, a
-  thought, "apaga a luz", a web question, a reply saying "o que você fez aqui?".
-  For groups, the user disables privacy mode at @BotFather and adds the group id.
-  F3 and F4 close after that. **Then the F8 interview** (the user asked for it
-  after F4).
+- **F4 is built and deployed** (2026-09-26). The server runs `feat/agent`
+  (`c211cd1`) at schema v11 (backup `ta.db.v9-before-v11`). Smoke-tested against
+  real DeepSeek before the deploy.
+- **Next agent action:** the user tests on the phone: a question, a thought,
+  "apaga a luz", a reply "o que você fez aqui?". Web search waits on their Gemini
+  quota (429). For groups: privacy mode off at @BotFather, and the group id in
+  `config.toml`. F3 and F4 close after that. **Then the F8 interview**, which the
+  user asked for after F4.
 - **F8 interview:** before starting F8, not now. The user offered to run it now
   and agreed to wait: most of what it configures (Grants, Lists, house rules, the
   Digest) is still being built.
