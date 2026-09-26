@@ -24,6 +24,7 @@ Every one of these is optional.
 |---|---|---|
 | `TA_HOST` | `127.0.0.1` | Address to listen on. Anything else **requires** `TA_TOKEN` or the daemon refuses to start |
 | `TA_PORT` | `7777` | Port |
+| `TA_ADMIN_PASSWORD_HASH` | *(none)* | The config page's password, as a scrypt hash. Set it with `ta passwd`, never by hand |
 | `TA_TOKEN` | *(none)* | Shared secret required from any client that is not on this machine. See [`SECURITY.md`](../SECURITY.md) |
 | `TA_SERVER` | *(none)* | On a Satellite (a laptop of a server install): the server's address. The CLI talks to it, and `ta note` queues locally when it does not answer |
 | `TA_PUBLIC_URL` | *(guessed)* | The address a phone uses to reach the board, for the link the Telegram bot sends with `/board`. Unset, it is this machine's LAN address and `TA_PORT`, which is right for a home server and wrong behind a reverse proxy |

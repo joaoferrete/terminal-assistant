@@ -13,6 +13,8 @@ import contextlib
 import hmac
 import json
 import logging
+import os
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -40,6 +42,7 @@ from . import members as members_mod
 from . import memory as memory_mod
 from . import notes as notes_mod
 from . import satellite as satellite_mod
+from . import settings as settings_mod
 from . import tools as tools_mod
 from .actuators.home import Home, HomeError, StateWatcher
 from .actuators.lighter import Lighter
@@ -53,7 +56,9 @@ from .config import (
     _commandable,
     chat_config,
     config_dir,
+    config_file,
     digest_weather,
+    env_file,
     grants_config,
     lists_config,
     llm_prices,
@@ -941,6 +946,128 @@ async def satellite_actions(request: Request) -> JSONResponse:
     return JSONResponse({"actions": actions})
 
 
+# ── The config page (F8, D38) ──────────────────────────────────────────────
+CONFIG_HTML = Path(__file__).parent / "web" / "config.html"
+
+
+def _password_hash(app: Starlette) -> str | None:
+    """Read from `.env` on every login, not from the environment the daemon started
+    with: `ta passwd` writes the file, and the new password should work without a
+    restart."""
+    path = app.state.env_path
+    for line in path.read_text().splitlines() if path.exists() else []:
+        if line.startswith("TA_ADMIN_PASSWORD_HASH="):
+            return line.split("=", 1)[1]
+    return None
+
+
+def _is_owner(request: Request) -> bool:
+    member = members_mod.get(request.app.state.conn, _viewer(request).member_id)
+    return bool(member and member.is_owner)
+
+
+def _config_guard(request: Request) -> JSONResponse | None:
+    """Both factors (D38): the Owner's board session, AND a live config session."""
+    if not _is_owner(request):
+        return _forbidden()
+    member = settings_mod.config_member(
+        _password_hash(request.app), request.cookies.get(settings_mod.CONFIG_COOKIE),
+        time.time())
+    if member != _viewer(request).member_id:
+        return JSONResponse({"error": i18n.t("config.login_needed")}, status_code=401)
+    return None
+
+
+async def config_page(request: Request) -> HTMLResponse:
+    if not _is_owner(request):
+        return HTMLResponse(i18n.t("api.forbidden"), status_code=403)
+    html = CONFIG_HTML.read_text(encoding="utf-8").replace(
+        I18N_MARKER, json.dumps(i18n.catalogo(), ensure_ascii=False), 1)
+    return HTMLResponse(html, headers={"Cache-Control": "no-store, must-revalidate"})
+
+
+async def config_login(request: Request) -> JSONResponse:
+    if not _is_owner(request):
+        return _forbidden()
+    stored = _password_hash(request.app)
+    if not stored:
+        return JSONResponse({"error": i18n.t("config.no_password")}, status_code=409)
+    password = (await request.json()).get("password") or ""
+    # scrypt is slow on purpose; off the loop, so a login cannot stall the bot.
+    if not await asyncio.to_thread(settings_mod.verify_password, password, stored):
+        log.warning("config login refused")
+        return JSONResponse({"error": i18n.t("config.wrong_password")}, status_code=401)
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(settings_mod.CONFIG_COOKIE,
+                    settings_mod.config_cookie(stored, _viewer(request).member_id, time.time()),
+                    max_age=settings_mod.CONFIG_TTL, httponly=True, samesite="strict",
+                    path="/config")
+    return resp
+
+
+async def config_state(request: Request) -> JSONResponse:
+    if (refused := _config_guard(request)) is not None:
+        return refused
+    return JSONResponse({"toml": settings_mod.read(config_file()),
+                         "env": settings_mod.read_env(request.app.state.env_path)})
+
+
+async def config_save(request: Request) -> JSONResponse:
+    if (refused := _config_guard(request)) is not None:
+        return refused
+    body = await request.json()
+    try:
+        if body.get("fields") or body.get("tables"):
+            settings_mod.write(config_file(), body)
+        if body.get("env"):
+            settings_mod.write_env(request.app.state.env_path,
+                                   {k: str(v) for k, v in body["env"].items()
+                                    if k in settings_mod.ENV_FIELDS})
+    except settings_mod.Invalid as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    # What the daemon reads per request (Grants, aliases, house rules) applies now.
+    from .config import _user_config
+
+    _user_config.cache_clear()
+    return JSONResponse({"ok": True})
+
+
+async def config_secret(request: Request) -> JSONResponse:
+    if (refused := _config_guard(request)) is not None:
+        return refused
+    body = await request.json()
+    key, value = body.get("key", ""), (body.get("value") or "").strip()
+    if key not in settings_mod.SECRETS or not value:
+        return JSONResponse({"error": i18n.t("api.nothing_to_do")}, status_code=400)
+    try:
+        settings_mod.write_env(request.app.state.env_path, {key: value})
+    except settings_mod.Invalid as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    log.warning("secret %s replaced from the config page", key)
+    return JSONResponse({"ok": True})
+
+
+async def config_restart(request: Request) -> JSONResponse:
+    """Exit with a failure code, so systemd's `Restart=on-failure` brings the daemon
+    back with the new settings. Scheduled after the response, so the page hears
+    that it worked."""
+    if (refused := _config_guard(request)) is not None:
+        return refused
+    log.warning("restart requested from the config page")
+    _exit_soon(RESTART_EXIT_CODE)
+    return JSONResponse({"ok": True})
+
+
+def _exit_soon(code: int) -> None:
+    """Its own function so a test can replace it without touching asyncio."""
+    asyncio.get_running_loop().call_later(0.5, os._exit, code)
+
+
+# Any non-zero code makes `Restart=on-failure` restart the unit. 75 is EX_TEMPFAIL:
+# "try again", which is what this is.
+RESTART_EXIT_CODE = 75
+
+
 async def rag_manifest(request: Request) -> JSONResponse:
     """A Satellite says which files it has, by hash (F7). The answer: which of them
     to send, and the files it no longer has are forgotten."""
@@ -1580,6 +1707,7 @@ def create_app(
     calendar=None,
     lighter=None,
     channel=None,
+    env_path=None,
     background: bool = True,
 ) -> Starlette:
     """Monta o app.
@@ -1615,6 +1743,7 @@ def create_app(
         # every test that boots the app runs a real `gsettings` and changes the
         # user's extension settings — including leaving `auto-switch` on at
         # shutdown. A test does not touch the desktop.
+        app.state.env_path = env_path if env_path is not None else env_file()
         app.state.hub = satellite_mod.Hub()
         app.state.embedder = rag.Embedder()
         app.state.satellite_codes = board_access.BoardCodes()
@@ -1730,6 +1859,12 @@ def create_app(
             Route("/satellite/actions", satellite_actions),
             Route("/satellite/redeem", satellite_redeem, methods=["POST"]),
             Route("/rag/manifest", rag_manifest, methods=["POST"]),
+            Route("/config", config_page),
+            Route("/config/login", config_login, methods=["POST"]),
+            Route("/config/state", config_state),
+            Route("/config/save", config_save, methods=["POST"]),
+            Route("/config/secret", config_secret, methods=["POST"]),
+            Route("/config/restart", config_restart, methods=["POST"]),
             Route("/rag/file", rag_file, methods=["POST"]),
             Route("/lists/{list_id:int}/items", list_add, methods=["POST"]),
             Route("/notes/{note_id:int}/move", notes_move, methods=["POST"]),

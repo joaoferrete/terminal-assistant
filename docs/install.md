@@ -478,6 +478,26 @@ your network.
 
 ---
 
+## The config page
+
+Everything above can also be edited in the browser, at `/config` on the board's
+address. It is the **Owner's** only, and locked twice: you need your board
+session, and a config password on top, set on the machine the daemon runs on:
+
+```bash
+ta passwd
+```
+
+The page writes `config.toml` **in place, keeping your comments**, and backs the
+file up before every save. A change that the daemon would reject — a Grant with a
+typo, a price that is not a number — is refused on the page, and nothing is
+written. **Secrets are write-only**: the page tells you whether each one is set,
+never what it is, and lets you replace it. Settings that need a restart say so,
+and a [Restart] button restarts the daemon (systemd brings it back). The config
+session lasts thirty minutes.
+
+---
+
 ## Choosing a language
 
 The tool follows your system locale, so there is usually nothing to do. To

@@ -407,6 +407,29 @@ def cmd_today(cfg: Config, args) -> int:
     return 0
 
 
+def cmd_passwd(cfg: Config, args) -> int:
+    """Set the config page's password (D38). Stored as a scrypt hash in `.env`,
+    never the password itself. Run it on the machine the daemon runs on."""
+    import getpass
+
+    from .config import env_file
+    from .settings import hash_password, write_env
+
+    first = getpass.getpass(t("cli.passwd_new"))
+    if len(first) < MIN_PASSWORD:
+        raise Problem(t("cli.passwd_short", n=MIN_PASSWORD))
+    if getpass.getpass(t("cli.passwd_again")) != first:
+        raise Problem(t("cli.passwd_mismatch"))
+    write_env(env_file(), {"TA_ADMIN_PASSWORD_HASH": hash_password(first)})
+    print(t("cli.passwd_done"))
+    return 0
+
+
+# Long enough that a guess over the network is hopeless at scrypt's cost, short
+# enough to type on a phone.
+MIN_PASSWORD = 10
+
+
 def cmd_satellite(cfg: Config, args) -> int:
     """This machine as a Satellite of a server (F6)."""
     from .config import satellite_token, save_satellite_token
@@ -742,7 +765,7 @@ HELP_GROUPS = (
     ("calendar", "Calendar", "today event"),
     ("ai", "AI", "init priorities organize prose revise event"),
     ("lighter", "Ringlight", "lighter"),
-    (None, "Tooling", "doctor lang rules capture-popup satellite"),
+    (None, "Tooling", "doctor lang rules capture-popup satellite passwd"),
 )
 
 
@@ -893,6 +916,8 @@ def build_parser() -> argparse.ArgumentParser:
     ev.add_argument("text", nargs="*")
     ev.set_defaults(func=cmd_event)
 
+    sub.add_parser("passwd", help="set the config page's password").set_defaults(
+        func=cmd_passwd)
     sat = sub.add_parser("satellite", help="this machine as a Satellite of a server")
     sat.add_argument("action", choices=["login", "run", "status", "sync"])
     sat.add_argument("code", nargs="?", help="the one-time code from the bot's /satellite")

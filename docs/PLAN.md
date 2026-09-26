@@ -42,6 +42,7 @@ reverse are also ADRs, linked where they apply.
   10. `feat/digest` — T5.3, T5.4, T5.1 (calendar code)
   11. `feat/satellite` — F6
   12. `feat/rag` — F7
+  13. `feat/config-page` — F8
   The next task branches from the top of this list and is appended to it.
 - **F2 is closed** (2026-09-25). Voice notes are transcribed on the server at
   about 0.46× real time. The server runs `feat/voice`.
@@ -74,8 +75,11 @@ reverse are also ADRs, linked where they apply.
   schema v13, backup `ta.db.v12-before-v13`). The `[rag]` extra is installed on the
   server, and `[chat] bot_name`/`bot_personality` are set there. The laptop's Satellite
   runs; the user adds `[rag] folders` on the laptop when they want folder search.
-- **Next agent action:** resume the **F8 interview** at question 4 (where settings
-  are stored) and secrets, then build F8.
+- **F8 built** (`feat/config-page`), not deployed. The deploy needs `make install`
+  (tomlkit is a new dependency) and a restart. After it, the user runs `ta passwd`
+  **on the server**, which is interactive and theirs to run.
+- **Every phase is built.** What remains is the user's: the Google OAuth client, the
+  T5.2 decision, the Gemini quota, the group setup, and merging the stack in order.
 - **F5 calendar code and F6 server side deployed** (2026-09-26, `1be629e`, schema v12).
 - **F6 built** (`feat/satellite`): `TA_SERVER` and the token for the
   CLI, the offline capture queue, `ta satellite login|run|status`, the hub and
@@ -568,37 +572,33 @@ how `ta` is installed, configured or used also updates the README,
 - [x] **T7.3** Satellite sync: `[rag] folders`, only changed files, secrets and
       hidden files skipped, every 30 min and `ta satellite sync`.
 
-### F8 — Web configuration *(requested 2026-09-25, not yet designed)*
+### F8 — Web configuration (D38)
 
-The user asked for a web page to change the configuration, locked behind a login
-and password. If handling the password properly is hard, a credential defined in
-`.env` is acceptable to them.
+**D38 — A config page for everything, locked with two factors.** Decided in an
+interview finished on 2026-09-26:
+- **Scope:** everything `ta` is configured with. That is all of `config.toml`,
+  plus `.env`.
+- **Who:** only the Owner.
+- **How:** the Owner's board session plus a config password, stored as a scrypt
+  hash in `.env` (`TA_ADMIN_PASSWORD_HASH`, set with `ta passwd`). The config
+  session lasts 30 minutes.
+- **Where it writes:** in `config.toml` itself, through tomlkit, keeping comments
+  and formatting, with a backup before each write. There is still one source of
+  truth.
+- **Secrets:** replaced, never shown. The page says "set" or "not set", as
+  `/health` does, and a value never leaves the server. `.env` is backed up before
+  each change.
+- **Restart:** settings that only apply after a restart are marked, and the page
+  offers [Restart]. The daemon exits, and systemd's `Restart=on-failure` brings it
+  back.
 
-What is settled: it is a web page, and it has its own login. It is **not**
-cryptographically hard. The password is stored as a salted hash (`hashlib.scrypt`,
-standard library), never encrypted and never in plain text, so the hash can live in
-`.env` (`TA_ADMIN_PASSWORD_HASH`, set by a CLI command that prompts for the
-password).
-
-**Interview paused on 2026-09-26 at the user's request (resume before F8):**
-1. ~~What it edits.~~ **Answered (user, 2026-09-25): everything `ta` can be
-   configured with**, served by the daemon. That covers all of `config.toml`
-   (aliases, groups, Lists, Members, Grants, LLM routes and prices, house rules,
-   cost ceilings, Digest schedule, the Telegram owner, the language) and the
-   non-secret `.env` settings (`TA_HOST`, `TA_PUBLIC_URL`, the whisper and model
-   settings). Still open: **secrets** (`HA_TOKEN`, the API keys, the bot token).
-   The proposal is that the page can *replace* a secret but never *show* one: it
-   shows only "set" or "not set", as `/health` does. Settings that only apply on a
-   restart say so, and the page offers the restart.
-2. ~~Who logs in.~~ **Answered (2026-09-26): only the Owner.** The page edits
-   Grants and Members, so another admin could grant themselves more.
-3. ~~How it relates to D20.~~ **Answered (2026-09-26): the board session plus a
-   password.** That is two factors: the Owner's board session (magic link, token
-   or loopback), and a config password stored as a scrypt hash in `.env`
-   (`TA_ADMIN_PASSWORD_HASH`, set by `ta passwd`). The config session expires after
-   30 minutes.
-4. Whether it writes `config.toml` in place, which loses the comments in it, or
-   keeps settings in the database with `config.toml` as seed.
+- [x] **T8.1** `ta passwd`, and the scrypt hash in `.env`.
+- [x] **T8.2** Config login, and a 30-minute signed config session (Owner only).
+- [x] **T8.3** Read and write `config.toml` with tomlkit, validated with the same
+      loaders the daemon uses, and backed up.
+- [x] **T8.4** `.env` settings and secrets: write-only secrets, backed up.
+- [x] **T8.5** The page itself, **seen** at desktop and phone width (AGENTS §5),
+      plus [Restart].
 
 ## Discoveries
 
@@ -660,3 +660,5 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T6.3 | The first real Satellite (installed on the laptop by the user) ran fine, with an open connection to the server, but its journal was empty. `main()` configures logging at ERROR, and the Satellite's own `basicConfig(INFO)` was silently a no-op, so a "server unreachable" warning would never have shown | `force=True`, httpx's per-poll request lines kept at WARNING, and a test that starts from ERROR |
 | 2026-09-26 | T7.1 | The first version of `/rag/file` ran `index_file` in a worker thread, and it wrote with the daemon's SQLite connection, which belongs to the loop's thread. The route test caught it, and it would have failed in production | Embedding (slow) runs in the thread; writing stays on the loop. A sweep found no other thread touching the connection |
 | 2026-09-26 | T7.3 | Filtering "names starting with env" to keep `.env`-like files out also dropped `envio.md` | The filter is exact: hidden files, `env`, `env.*`, key/certificate suffixes, and names with secret words. It is conservative on purpose, so `tokenizer.py` is skipped too |
+| 2026-09-26 | T8.5 | Browser automation froze on screenshots again, one per tab at most. The page was checked by one desktop screenshot and by DOM measurement: every section present, comments kept, no overflow at 375 px, rows stacked on a phone | Two fixes from the look: the login no longer shows a red "log in" before anyone typed, and `llm.default` got an empty choice, since a blank select could not be put back |
+| 2026-09-26 | T8.5 | A test that monkeypatched `asyncio.get_running_loop` to catch the restart froze the whole suite, because it replaced the loop the test client runs on | The exit is scheduled by `_exit_soon`, which the test replaces instead |
