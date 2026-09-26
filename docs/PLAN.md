@@ -49,11 +49,11 @@ reverse are also ADRs, linked where they apply.
 - **F4 is built and deployed** (2026-09-26). The server runs `feat/agent`
   (`c211cd1`) at schema v11 (backup `ta.db.v9-before-v11`). Smoke-tested against
   real DeepSeek before the deploy.
-- **Next agent action:** the user tests on the phone: a question, a thought,
-  "apaga a luz", a reply "o que você fez aqui?". Web search waits on their Gemini
-  quota (429). For groups: privacy mode off at @BotFather, and the group id in
-  `config.toml`. F3 and F4 close after that. **Then the F8 interview**, which the
-  user asked for after F4.
+- **F4 accepted by the user** on 2026-09-26, after the `notes_due` fix (`6abb317`, the
+  version the server runs). Still open: web search waits on the user's Gemini
+  quota (429), and groups need privacy mode off at @BotFather plus the group id.
+- **Next agent action:** the **F8 interview** (web configuration), now, at the
+  user's request. Then F5 (calendar and the pushed Digest, with AdGuard, D35).
 - **F8 interview:** before starting F8, not now. The user offered to run it now
   and agreed to wait: most of what it configures (Grants, Lists, house rules, the
   Digest) is still being built.
