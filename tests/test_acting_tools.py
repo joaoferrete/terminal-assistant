@@ -183,3 +183,42 @@ def test_without_gemini_search_says_how_to_enable_it():
     llm = LLM(providers={"deepseek": DeepSeekProvider("k")}, default="deepseek")
     with pytest.raises(LLMUnavailable, match="GEMINI_API_KEY"):
         asyncio.run(llm.search("q"))
+
+
+
+# ── Colour ──────────────────────────────────────────────────────────────────
+def test_a_colour_goes_to_home_assistant_in_the_form_it_understands():
+    from test_home import FakeHome
+
+    h = FakeHome()
+    asyncio.run(h.set_color("light.sala", "blue"))
+    asyncio.run(h.set_color("light.sala", "#ff8800", 40))
+    asyncio.run(h.set_color("light.sala", "2700K"))
+    payloads = [p for _, p in h.calls]
+    assert payloads[0]["color_name"] == "blue"
+    assert payloads[1]["rgb_color"] == [255, 136, 0] and payloads[1]["brightness_pct"] == 40
+    assert payloads[2]["color_temp_kelvin"] == 2700
+
+
+def test_a_plug_has_no_colour_and_says_so():
+    from test_home import FakeHome
+
+    from ta.actuators.home import HomeError
+
+    with pytest.raises(HomeError):
+        asyncio.run(FakeHome().set_color("switch.cafeteira", "blue"))
+
+
+def test_home_on_with_a_colour_colours_the_lights_and_just_turns_on_the_rest(ctx):
+    c, home = ctx()
+    colored = []
+
+    async def set_color(e, color, brightness=None):
+        colored.append((e, color))
+
+    home.set_color = set_color
+    home.inventory = INVENTORY + [{"entity_id": "switch.abajur", "state": "off",
+                                   "attributes": {"friendly_name": "Sala abajur"},
+                                   }]
+    run(c, "home_on", target="sala", color="blue")
+    assert colored == [("light.sala", "blue")]

@@ -134,18 +134,26 @@ async def _targets(ctx: ToolContext, target: str) -> list[str]:
 
 
 @tool(
-    description="Turn on lights or plugs: a room, a name, a group like 'luz', or an entity_id",
-    args={"target": "what to turn on", "brightness": "0-100 for lights, or empty for full"},
+    description="Turn on lights or plugs: a room, a name, a group like 'luz', or an "
+    "entity_id. For a colour, give it in English CSS names (blue, red, orange, purple), "
+    "as #rrggbb, or as a white temperature like 2700K (warm) or 6500K (cold).",
+    args={"target": "what to turn on", "brightness": "0-100 for lights, or empty for full",
+          "color": "a colour for lights, or empty"},
     grant="home",
     changes_state=True,
 )
-async def home_on(ctx: ToolContext, target: str, brightness: str = "") -> ToolResult:
+async def home_on(ctx: ToolContext, target: str, brightness: str = "",
+                  color: str = "") -> ToolResult:
     entities = await _targets(ctx, target)
     if not entities:
         return ToolResult(text=f"nothing you may switch matches {target!r}")
     level = int(brightness) if str(brightness).strip().isdigit() else 100
     for e in entities:
-        await _home(ctx).switch_on(e, level)
+        if color.strip() and e.startswith("light."):
+            # A plug in the same room just turns on; only lights take the colour.
+            await _home(ctx).set_color(e, color, level if brightness.strip() else None)
+        else:
+            await _home(ctx).switch_on(e, level)
     return ToolResult(
         text="turned on: " + ", ".join(entities),
         receipt={"summary": "turned on " + ", ".join(entities), "entities": entities,
