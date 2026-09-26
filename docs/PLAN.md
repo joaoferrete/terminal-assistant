@@ -41,6 +41,7 @@ reverse are also ADRs, linked where they apply.
   9. `feat/agent` — F4, in several commits
   10. `feat/digest` — T5.3, T5.4, T5.1 (calendar code)
   11. `feat/satellite` — F6
+  12. `feat/rag` — F7
   The next task branches from the top of this list and is appended to it.
 - **F2 is closed** (2026-09-25). Voice notes are transcribed on the server at
   about 0.46× real time. The server runs `feat/voice`.
@@ -337,6 +338,18 @@ the top blocked domains and the most active clients. It is admin-only, like serv
 health. *Why:* the user's call on 2026-09-26. The most active clients are each
 person's devices, which is not the household's business.
 
+**D36 — Folder search: local embeddings.** F7 indexes a Satellite's chosen folders
+with a small multilingual model on the server (fastembed,
+`paraphrase-multilingual-MiniLM-L12-v2`, ~220 MB, ONNX). *Why:* the user's call on
+2026-09-26. Code and work documents stay in the house, as audio does (D2). The
+Gemini API was rejected for sending the content out (and its quota was exhausted).
+Word-only search was rejected because it misses "that consumer bug" when the text
+says "Kafka error".
+
+**D37 — Who searches whose folders.** A Member searches their own; the **Owner**
+searches every Satellite's; nobody searches from a group. *Why:* the user's call on
+2026-09-26. A housemate is told so when they pair a Satellite.
+
 ### Delivery
 
 **D23 — Vertical slice, Owner first.** The Owner uses a Telegram capture on the
@@ -545,7 +558,14 @@ how `ta` is installed, configured or used also updates the README,
       Channel, point it at the server), what works offline, and how to remove one.
       Update [`configuration.md`](configuration.md) with every new variable.
 
-### F7 — RAG over Satellite folders *(future, deliberately unplanned)*
+### F7 — Search by meaning over Satellite folders (D36, D37)
+
+- [x] **T7.1** Index (migration 13), chunking, local embeddings behind an optional
+      `[rag]` extra, the `rag` Capability, and `/rag/manifest` + `/rag/file`.
+- [x] **T7.2** `docs_search` Tool: own folders, or all for the Owner; never in a
+      group; taints the turn; cites the file.
+- [x] **T7.3** Satellite sync: `[rag] folders`, only changed files, secrets and
+      hidden files skipped, every 30 min and `ta satellite sync`.
 
 ### F8 — Web configuration *(requested 2026-09-25, not yet designed)*
 
@@ -637,3 +657,5 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T6.1 | A Satellite token over the Channel would be a long-lived credential in Telegram's chat history | The bot sends a one-time code, valid for 5 minutes, and `ta satellite login` trades it for the token directly with the server. The Owner's laptop simply uses `TA_TOKEN` |
 | 2026-09-26 | T6.3 | A Rule acting on the ring light while the laptop is off would "succeed" into a queue nobody reads | The remote actuators report unavailable when the Satellite has not polled for 90 s, and a queue holds at most 50 actions, dropping the oldest |
 | 2026-09-26 | T6.3 | The first real Satellite (installed on the laptop by the user) ran fine, with an open connection to the server, but its journal was empty. `main()` configures logging at ERROR, and the Satellite's own `basicConfig(INFO)` was silently a no-op, so a "server unreachable" warning would never have shown | `force=True`, httpx's per-poll request lines kept at WARNING, and a test that starts from ERROR |
+| 2026-09-26 | T7.1 | The first version of `/rag/file` ran `index_file` in a worker thread, and it wrote with the daemon's SQLite connection, which belongs to the loop's thread. The route test caught it, and it would have failed in production | Embedding (slow) runs in the thread; writing stays on the loop. A sweep found no other thread touching the connection |
+| 2026-09-26 | T7.3 | Filtering "names starting with env" to keep `.env`-like files out also dropped `envio.md` | The filter is exact: hidden files, `env`, `env.*`, key/certificate suffixes, and names with secret words. It is conservative on purpose, so `tokenizer.py` is skipped too |

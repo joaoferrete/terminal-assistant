@@ -207,11 +207,13 @@ def format_sources(sources: list[Source]) -> str:
     if not sources:
         return ""
     notes = [f"#{s.ref}" for s in sources if s.kind == "note"]
+    docs = list(dict.fromkeys(s.ref for s in sources if s.kind == "doc"))
     # The grounding URLs are long redirects; the title (usually the site) says
     # what the link is before anybody taps it.
     links = [f"{s.title} {s.ref}".strip() for s in sources if s.kind == "web"]
     parts = []
     if notes:
         parts.append(", ".join(notes))
+    parts += docs
     parts += links
     return t("agent.sources", list=" · ".join(parts))

@@ -206,7 +206,20 @@ def _gcal(cfg: Config) -> Capability:
     )
 
 
-PROBES = (_notes, _calendar, _mic, _home, _lighter, _ai, _telegram, _voice, _gcal)
+def _rag(_: Config) -> Capability:
+    from .rag import available
+
+    ok = available()
+    return Capability(
+        key="rag",
+        label=t("cap.rag"),
+        ok=ok,
+        reason="" if ok else "fastembed is not installed",
+        fix="" if ok else 'optional. To search your folders by meaning: pip install -e ".[rag]"',
+    )
+
+
+PROBES = (_notes, _calendar, _mic, _home, _lighter, _ai, _telegram, _voice, _gcal, _rag)
 
 
 def inspect(cfg: Config | None = None) -> list[Capability]:

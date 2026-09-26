@@ -445,6 +445,23 @@ the note is kept in a local queue and sent later, with the moment you typed it,
 so "tomorrow" still means the right day. Only capture queues: `ta list` and the
 board need the server, and say so.
 
+**Searching your folders by meaning.** A Satellite can also index folders you
+choose — notes, docs, code — so the bot can answer "how did I fix that consumer
+lag?" from your own files. On the laptop, in `config.toml`:
+
+```toml
+[rag]
+folders = ["~/notas", "~/repos/meu-projeto/docs"]
+```
+
+`ta satellite run` syncs them every half hour. `ta satellite sync` does it now. Only
+changed files are sent; hidden files and anything named like a secret (`.env`,
+keys, certificates, "credentials") never leave the laptop. On the server:
+`.venv/bin/pip install -e ".[rag]"` (a ~220 MB multilingual model, downloaded on
+first use, running locally: nothing goes to a cloud). You search your own folders.
+Whoever runs the house can search every Satellite's. Nobody can search from a
+group.
+
 To remove a computer, `systemctl --user disable --now ta-satellite` and delete
 `~/.config/ta/satellite.json`. Rotating the server's `TA_TOKEN` revokes every
 Satellite token at once.

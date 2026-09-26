@@ -252,6 +252,10 @@ MESSAGES: dict[str, dict[str, str]] = {
         "pt": "captured_at inválido (no futuro, ou mais de 31 dias atrás)",
         "en": "invalid captured_at (in the future, or more than 31 days ago)",
     },
+    "api.rag_missing": {
+        "pt": "O índice de pastas precisa do extra [rag] no servidor.",
+        "en": "The folder index needs the [rag] extra on the server.",
+    },
     "api.list_missing": {"pt": "essa lista não existe", "en": "that list does not exist"},
     "api.forbidden": {
         "pt": "Você não tem permissão para isso. Quem administra a casa define isso no config.",
@@ -493,9 +497,13 @@ MESSAGES: dict[str, dict[str, str]] = {
                            "en": "most blocked: {domains}\nmost active clients: {clients}"},
     "bot.satellite_code": {
         "pt": "No seu computador, rode:\nta satellite login {code}\n"
-              "O código vale 5 minutos e funciona uma vez só.",
+              "O código vale 5 minutos e funciona uma vez só.\n"
+              "Se você indexar pastas ([rag] no config), quem administra a casa também "
+              "pode buscar nelas.",
         "en": "On your computer, run:\nta satellite login {code}\n"
-              "The code works once, for 5 minutes.",
+              "The code works once, for 5 minutes.\n"
+              "If you index folders ([rag] in the config), whoever runs the house can "
+              "search them too.",
     },
     "bot.calendar_unconfigured": {
         "pt": "A agenda do Google ainda não foi configurada no servidor (GOOGLE_CLIENT_ID).",
@@ -535,6 +543,10 @@ MESSAGES: dict[str, dict[str, str]] = {
     "cli.satellite_status": {
         "pt": "servidor: {server}\ncredencial: {token}\nna fila: {queued}",
         "en": "server: {server}\ncredential: {token}\nqueued: {queued}",
+    },
+    "cli.satellite_synced": {
+        "pt": "Pastas: {sent} arquivo(s) enviado(s), {forgotten} esquecido(s).",
+        "en": "Folders: {sent} file(s) sent, {forgotten} forgotten.",
     },
     "cli.yes": {"pt": "sim", "en": "yes"},
     "cli.no": {"pt": "não", "en": "no"},
@@ -593,6 +605,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     "cap.lighter": {"pt": "Lighter (ringlight)", "en": "Lighter (ringlight)"},
     "cap.ai": {"pt": "IA", "en": "AI"},
     "cap.telegram": {"pt": "Telegram (bot)", "en": "Telegram (bot)"},
+    "cap.rag": {"pt": "Busca nas pastas", "en": "Folder search"},
     "cap.gcal": {"pt": "Agenda do Google", "en": "Google Calendar"},
     "cap.voice": {"pt": "Voz (transcrição)", "en": "Voice (transcription)"},
     "cli.doctor_summary": {

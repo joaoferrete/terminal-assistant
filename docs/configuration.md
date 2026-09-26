@@ -154,6 +154,11 @@ latitude = -23.55
 longitude = -46.63
 place = "São Paulo"
 
+# On a Satellite: folders to index for search by meaning (F7). Secrets and hidden
+# files are skipped. The server needs the [rag] extra.
+[rag]
+folders = ["~/notas"]
+
 # The chat's guardrails (D29, D30). `house_rules` goes into every conversation:
 # a SOFT guardrail that shapes answers, and nothing depends on it for safety. The
 # ceilings are hard: when one is spent, chat and web search stop for the day (or

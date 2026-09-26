@@ -31,6 +31,7 @@ from . import (
     grants,
     i18n,
     priorities,
+    rag,
     store,
     usage,
 )
@@ -939,6 +940,32 @@ async def satellite_actions(request: Request) -> JSONResponse:
     return JSONResponse({"actions": actions})
 
 
+async def rag_manifest(request: Request) -> JSONResponse:
+    """A Satellite says which files it has, by hash (F7). The answer: which of them
+    to send, and the files it no longer has are forgotten."""
+    files = (await request.json()).get("files") or {}
+    me = _viewer(request).member_id
+    known = rag.manifest(request.app.state.conn, me)
+    gone = [p for p in known if p not in files]
+    rag.forget(request.app.state.conn, me, gone)
+    return JSONResponse({"need": [p for p, sha in files.items() if known.get(p) != sha],
+                         "forgotten": len(gone)})
+
+
+async def rag_file(request: Request) -> JSONResponse:
+    body = await request.json()
+    path, sha, text = body.get("path"), body.get("sha"), body.get("text") or ""
+    if not path or not sha:
+        return JSONResponse({"error": i18n.t("api.nothing_to_do")}, status_code=400)
+    embedder = request.app.state.embedder
+    if isinstance(embedder, rag.Embedder) and not rag.available():
+        return JSONResponse({"error": i18n.t("api.rag_missing")}, status_code=503)
+    pieces, vectors = await asyncio.to_thread(rag.embed_file, embedder, text)
+    n = rag.store_file(request.app.state.conn, member_id=_viewer(request).member_id,
+                       path=path, sha=sha, pieces=pieces, vectors=vectors)
+    return JSONResponse({"chunks": n})
+
+
 async def satellite_redeem(request: Request) -> JSONResponse:
     """A one-time code from the bot (`/satellite`) → this Member's Satellite token."""
     code = ((await request.json()).get("code") or "").strip()
@@ -1588,6 +1615,7 @@ def create_app(
         # user's extension settings — including leaving `auto-switch` on at
         # shutdown. A test does not touch the desktop.
         app.state.hub = satellite_mod.Hub()
+        app.state.embedder = rag.Embedder()
         app.state.satellite_codes = board_access.BoardCodes()
         app.state.lighter = lighter if lighter is not None else Lighter()
         app.state.notify = Notifier()
@@ -1700,6 +1728,8 @@ def create_app(
             Route("/satellite/signal", satellite_signal, methods=["POST"]),
             Route("/satellite/actions", satellite_actions),
             Route("/satellite/redeem", satellite_redeem, methods=["POST"]),
+            Route("/rag/manifest", rag_manifest, methods=["POST"]),
+            Route("/rag/file", rag_file, methods=["POST"]),
             Route("/lists/{list_id:int}/items", list_add, methods=["POST"]),
             Route("/notes/{note_id:int}/move", notes_move, methods=["POST"]),
             Route("/notes/{note_id:int}/done", notes_done, methods=["POST"]),

@@ -113,13 +113,38 @@ class Satellite:
                        headers={"Authorization": f"Bearer {token}"} if token else {})
         r.raise_for_status()
 
+    def _post_sync(self, route: str, body: dict) -> dict:
+        token = self.cfg.credential()
+        r = httpx.post(f"{self.cfg.server}{route}", json=body, timeout=120,
+                       headers={"Authorization": f"Bearer {token}"} if token else {})
+        r.raise_for_status()
+        return r.json()
+
+    def sync_folders(self) -> tuple[int, int]:
+        from .config import rag_folders
+        from .rag_sync import sync
+
+        folders = rag_folders()
+        return sync(folders, self._post_sync) if folders else (0, 0)
+
+    async def sync_forever(self, every: float = 1800.0) -> None:
+        while True:
+            try:
+                sent, forgotten = await asyncio.to_thread(self.sync_folders)
+                if sent or forgotten:
+                    log.info("folders: %d file(s) sent, %d forgotten", sent, forgotten)
+            except Exception as e:
+                log.warning("folder sync failed: %s", type(e).__name__)
+            await self._sleep(every)
+
     async def run(self) -> None:
         mic = MicWatcher(self.on_mic)
         # The Lighter extension has its own window watcher; the daemon took it
         # over while in charge, and a Satellite in charge of the desk does too.
         await self.lighter.take_over()
         try:
-            await asyncio.gather(mic.run(), self.poll_forever(), self.flush_forever())
+            await asyncio.gather(mic.run(), self.poll_forever(), self.flush_forever(),
+                                 self.sync_forever())
         finally:
             await self.lighter.hand_back()
             await self.http.aclose()

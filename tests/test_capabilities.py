@@ -23,7 +23,7 @@ REPO = Path(__file__).resolve().parents[1]
 def test_every_capability_exists_in_order():
     keys = [c.key for c in inspect(Config())]
     assert keys == ["notes", "calendar", "mic", "home", "lighter", "ai", "telegram", "voice",
-                    "gcal"]
+                    "gcal", "rag"]
 
 
 def test_only_notes_are_essential():

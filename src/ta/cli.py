@@ -429,6 +429,11 @@ def cmd_satellite(cfg: Config, args) -> int:
 
     from .satellite_client import Satellite
 
+    if args.action == "sync":
+        sent, forgotten = Satellite(cfg).sync_folders()
+        print(t("cli.satellite_synced", sent=sent, forgotten=forgotten))
+        return 0
+
     # `force`: `main()` already configured logging at ERROR for the CLI, and a
     # second basicConfig is silently a no-op — the first Satellite ran with every
     # warning ("server unreachable") invisible in its journal.
@@ -889,7 +894,7 @@ def build_parser() -> argparse.ArgumentParser:
     ev.set_defaults(func=cmd_event)
 
     sat = sub.add_parser("satellite", help="this machine as a Satellite of a server")
-    sat.add_argument("action", choices=["login", "run", "status"])
+    sat.add_argument("action", choices=["login", "run", "status", "sync"])
     sat.add_argument("code", nargs="?", help="the one-time code from the bot's /satellite")
     sat.set_defaults(func=cmd_satellite)
     rl = sub.add_parser("rules", help="list or validate the rules")

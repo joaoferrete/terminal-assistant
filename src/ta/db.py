@@ -20,7 +20,7 @@ from pathlib import Path
 
 log = logging.getLogger("ta")
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 # The states of a Note. Stored in English because the rest of the vocabulary is
 # (see CONTEXT.md); the translated labels live in the interface.
@@ -353,6 +353,34 @@ MIGRATIONS: list[tuple[int, str]] = [
         -- nobody asked for is how a bot gets muted. The others ask for it.
         ALTER TABLE members ADD COLUMN digest TEXT;
         UPDATE members SET digest = '{"enabled": true, "time": "07:00"}' WHERE is_owner = 1;
+        """,
+    ),
+    (
+        13,
+        """
+        -- Files from a Member's Satellite folders, indexed for search by meaning
+        -- (F7). Private to that Member, and never searched from a group
+        -- (decided 2026-09-26). `sha` is what the Satellite compares, so an
+        -- unchanged file is never sent twice.
+        CREATE TABLE rag_files (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id   INTEGER NOT NULL REFERENCES members(id),
+            path        TEXT    NOT NULL,
+            sha         TEXT    NOT NULL,
+            updated_at  TEXT    NOT NULL,
+            UNIQUE (member_id, path)
+        );
+        -- One row per chunk, with its embedding as float32 bytes. Brute-force
+        -- cosine over a household's documents is fast enough; a vector index
+        -- would be a dependency for a scale this will not reach.
+        CREATE TABLE rag_chunks (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id     INTEGER NOT NULL REFERENCES rag_files(id) ON DELETE CASCADE,
+            ordinal     INTEGER NOT NULL,
+            text        TEXT    NOT NULL,
+            vector      BLOB    NOT NULL
+        );
+        CREATE INDEX idx_rag_chunks_file ON rag_chunks(file_id);
         """,
     ),
 ]

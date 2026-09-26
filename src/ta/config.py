@@ -524,3 +524,14 @@ def save_satellite_token(token: str) -> Path:
     with os.fdopen(fd, "w") as f:
         json.dump({"token": token}, f)
     return path
+
+
+def rag_folders() -> list[str]:
+    """`[rag] folders` — on a Satellite, the folders to index for search by meaning.
+
+        [rag]
+        folders = ["~/notas", "~/repos/meu-projeto/docs"]
+    """
+    raw = _user_config().get("rag", {})
+    folders = raw.get("folders", []) if isinstance(raw, dict) else []
+    return [str(f) for f in folders if isinstance(f, str)] if isinstance(folders, list) else []

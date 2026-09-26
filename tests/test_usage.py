@@ -218,3 +218,4 @@ def test_house_rules_reach_the_agents_system_prompt(tmp_path):
     asyncio.run(b.handle(inbound("/start")))
     asyncio.run(b.handle(inbound("o que é uma febre de 39?")))
     assert "Nunca dê diagnóstico médico." in llm.prompts[0][0]
+

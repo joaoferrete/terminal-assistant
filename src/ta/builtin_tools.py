@@ -299,3 +299,34 @@ async def digest_now(ctx: ToolContext) -> ToolResult:
     if build is None:
         return ToolResult(text="the summary is not available here")
     return ToolResult(text=await build(ctx.turn.member_id))
+
+
+@tool(
+    description="Search the member's own documents and code — the folders their "
+    "computer indexes — by meaning. Use it for 'how did I solve X', 'where did I "
+    "write about Y', or anything that sounds like their files rather than their notes.",
+    args={"query": "what to look for, in plain words"},
+    # Files hold text from many hands (a repository's dependencies, pasted docs):
+    # third-party, so it taints the turn (D27).
+    third_party=True,
+)
+async def docs_search(ctx: ToolContext, query: str) -> ToolResult:
+    from . import members as members_mod
+    from . import rag
+
+    # Never from a group: these are one person's files (decided 2026-09-26).
+    if ctx.turn.in_group:
+        return ToolResult(text="document search is private; ask in a private chat")
+    app = ctx.services.get("app")
+    embedder = ctx.services.get("embedder") or (app.state.embedder if app else None)
+    if embedder is None or not (ctx.services.get("embedder") or rag.available()):
+        return ToolResult(text="document search is not set up on the server")
+    member = members_mod.get(ctx.conn, ctx.turn.member_id)
+    hits = rag.search(ctx.conn, embedder, query, member_id=ctx.turn.member_id,
+                      is_owner=bool(member and member.is_owner))
+    if not hits:
+        return ToolResult(text="nothing in the indexed folders matches")
+    return ToolResult(
+        text="\n\n".join(f"{h.path}:\n{h.text}" for h in hits),
+        sources=[Source("doc", h.path, h.path.rsplit("/", 1)[-1]) for h in hits],
+    )
