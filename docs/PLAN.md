@@ -666,6 +666,15 @@ Channel. *Why:* the user's call.
   Owner searches everything" was about an index, not live access. File contents
   taint the turn.
 
+**D42 — Email drafts; only the Member sends.** Decided on 2026-09-26, when the user
+added `gmail.compose` to the consent screen: the bot may write drafts (a new email,
+or a reply in its thread), and the Member reviews and sends them from Gmail.
+*Why:* the user's call. Drafting is the useful half of "answer this email", and
+sending is where a mistake cannot be taken back. Google has no drafts-only scope,
+so the code keeps the promise: `Gmail` has no send call, and the tests fail on any
+request to `/send`. A draft after reading mail is in a tainted turn, so it takes
+the asker's button (D27). This amends D40's "read-only".
+
 - [x] **T9.1** The agent changes a light's colour: a name, `#rrggbb`, or a white
       temperature (`2700K`), through `home_on`'s `color`.
 - [x] **T9.2** Scheduled actions (D39): migration 14, `scheduled.py`, the Tools
@@ -676,6 +685,8 @@ Channel. *Why:* the user's call.
       request/response over the Satellite's existing connection, the Tools
       `files_list`, `files_read` and `files_send`, and `sendDocument` on the
       Telegram Channel.
+- [x] **T9.6** Email drafts (D42): `gmail.compose`, the `mail_draft` Tool, replies
+      kept in their thread, and `docs/privacy.md` for the consent screen's Branding.
 - [x] **T9.4** Gmail (D40): `/conectar_email`, a token per Member, and the
       `mail_search` / `mail_read` Tools, tested against a fake Google as T5.1 was.
 - [ ] **T9.5** Deploy F9 to the server (with the user's yes), and try each
@@ -748,3 +759,4 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T9.3 | F7's file filter (`rag_sync.eligible`) also requires a text suffix, so reusing it would have stopped a PDF from being sent | The files module uses F7's lists (secret words, key suffixes, skipped folders) plus hidden names, without the suffix rule, and checks every path component after resolving symlinks |
 | 2026-09-26 | T9.3 | A Satellite running the older code ignores a request it does not know, so the agent would wait for nothing | A request times out after 30 s, and the agent says the Satellite "may need updating". Deploying F9 means updating the laptop too |
 | 2026-09-26 | T9.4 | The calendar's `account_of` reads the primary calendar, which a mail-only token cannot do, and one Connector held the calendar's scopes fixed | `Connector` takes its scopes, `Link` takes how to find the account (Gmail's `/profile` for mail), and `owns()` sends a pasted redirect to the Connector whose `state` it carries. The refresh exchange is shared. The calendar's 12 tests passed unchanged |
+| 2026-09-26 | T9.6 | Publishing the consent screen to Production requires, under Branding, a home page and a privacy policy URL. The walkthrough did not say so, and the user got stuck at "Publish app" | `docs/privacy.md` states what the software does with Google data, including that the relevant part of an email goes to the configured model (DeepSeek by default), which D40 had not said. The walkthrough points Branding at the public repository |

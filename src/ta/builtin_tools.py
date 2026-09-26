@@ -581,3 +581,37 @@ async def mail_read(ctx: ToolContext, id: str) -> ToolResult:  # noqa: A002
     more = "\n[truncated]" if m["truncated"] else ""
     return ToolResult(text=f"From: {m['from']}\nDate: {m['date']}\nSubject: {m['subject']}"
                            f"\n\n{m['text']}{more}")
+
+
+@tool(
+    description="Write an email DRAFT in the asker's Gmail, for them to review and send "
+    "themselves. You cannot send email. For a reply, give reply_to (an id from "
+    "mail_search); to and subject may then be empty.",
+    args={"to": "recipient address, or empty for a reply",
+          "subject": "subject, or empty for a reply",
+          "body": "the text of the email",
+          "reply_to": "the id of the email being answered, or empty"},
+    # A draft changes the mailbox. After reading mail the turn is tainted, so an
+    # email cannot get a draft written without the asker's button (D27, D42).
+    changes_state=True,
+)
+async def mail_draft(ctx: ToolContext, body: str, to: str = "", subject: str = "",
+                     reply_to: str = "") -> ToolResult:
+    import asyncio
+
+    from .sensors.gmail import MailError
+
+    box = _mailbox(ctx)
+    if isinstance(box, str):
+        return ToolResult(text=box)
+    if not reply_to.strip() and "@" not in to:
+        return ToolResult(text="a new email needs a recipient address")
+    try:
+        account = await asyncio.to_thread(box.draft, to=to.strip(), subject=subject.strip(),
+                                          body=body, reply_to=reply_to.strip().strip("[]"))
+    except MailError as e:
+        return ToolResult(text=f"could not save the draft: {e}; if it says 403, the member "
+                               "should send /conectar_email again to allow drafts")
+    return ToolResult(text=f"draft saved in {account}; it was NOT sent — the member opens "
+                           "Gmail's Drafts to review and send it",
+                      receipt={"summary": f"email draft saved in {account}"})

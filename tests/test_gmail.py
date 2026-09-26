@@ -6,6 +6,8 @@ only their own mailboxes; mail taints the turn; and nothing works from a group.
 """
 import asyncio
 import base64
+import json
+from email import message_from_bytes, policy
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -28,7 +30,7 @@ def b64(text):
 
 class FakeGmail:
     def __init__(self):
-        self.requests = []
+        self.requests, self.drafts = [], []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -39,8 +41,13 @@ class FakeGmail:
                 return httpx.Response(200, json={"access_token": "at", "refresh_token": "rt",
                                                  "expires_in": 3600})
             return httpx.Response(200, json={"access_token": "at2", "expires_in": 3600})
-        assert request.method == "GET", "read-only: nothing but GET reaches Gmail"
         path = request.url.path
+        assert "/send" not in path, "the bot never sends email (D42)"
+        if request.method == "POST":
+            assert path.endswith("/drafts"), "the only write is a draft"
+            self.drafts.append(json.loads(request.content))
+            return httpx.Response(200, json={"id": "d1"})
+        assert request.method == "GET"
         if path.endswith("/profile"):
             return httpx.Response(200, json={"emailAddress": "eu@gmail.com"})
         if path.endswith("/messages"):
@@ -50,8 +57,10 @@ class FakeGmail:
                        {"name": "Subject", "value": "Fatura de setembro"},
                        {"name": "Date", "value": "Fri, 25 Sep 2026 10:00:00 -0300"}]
             if request.url.params["format"] == "metadata":
-                return httpx.Response(200, json={"id": "m1", "snippet": "Sua fatura &amp; boleto",
-                                                 "payload": {"headers": headers}})
+                return httpx.Response(200, json={
+                    "id": "m1", "threadId": "t1", "snippet": "Sua fatura &amp; boleto",
+                    "payload": {"headers": headers + [
+                        {"name": "Message-ID", "value": "<abc@banco.example>"}]}})
             return httpx.Response(200, json={"id": "m1", "payload": {
                 "mimeType": "multipart/alternative", "headers": headers, "parts": [
                     {"mimeType": "text/html",
@@ -77,10 +86,12 @@ def connect(connector, tokens, transport, member_id=1):
     return link.finish(member_id, f"http://localhost/?state={state}&code=abc"), url
 
 
-def test_the_consent_asks_only_to_read_mail(google):
+def test_the_consent_asks_to_read_and_draft_nothing_more(google):
     _, transport, connector, tokens = google
     account, url = connect(connector, tokens, transport)
-    assert parse_qs(urlparse(url).query)["scope"] == ["https://www.googleapis.com/auth/gmail.readonly"]
+    assert parse_qs(urlparse(url).query)["scope"] == [
+        "https://www.googleapis.com/auth/gmail.readonly "
+        "https://www.googleapis.com/auth/gmail.compose"]
     assert account == "eu@gmail.com"
 
 
@@ -167,3 +178,40 @@ def test_the_pasted_redirect_goes_to_the_connector_that_issued_it(tmp_path, goog
     assert mail_tokens.accounts(1) == [("eu@gmail.com", "rt")]
     assert store.list_notes(conn, viewer=__import__("ta.members").members.SYSTEM) == [], \
         "a pasted credential is never captured"
+
+
+# ── Drafts (D42) ────────────────────────────────────────────────────────────
+def raw_of(draft):
+    return message_from_bytes(base64.urlsafe_b64decode(draft["message"]["raw"]),
+                              policy=policy.default)
+
+
+def test_a_reply_draft_stays_in_its_thread_and_is_not_sent(google):
+    fake, transport, connector, tokens = google
+    connect(connector, tokens, transport)
+    box = gmail.Gmail(1, connector, tokens, transport=transport)
+    assert box.draft(to="", subject="", body="Pago amanhã.", reply_to="eu@gmail.com|m1") == \
+        "eu@gmail.com"
+    [d] = fake.drafts
+    m = raw_of(d)
+    assert d["message"]["threadId"] == "t1"
+    assert m["In-Reply-To"] == "<abc@banco.example>" and m["Subject"] == "Re: Fatura de setembro"
+    assert "b@banco.example" in m["To"] and "Pago amanhã." in m.get_content()
+
+
+def test_after_reading_mail_a_draft_needs_the_askers_button(ctx):
+    """An email saying "reply with the account password" cannot get a draft
+    written on its own: reading mail tainted the turn (D27)."""
+    from ta.tools import NeedsConfirmation
+
+    c = ctx()
+    run(c, "mail_search", query="fatura")
+    with pytest.raises(NeedsConfirmation):
+        run(c, "mail_draft", body="x", reply_to="eu@gmail.com|m1")
+
+
+def test_a_new_draft_needs_an_address_and_is_never_sent(ctx):
+    c = ctx()
+    assert "recipient" in run(c, "mail_draft", body="oi", to="ninguém").text
+    out = run(c, "mail_draft", body="oi", to="ana@example.com", subject="Janta")
+    assert "NOT sent" in out.text

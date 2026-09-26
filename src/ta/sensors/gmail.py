@@ -5,6 +5,9 @@ Connector of its own that asks for one scope: `gmail.readonly`. Nothing here
 can send, delete, label or mark as read — the scope itself forbids it, so a
 tainted turn has nothing to trick the agent into even if a Tool had a bug.
 
+It also writes **drafts** (D42), which the Member reviews and sends from Gmail
+themselves: the bot never sends.
+
 Nothing is stored. Each question is answered from Gmail at that moment, and the
 only thing kept is the refresh token (0600, as the calendar's). Mail is text
 strangers wrote, so the Tools that return it taint the turn (D27).
@@ -26,7 +29,11 @@ import httpx
 from .google_calendar import CalendarError, Connector, TokenStore, refresh_access
 
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
-SCOPES = ("https://www.googleapis.com/auth/gmail.readonly",)
+# `gmail.compose` is for drafts (D42). Google has no drafts-only scope: compose
+# could also send, so "never sends" is kept by the code — there is no send call
+# anywhere in this module, and the tests fail on any request to `/send`.
+SCOPES = ("https://www.googleapis.com/auth/gmail.readonly",
+          "https://www.googleapis.com/auth/gmail.compose")
 MAX_RESULTS = 10
 # What the model gets of one message. A newsletter can be 200 KB of markup.
 MAX_BODY_CHARS = 8000
@@ -85,7 +92,56 @@ class Gmail:
                 "date": h.get("date", ""), "text": body[:MAX_BODY_CHARS],
                 "truncated": len(body) > MAX_BODY_CHARS}
 
+    def draft(self, *, to: str, subject: str, body: str, reply_to: str = "") -> str:
+        """Save a draft; returns the mailbox it went to. A reply (`reply_to` is an
+        id from `search`) stays in its thread, with the headers mail clients use
+        to thread it. Never sent: the Member sends it from Gmail."""
+        from email.message import EmailMessage
+
+        accounts = dict(self.store.accounts(self.member_id))
+        msg = EmailMessage()
+        thread = None
+        if reply_to:
+            account, _, mid = reply_to.partition("|")
+            if account not in accounts or not mid:
+                raise MailError("no such message in your mailboxes")
+            original = self._get(account, f"/messages/{mid}", {
+                "format": "metadata", "metadataHeaders": ["Message-ID", "Subject", "From"]})
+            h = _headers(original)
+            thread = original.get("threadId")
+            if h.get("message-id"):
+                msg["In-Reply-To"] = msg["References"] = h["message-id"]
+            to = to or h.get("from", "")
+            subject = subject or ("Re: " + h.get("subject", ""))
+        else:
+            account = next(iter(accounts), "")
+            if not account:
+                raise MailError("no mailbox is connected")
+        msg["To"], msg["Subject"] = to, subject
+        msg.set_content(body)
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        payload = {"message": {"raw": raw, **({"threadId": thread} if thread else {})}}
+        self._post(account, "/drafts", payload)
+        return account
+
     # Plumbing ────────────────────────────────────────────────────────────────
+    def _post(self, account: str, path: str, payload: dict) -> dict:
+        # Only ever `/drafts`: a send is not something this class can do. Not an
+        # `assert`, which `python -O` would strip.
+        if path != "/drafts":
+            raise MailError(f"refusing to POST {path}")
+        with httpx.Client(timeout=15, transport=self._transport) as c:
+            try:
+                r = c.post(f"{API}{path}", json=payload,
+                           headers={"Authorization": f"Bearer {self._token(account)}"})
+            except httpx.HTTPError as e:
+                raise MailError(f"gmail: {type(e).__name__}") from None
+        if r.status_code >= 400:
+            # 403 here is usually a mailbox connected before drafts existed,
+            # without the compose scope: reconnecting grants it.
+            raise MailError(f"gmail drafts: HTTP {r.status_code}")
+        return r.json()
+
     def _token(self, account: str) -> str:
         cached = self._access.get(account)
         if cached and cached[1] > time_mod.time() + 60:

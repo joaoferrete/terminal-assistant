@@ -157,7 +157,14 @@ search bar finds each page by the name in bold.
 **B. The consent screen** (**Google Auth Platform**; older consoles call it
 **OAuth consent screen**)
 
-3. If it offers **Get started**, press it and fill in:
+3. If it offers **Get started**, press it and fill in the steps below. Publishing
+   (step 5) also needs, under **Branding**, a home page and a privacy policy URL.
+   A household can use the project's own:
+   `https://github.com/joaoferrete/terminal-assistant` and
+   `https://github.com/joaoferrete/terminal-assistant/blob/main/docs/privacy.md`
+   ([privacy.md](privacy.md) describes what the software does with the data). If
+   Google asks for **Authorized domains**, add `github.com`. Ownership is checked
+   only if you submit the app for verification, which a household does not.
    - **App information**: any app name (people see it on the consent screen, e.g.
      "Casa"), and your email as the support email.
    - **Audience**: **External**. *Internal* exists only for Workspace
@@ -170,8 +177,9 @@ search bar finds each page by the name in bold.
    https://www.googleapis.com/auth/calendar.events
    https://www.googleapis.com/auth/calendar.calendarlist.readonly
    https://www.googleapis.com/auth/gmail.readonly
+   https://www.googleapis.com/auth/gmail.compose
    ```
-   Leave out the last one if you do not want email.
+   Leave out the last two if you do not want email.
 5. **Audience → Publish app**, and confirm. The status must say **In production**.
    In *Testing*, Google expires the connection every seven days and the calendar
    silently disconnects once a week. Google does not review a household app. The
@@ -220,15 +228,19 @@ personal one still works.
 ### Email, with the same client
 
 The same OAuth client also lets the bot **read** your Gmail when you ask ("tem
-e-mail do banco essa semana?"). It never reads on its own, never sends, deletes or
-marks anything as read, and keeps nothing but the connection.
+e-mail do banco essa semana?"), and write **drafts** ("responde que pago amanhã").
+It never reads on its own, never sends, deletes or marks anything as read, and
+keeps nothing but the connection. A draft waits in Gmail's Drafts for you to
+review and send. Google has no drafts-only scope, so "never sends" is kept by the
+code: there is no send call in it.
 
-1. Enable the **Gmail API** (step 2 above), and add the `gmail.readonly` scope
-   (step 4). If the calendar was already connected, nothing else changes.
+1. Enable the **Gmail API** (step 2 above), and add the `gmail.readonly` and
+   `gmail.compose` scopes (step 4). If the calendar was already connected, nothing else changes.
 2. In the chat, send `/conectar_email`, and do the same paste-back as for the
    calendar.
 
-`gmail.readonly` is a *restricted* scope. An unverified app gets a stronger
+To answer, the relevant part of an email goes to the language model the server
+uses (DeepSeek by default), as your notes do. Both scopes are *restricted*. An unverified app gets a stronger
 warning than for the calendar, and a work account is even more likely to refuse
 it. Try your personal account first. Mail works only in a private chat. Each
 person reads only their own mailbox, and what is in an email can never make the
