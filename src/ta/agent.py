@@ -53,7 +53,17 @@ class AgentStep(BaseModel):
 
 
 class AgentFailed(RuntimeError):
-    """The agent could not produce an answer. The caller captures instead."""
+    """The agent could not produce an answer. The caller captures instead.
+
+    `unavailable` says whether the provider failed, or the model ran but never
+    answered. The first real failure told the user "the model is down" when it was
+    up and had spent its steps searching — a message that sends people to look for
+    the wrong problem.
+    """
+
+    def __init__(self, reason: str, *, unavailable: bool) -> None:
+        super().__init__(reason)
+        self.unavailable = unavailable
 
 
 @dataclass
@@ -90,7 +100,7 @@ def _tool_specs(available: list[Tool]) -> str:
 
 
 def _transcript(text: str, history: list[Message], steps: list[str],
-                about: list[str] | None = None) -> str:
+                about: list[str] | None = None, last: bool = False) -> str:
     parts = []
     if history:
         lines = [f"{'you' if m.member_id is None else 'member'}: {' '.join(m.text.split())}"
@@ -103,7 +113,9 @@ def _transcript(text: str, history: list[Message], steps: list[str],
     parts.append(f'The member\'s new message: "{text}"')
     if steps:
         parts.append("What you did so far this turn:\n" + "\n".join(steps))
-    parts.append("Decide the next step.")
+    parts.append("This is your LAST step: answer now (kind 'answer') with what you have, "
+                 "even if it is incomplete, and say what you could not find."
+                 if last else "Decide the next step.")
     return "\n\n".join(parts)
 
 
@@ -130,13 +142,14 @@ async def respond(
     by_name = {t_.name: t_ for t_ in available}
     steps: list[str] = []
 
-    for _ in range(MAX_STEPS):
+    for n in range(MAX_STEPS):
+        last = n == MAX_STEPS - 1
         try:
             with for_task("agent"):
-                step = await llm._structured(_transcript(text, history, steps, about),
+                step = await llm._structured(_transcript(text, history, steps, about, last),
                                              AgentStep, system=system)
         except LLMUnavailable as e:
-            raise AgentFailed(str(e)) from e
+            raise AgentFailed(str(e), unavailable=True) from e
 
         if step.kind != "tool":
             return Reply(text=step.answer.strip(), capture=step.capture,
@@ -174,7 +187,9 @@ async def respond(
         steps.append(f"- {chosen.name}({json.dumps(args, ensure_ascii=False)}) returned"
                      f"{numbered}:\n<<<data\n{result.text}\ndata>>>")
 
-    raise AgentFailed("no answer within the step limit")
+    log.warning("no answer within the step limit; steps: %s",
+                " | ".join(x.splitlines()[0] for x in steps))
+    raise AgentFailed("no answer within the step limit", unavailable=False)
 
 
 def _cited(sources: list[Source], cites: list[int]) -> list[Source]:

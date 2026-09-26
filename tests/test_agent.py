@@ -269,3 +269,33 @@ def test_what_did_you_do_here_is_answered_from_the_receipts(make):
     asyncio.run(b.handle(reply))
     prompt = b.llm.prompts[-1][1]
     assert "captured #1" in prompt, "the model is told what was really done"
+
+
+# ── The first real failure: "quais são minhas notas vencidas?" ──────────────
+def test_notes_due_lists_what_is_overdue_with_sources(make):
+    from datetime import date, timedelta
+
+    old = (date.today() - timedelta(days=3)).isoformat()
+    n = store.add_note(make.conn, f"pagar o boleto @{old}")
+    store.add_note(make.conn, "sem prazo nenhum")
+    b = make(call("notes_due", '{"which": "overdue"}'), answer("Está vencido o boleto.", cites=[1]))
+    out = say(b, "quais são minhas notas vencidas?")
+    assert f"#{n.id}" in out
+    assert "sem prazo" not in b.llm.prompts[-1][1]
+
+
+def test_the_last_step_tells_the_model_to_answer_now(make):
+    b = make(*[call("list_show")] * 3, answer("Não achei."))
+    assert say(b, "algo difícil") == "Não achei."
+    assert "LAST step" in b.llm.prompts[-1][1]
+    assert "LAST step" not in b.llm.prompts[0][1]
+
+
+def test_running_out_of_steps_is_not_reported_as_the_model_being_down(make):
+    """The model was up and spent its steps; "the model is down" sent the user
+    looking for the wrong problem."""
+    b = make(*[call("list_show")] * 4)
+    out = say(b, "algo")
+    assert "fora" not in out and "unavailable" not in out
+    b2 = make(LLMUnavailable("down"))
+    assert "fora" in say(b2, "outra coisa")

@@ -425,7 +425,8 @@ class Bot:
         except agent_mod.AgentFailed as e:
             log.warning("agent failed, capturing instead: %s", e)
             note = self.capture(text, owner_id=member_id)
-            await self._say(msg, t("bot.captured_offline", line=self._captured_line(note)))
+            key = "bot.captured_offline" if e.unavailable else "bot.captured_unanswered"
+            await self._say(msg, t(key, line=self._captured_line(note)))
             return
 
         parts, buttons, rids = [], [], []

@@ -59,6 +59,29 @@ async def notes_search(ctx: ToolContext, query: str) -> ToolResult:
 
 
 @tool(
+    description="List the asker's open tasks by deadline: overdue, due today, due this "
+    "week. Use it for 'what is overdue', 'what do I have today', 'what is due this week'.",
+    args={"which": "overdue, today, week, or all"},
+)
+async def notes_due(ctx: ToolContext, which: str = "all") -> ToolResult:
+    # The first real question the bot failed was "quais são minhas notas vencidas?":
+    # with only a word search, "vencidas" matched nothing and the model spent every
+    # step looking. The Horizon is derived by the store, never by the model (ADR 0010).
+    wanted = {"overdue": ("overdue",), "today": ("today",), "week": ("week",)}.get(
+        which.strip().lower(), ("overdue", "today", "week"))
+    open_ = [n for n in store.by_urgency(store.list_notes(ctx.conn, viewer=ctx.viewer))
+             if n.due and store.horizon(n.due) in wanted]
+    if not open_:
+        return ToolResult(text=f"no open task in {', '.join(wanted)}")
+    lines = [f"#{n.id} [{store.horizon(n.due)}] due {n.due}: {_quote(n.text)}" for n in open_]
+    return ToolResult(
+        text="\n".join(lines),
+        sources=[Source("note", str(n.id), _quote(n.text)[:60]) for n in open_],
+        tainted=any(n.owner_id != ctx.turn.member_id for n in open_),
+    )
+
+
+@tool(
     description="Search what was said earlier in THIS conversation. Use it when "
     "the asker refers to something from before that is not in the recent messages.",
     args={"query": "the words to look for"},

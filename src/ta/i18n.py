@@ -416,6 +416,10 @@ MESSAGES: dict[str, dict[str, str]] = {
         "pt": "{line}\n(o modelo está fora agora, então só anotei)",
         "en": "{line}\n(the model is unavailable right now, so I only noted it)",
     },
+    "bot.captured_unanswered": {
+        "pt": "{line}\n(não consegui responder isso, então anotei)",
+        "en": "{line}\n(I couldn't answer that, so I noted it)",
+    },
     "bot.confirm_needed": {
         "pt": "Antes de fazer, preciso da sua confirmação: {action} ({args}).",
         "en": "Before I do it, I need your confirmation: {action} ({args}).",
