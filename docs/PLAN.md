@@ -51,17 +51,16 @@ in its tasks and in Discoveries; this section is only where things stand.*
    `ssh -t root@192.168.68.189 'cd ~/terminal-assistant && .venv/bin/ta passwd'`,
    then open `http://192.168.68.189:7777/config` in the browser where the board
    is logged in.
-2. **Google Calendar.** Create the OAuth client (steps in
-   [calendar.md](calendar.md#on-a-server-google-calendar)). Enable the Calendar
-   API, choose an External consent screen with the two scopes, **publish it to
-   Production**, and use an app type of "Desktop app". Put `GOOGLE_CLIENT_ID` and
-   `GOOGLE_CLIENT_SECRET` in the laptop's `.env`, and ask the agent to copy them to
-   the server. Then send `/conectar_agenda` to the bot, and **try the work account
-   first**, because of the Workspace risk in D14.
-   For email (D40), also enable the **Gmail API** and add the `gmail.readonly`
-   scope in the same project, then send `/conectar_email`. Try the personal
-   account first, because the scope is restricted. The step-by-step walkthrough
-   is in [calendar.md](calendar.md#on-a-server-google-calendar).
+2. **Google (calendar and email).** *Done on 2026-09-26:* the Cloud project, the
+   Calendar and Gmail APIs, the four scopes, Branding, and publishing to
+   Production. *Left:* create the Desktop client if it does not exist yet (step 6
+   in [calendar.md](calendar.md#on-a-server-google-calendar)), put
+   `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the laptop's `.env`, create
+   the `Terminal Assistant` calendar, and ask the agent to copy the keys to the
+   server. After the F9 deploy, send `/conectar_agenda` and `/conectar_email`,
+   **personal account first**, because a Workspace admin may block the app. The
+   privacy link in Branding points at `main`, so it returns 404 until the stack is
+   merged (item 9).
 3. **Decide T5.2.** Keep creating events without confirmation (the V1 choice), and
    have the bot say "📅 created X on day Y" with [Undo]? Or confirm by button?
 4. **Gemini quota.** Web search answers 429 RESOURCE_EXHAUSTED. In Google AI
