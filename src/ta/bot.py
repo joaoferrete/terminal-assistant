@@ -496,6 +496,38 @@ class Bot:
         return rid, t("bot.confirm_needed", action=pending.tool.description,
                       args=", ".join(f"{k}={v}" for k, v in pending.tool_args.items()))
 
+    # ── Split proposal (D5, T4.7) ───────────────────────────────────────────
+    async def propose_split(self, note, parts: list[str], channel: str = "telegram") -> bool:
+        """Offer the writer, in private, to split one Note into several.
+
+        Nothing is split until they press the button: the model proposes, the
+        person decides (ADR 0007's pattern). Returns False when the writer has no
+        private chat on the Channel to be asked in.
+        """
+        chat = _identity_of(self.conn, channel, note.owner_id)
+        if chat is None or not hasattr(self.channel, "send"):
+            return False
+        rid = receipts.record(self.conn, channel=channel, conversation_id=chat, message_id=None,
+                              member_id=note.owner_id, tool="split",
+                              args={"note_id": note.id, "parts": parts}, state="pending",
+                              summary=f"split #{note.id} into {len(parts)}")
+        lines = "\n".join(f"• {p}" for p in parts)
+        sent = await self.channel.send(
+            chat, t("bot.split_offer", id=note.id, n=len(parts), parts=lines),
+            [Button(t("bot.btn_split"), f"split:{rid}"), Button(t("bot.btn_keep"), f"no:{rid}")],
+        )
+        if sent:
+            receipts.answered_by(self.conn, [rid], sent)
+        return True
+
+    def _split(self, member_id: int, r) -> list:
+        note_id, parts = r.args["note_id"], r.args["parts"]
+        original = store.get_note(self.conn, note_id, viewer=members_mod.Viewer(member_id))
+        created = [self.capture(p, owner_id=member_id) for p in parts]
+        # The original goes to the trash, not away: it can be restored as it was.
+        store.soft_delete(self.conn, original.id)
+        return created
+
     # ── Buttons (T4.4) ──────────────────────────────────────────────────────
     async def _button(self, msg: Inbound, member_id: int) -> None:
         """A pressed button. Only the Member the Receipt belongs to may press it:
@@ -508,6 +540,16 @@ class Bot:
         if kind == "ok" and r.state == "pending":
             await self.channel.answered(msg)
             await self._confirmed(msg, member_id, r)
+        elif kind == "split" and r.state == "pending":
+            try:
+                created = self._split(member_id, r)
+            except KeyError:          # the Note was deleted meanwhile
+                receipts.set_state(self.conn, r.id, "refused")
+                await self.channel.answered(msg, t("bot.stale"))
+                return
+            receipts.set_state(self.conn, r.id, "done")
+            await self.channel.answered(msg, t("bot.split_done",
+                                               ids=", ".join(f"#{n.id}" for n in created)))
         elif kind == "no" and r.state == "pending":
             receipts.set_state(self.conn, r.id, "refused")
             await self.channel.answered(msg, t("bot.cancelled"))

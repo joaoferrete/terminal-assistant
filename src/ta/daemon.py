@@ -582,6 +582,15 @@ async def _review_one(app: Starlette, note_id: int) -> None:
         log.info("review of #%s ignored: confidence %.2f", note_id, r.confidence)
         return
 
+    # One message with several things in it (D5): the review PROPOSES the split,
+    # and the writer decides with a button. The model never creates the Notes.
+    parts = [x.strip() for x in (getattr(r, "parts", None) or []) if x and x.strip()]
+    if len(parts) >= 2 and hasattr(app.state, "bot"):
+        try:
+            await app.state.bot.propose_split(note, parts)
+        except Exception:
+            log.exception("could not propose splitting #%s", note_id)
+
     changes: list[str] = []
 
     new_due = _iso_date(r.due)

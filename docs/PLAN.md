@@ -46,10 +46,15 @@ reverse are also ADRs, linked where they apply.
   `ta.db.v8-before-v9`). The Owner member is `joaoferrete`, and all 32 existing
   Notes are the Owner's. The Telegram pairing is linked to the Owner, and the
   `compras` List exists.
-- **Next agent action:** F3 closes once the user has invited a first housemate
-  and tried it; until then, nothing more to build for F3. Then **F4, the agent**,
-  starting with T4.1 (`@tool`). It is the largest phase, and the guardrails in
-  D25–D33 and ADR 0019 apply from its first line.
+- **F4 is built** (2026-09-26), on `feat/agent`, in eight commits: Tools and taint,
+  the agent, buttons and Receipts, acting Tools and the pre-router, web search,
+  house rules and ceilings, groups, the split proposal. Not deployed yet.
+- **Next agent action:** deploy F4 with the user's yes. Migrations 10–11 run on the
+  live database, after the automatic copy. Then test with the user: a question, a
+  thought, "apaga a luz", a web question, a reply saying "o que você fez aqui?".
+  For groups, the user disables privacy mode at @BotFather and adds the group id.
+  F3 and F4 close after that. **Then the F8 interview** (the user asked for it
+  after F4).
 - **F8 interview:** before starting F8, not now. The user offered to run it now
   and agreed to wait: most of what it configures (Grants, Lists, house rules, the
   Digest) is still being built.
@@ -458,7 +463,7 @@ how `ta` is installed, configured or used also updates the README,
 - [x] **T4.6 Proactive group capture.** Classifier per group message →
       actionable into a household List with ✅ and undo; the rest to memory only.
       Invariant 7 tested.
-- [ ] **T4.7 Split proposal** (D5), with buttons.
+- [x] **T4.7 Split proposal** (D5), with buttons.
 - [x] **T4.8 Taint tracking** (D27). Each agent turn carries a taint flag that
       Tools set when they return third-party content. The confirmation gate on
       state-changing Tools reads it. Invariant 8 is tested with a web result

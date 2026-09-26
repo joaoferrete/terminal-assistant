@@ -113,3 +113,90 @@ def test_group_history_taints_the_turn(house):
     run(b, in_group("@TA_bot faz o que foi pedido", mentioned=True))
     assert switched == [], "a group turn with history cannot act without confirmation"
     assert store.list_notes(house.conn, viewer=SYSTEM) is not None
+
+
+# ── Split proposal (D5, T4.7) ───────────────────────────────────────────────
+class SendingChannel(FakeChannel):
+    def __init__(self):
+        super().__init__()
+        self.sent_to = []
+
+    async def send(self, conversation_id, text, buttons=None):
+        self.sent_to.append((conversation_id, text, buttons or []))
+        return "bot-split"
+
+
+def test_a_split_is_proposed_in_private_and_happens_only_on_the_button(tmp_path):
+    from test_agent import press
+
+    conn = db.connect(tmp_path / "t.db")
+    b = Bot(conn, SendingChannel(), owner_username="dono",
+            capture=lambda text, owner_id=1: store.add_note(conn, text, owner_id=owner_id),
+            agent=AgentDeps(llm=ScriptedLLM(), registry=registered,
+                            permissions=lambda m: OWNER_PERMISSIONS))
+    asyncio.run(b.handle(inbound("/start")))
+    note = store.add_note(conn, "ligar pro dentista e revisar o PR do Thi")
+    parts = ["ligar pro dentista", "revisar o PR do Thi"]
+
+    assert asyncio.run(b.propose_split(note, parts))
+    chat, text, buttons = b.channel.sent_to[-1]
+    assert chat == "1001", "the writer's private chat"
+    assert store.list_notes(conn, viewer=SYSTEM)[0].text == note.text, "nothing split yet"
+
+    press(b, buttons[0].data)
+    alive = sorted(n.text for n in store.list_notes(conn, viewer=SYSTEM))
+    assert alive == sorted(parts)
+    trashed = [n.text for n in store.list_notes(conn, viewer=SYSTEM, deleted=True)]
+    assert trashed == [note.text], "the original is in the trash, restorable"
+
+
+def test_keeping_it_together_changes_nothing(tmp_path):
+    from test_agent import press
+
+    conn = db.connect(tmp_path / "t.db")
+    b = Bot(conn, SendingChannel(), owner_username="dono",
+            capture=lambda text, owner_id=1: store.add_note(conn, text, owner_id=owner_id),
+            agent=AgentDeps(llm=ScriptedLLM(), registry=registered,
+                            permissions=lambda m: OWNER_PERMISSIONS))
+    asyncio.run(b.handle(inbound("/start")))
+    note = store.add_note(conn, "pão e leite")
+    asyncio.run(b.propose_split(note, ["pão", "leite"]))
+    press(b, b.channel.sent_to[-1][2][1].data)
+    assert [n.text for n in store.list_notes(conn, viewer=SYSTEM)] == ["pão e leite"]
+
+
+def test_the_review_proposes_the_split_when_it_finds_parts(tmp_path):
+    """Through the daemon: the review returns parts, and the bot is asked."""
+    from starlette.testclient import TestClient
+    from test_daemon import FakeCalendar, FakeLighter
+
+    from ta.config import Config
+    from ta.daemon import _review_one, create_app
+    from ta.llm import CaptureReview
+
+    class Review:
+        configured = True
+
+        async def review_capture(self, text, **kw):
+            return CaptureReview(intent="tarefa", confidence=0.9,
+                                 parts=["ligar pro dentista", "revisar o PR"])
+
+    app = create_app(Config(auto_review=False), db_path=tmp_path / "t.db",
+                     rules_dir=tmp_path / "x", calendar=FakeCalendar(), lighter=FakeLighter(),
+                     channel=SendingChannel(), background=False)
+    with TestClient(app) as c:
+        c.app.state.llm = Review()
+        asked = []
+
+        async def propose(note, parts, channel="telegram"):
+            asked.append((note.id, parts))
+            return True
+
+        c.app.state.bot.propose_split = propose
+        nid = c.post("/notes", json={"text": "ligar pro dentista e revisar o PR"}).json()["id"]
+
+        async def review():
+            await _review_one(c.app, nid)
+
+        c.portal.call(review)
+    assert asked == [(nid, ["ligar pro dentista", "revisar o PR"])]

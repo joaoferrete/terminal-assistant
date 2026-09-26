@@ -77,7 +77,8 @@ class Channel(Protocol):
     async def answered(self, to: Inbound, text: str | None = None) -> None:
         """Acknowledge a pressed button, and take its buttons away."""
 
-    async def send(self, conversation_id: str, text: str) -> None:
-        """A message nobody asked for — telling the Owner someone new paired."""
+    async def send(self, conversation_id: str, text: str,
+                   buttons: list[Button] | None = None) -> str | None:
+        """A message nobody asked for — a new pairing, a split to decide."""
 
     async def download(self, file_id: str) -> bytes: ...

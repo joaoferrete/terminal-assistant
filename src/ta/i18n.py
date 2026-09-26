@@ -440,6 +440,13 @@ MESSAGES: dict[str, dict[str, str]] = {
               "under [chat] in config.toml.",
     },
     "bot.proactive": {"pt": "👌 {item} → {list}", "en": "👌 {item} → {list}"},
+    "bot.split_offer": {
+        "pt": "A nota #{id} parece ter {n} coisas:\n{parts}\nSeparo em notas diferentes?",
+        "en": "Note #{id} looks like {n} things:\n{parts}\nSplit it into separate notes?",
+    },
+    "bot.btn_split": {"pt": "Separar", "en": "Split"},
+    "bot.btn_keep": {"pt": "Manter junto", "en": "Keep together"},
+    "bot.split_done": {"pt": "Separado em {ids}.", "en": "Split into {ids}."},
     "agent.sources": {"pt": "Fontes: {list}", "en": "Sources: {list}"},
     "bot.hello": {
         "pt": "Oi! Tudo o que você mandar aqui vira nota.",

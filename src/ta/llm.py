@@ -159,6 +159,12 @@ class CaptureReview(BaseModel):
     reason: str = Field(
         default="", description="uma frase curta dizendo o que mudou e por quê"
     )
+    # D5: the review may PROPOSE a split; the writer decides with a button.
+    parts: list[str] = Field(
+        default_factory=list,
+        description="se a nota junta 2 ou mais coisas independentes, cada uma com as "
+        "palavras da pessoa; vazio se for uma coisa só",
+    )
 
 
 class Prose(BaseModel):
@@ -418,7 +424,10 @@ class LLM:
                 f"Classifique também: escolha 1 ou 2 tags EXCLUSIVAMENTE desta lista "
                 f"({', '.join(SUGGESTED_TAGS)}) e uma prioridade, usando o que o "
                 "contexto diz sobre o que não pode cair e o que costuma ser adiado. "
-                "Se não der para dizer a prioridade, deixe vazia em vez de chutar."
+                "Se não der para dizer a prioridade, deixe vazia em vez de chutar.\n"
+                "Se a nota junta coisas independentes ('ligar pro dentista e revisar o "
+                "PR'), liste cada uma em `parts`, com as palavras dela; se for uma coisa "
+                "só, deixe `parts` vazio."
             ),
             schema=CaptureReview,
             system=(

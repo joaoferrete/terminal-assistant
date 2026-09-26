@@ -192,8 +192,14 @@ class TelegramChannel:
             raise ChannelError(f"telegram download: {type(e).__name__}") from None
         return r.content
 
-    async def send(self, conversation_id: str, text: str) -> None:
-        await self._call("sendMessage", {"chat_id": conversation_id, "text": text})
+    async def send(self, conversation_id: str, text: str,
+                   buttons: list[Button] | None = None) -> str | None:
+        payload: dict = {"chat_id": conversation_id, "text": text}
+        if buttons:
+            payload["reply_markup"] = {"inline_keyboard": [[
+                {"text": b.label, "callback_data": b.data} for b in buttons]]}
+        sent = await self._call("sendMessage", payload)
+        return str(sent["message_id"]) if isinstance(sent, dict) and "message_id" in sent else None
 
     async def reply(self, to: Inbound, text: str, buttons: list[Button] | None = None,
                     *, quiet: bool = False) -> str | None:
