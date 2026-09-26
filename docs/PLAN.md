@@ -41,10 +41,14 @@ reverse are also ADRs, linked where they apply.
   The next task branches from the top of this list and is appended to it.
 - **F2 is closed** (2026-09-25). Voice notes are transcribed on the server at
   about 0.46× real time. The server runs `feat/voice`.
-- **Next agent action:** deploy F3 to the server, with the user's yes. Migration
-  9 runs there on the live database, and the daemon copies it first. Then the user
-  invites a first housemate in `[members]` and tries it, and F3 closes. After that,
-  F4: the agent.
+- **F3 deployed** (2026-09-26). The server runs `feat/members` at schema v9 (backup
+  `ta.db.v8-before-v9`). The Owner member is `joaoferrete`, and all 32 existing
+  Notes are the Owner's. The Telegram pairing is linked to the Owner, and the
+  `compras` List exists.
+- **Next agent action:** F3 closes once the user has invited a first housemate
+  and tried it; until then, nothing more to build for F3. Then **F4, the agent**,
+  starting with T4.1 (`@tool`). It is the largest phase, and the guardrails in
+  D25–D33 and ADR 0019 apply from its first line.
 - **F8 interview:** before starting F8, not now. The user offered to run it now
   and agreed to wait: most of what it configures (Grants, Lists, house rules, the
   Digest) is still being built.
