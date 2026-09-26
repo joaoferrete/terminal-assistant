@@ -34,6 +34,7 @@ from . import (
     store,
     usage,
 )
+from . import digest as digest_mod
 from . import members as members_mod
 from . import memory as memory_mod
 from . import notes as notes_mod
@@ -50,6 +51,7 @@ from .config import (
     _commandable,
     chat_config,
     config_dir,
+    digest_weather,
     grants_config,
     lists_config,
     llm_prices,
@@ -392,11 +394,69 @@ def _agent_deps(app: Starlette) -> AgentDeps:
             # like one added on the board (not reviewed, marked as such).
             "capture": lambda raw, owner_id=OWNER_ID, list_id=None: _capture(
                 app, raw, owner_id=owner_id, list_id=list_id),
+            "digest": lambda member_id: _build_digest(app, member_id),
         },
         persona=lambda member_id: builtin_tools.persona_line(app.state.conn, member_id),
         house_rules=lambda: chat_config()["house_rules"],
         within_budget=lambda member_id: _within_budget(app.state.conn, member_id),
     )
+
+
+async def _build_digest(app: Starlette, member_id: int) -> str:
+    """One Member's Digest, now (D15, D35)."""
+    conn = app.state.conn
+    settings = digest_mod.Settings.load(conn, member_id)
+    src = digest_mod.Sources(
+        conn=conn,
+        calendar_today=app.state.cal_adapter.today if app.state.calendar.available else None,
+        weather=digest_weather(),
+        adguard=digest_mod.adguard_from_env(),
+        prices=llm_prices(),
+    )
+    opening = ""
+    # The prose is decoration (ADR 0003): only with a model, within the budget,
+    # and a Digest without it is complete.
+    if app.state.llm.configured and _within_budget(conn, member_id):
+        try:
+            tasks = store.due_today(conn, viewer=Viewer(member_id))
+            with for_member(member_id):
+                opening = await app.state.llm.digest_prose(
+                    [], [{"text": n.text} for n in tasks])
+        except Exception as e:
+            log.info("digest prose skipped: %s", e)
+    return await digest_mod.build(src, member_id,
+                                  is_admin=_member_permissions(conn, member_id).is_admin,
+                                  sections=settings.sections, opening=opening)
+
+
+async def _digest_loop(app: Starlette, *, every: float = 60.0) -> None:
+    """Send each Member's Digest at their hour, once a day (T5.4)."""
+    while True:
+        try:
+            await _send_due_digests(app)
+        except Exception:
+            log.exception("digest round failed")
+        await asyncio.sleep(every)
+
+
+async def _send_due_digests(app: Starlette, now: datetime | None = None) -> int:
+    now = now or datetime.now()
+    conn, sent = app.state.conn, 0
+    for member in members_mod.all_members(conn):
+        settings = digest_mod.Settings.load(conn, member.id)
+        if not digest_mod.is_due(settings, now):
+            continue
+        chat = conn.execute(
+            "SELECT external_id FROM channel_identities WHERE channel = ? AND member_id = ?",
+            (app.state.channel.name, member.id)).fetchone()
+        if chat is None:
+            continue          # nobody to send it to; try again when they pair
+        text = await _build_digest(app, member.id)
+        await app.state.channel.send(chat[0], text)
+        settings.last = now.date().isoformat()
+        settings.save(conn, member.id)
+        sent += 1
+    return sent
 
 
 def _within_budget(conn, member_id: int, now: datetime | None = None) -> bool:
@@ -1491,6 +1551,7 @@ def create_app(
                 tasks.append(asyncio.create_task(
                     app.state.channel.run(app.state.bot.handle), name="channel"
                 ))
+                tasks.append(asyncio.create_task(_digest_loop(app), name="digest"))
         log.info(
             "daemon up on %s | %d rule(s), %d error(s)",
             cfg.base_url, len(app.state.rules), len(app.state.rule_errors),

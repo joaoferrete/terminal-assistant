@@ -39,6 +39,7 @@ reverse are also ADRs, linked where they apply.
   7. `feat/voice` — T2.1, T2.2
   8. `feat/members` — T3.1–T3.5 (and the per-Member board session pulled from T6.4)
   9. `feat/agent` — F4, in several commits
+  10. `feat/digest` — T5.3, T5.4
   The next task branches from the top of this list and is appended to it.
 - **F2 is closed** (2026-09-25). Voice notes are transcribed on the server at
   about 0.46× real time. The server runs `feat/voice`.
@@ -54,7 +55,12 @@ reverse are also ADRs, linked where they apply.
   quota (429), and groups need privacy mode off at @BotFather plus the group id.
 - **F8 interview: paused** by the user after questions 1–3. Resume at question 4
   (where settings are stored) and secrets, before F8 starts.
-- **Next agent action:** F5, the pushed Digest and the calendar.
+- **F5 Digest built** (T5.3, T5.4) on `feat/digest`, not deployed. Only the Owner
+  receives it by default, at 07:00 (decided 2026-09-26); others ask the bot.
+- **Next agent action:** deploy the Digest with the user's yes, after getting from
+  them the house's location for the weather and AdGuard's address and login on
+  the server. Then T5.1/T5.2, the Google Calendar, which needs the user to create
+  an OAuth client in Google Cloud first (and the Workspace risk in D14).
 - **F8 interview:** before starting F8, not now. The user offered to run it now
   and agreed to wait: most of what it configures (Grants, Lists, house rules, the
   Digest) is still being built.
@@ -494,11 +500,11 @@ how `ta` is installed, configured or used also updates the README,
       OAuth paste-back through `/conectar_agenda`; refresh token per Member, file
       mode 0600 at minimum.
 - [ ] **T5.2** ADR 0007's propose-and-confirm through Channel buttons.
-- [ ] **T5.3 Digest sections** as independent sources: calendar, chaseable Notes,
+- [x] **T5.3 Digest sections** as independent sources: calendar, chaseable Notes,
       household Lists, weather (confirm Open-Meteo's terms), server health from
       `/proc`, `/sys/class/thermal`, disk and `llm_usage`, and AdGuard's
       `/control/stats` (D35). Server health and AdGuard are for admins only.
-- [ ] **T5.4 Schedule** per Member in `scheduler.py`, with no retroactive flood
+- [x] **T5.4 Schedule** per Member in `scheduler.py`, with no retroactive flood
       after downtime. The prose is optional.
 
 ### F6 — Satellite
@@ -601,3 +607,4 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | F4 | First run against the real providers (a throwaway database, a stub home): DeepSeek drove the agent correctly. It answered without capturing, captured with [Not a note], cited the right `#1`, set the Persona, and the pre-router switched the stub light. Two Tool texts, written in English for the model, reached the user ("Feito · turned on: light.sala") | The pre-router's reply and the post-confirmation reply come from the catalogue now. A test asserts the Tool's text does not show |
 | 2026-09-26 | T4.9 | The user's Gemini key answered **429 RESOURCE_EXHAUSTED** to a grounded search, and 503 to a plain call. It is quota or billing on the account, not code. The agent said search had failed and invented nothing | Web search waits on the user's Google AI account (billing or quota). Everything else runs on DeepSeek |
 | 2026-09-26 | T4.2 | The user's first real question, "quais são minhas notas vencidas?", ran out of steps. With only a word search, "vencidas" matched nothing, and the model kept searching. The fallback then said "the model is down", which was false, since the model was up | A `notes_due` Tool lists open tasks by Horizon. The last step tells the model to answer with what it has. The fallback message says "the model is down" only when the provider failed. Confirmed against real DeepSeek |
+| 2026-09-26 | T5.3 | Open-Meteo's terms, checked: free with no key for personal home automation, 10,000 calls a day, data under CC BY 4.0 | One call a day is well inside the limit. The weather line credits "(Open-Meteo)" |

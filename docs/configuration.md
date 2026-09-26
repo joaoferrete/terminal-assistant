@@ -57,6 +57,13 @@ load it. That cost an afternoon once.
 
 See [ai.md](ai.md) for what each feature costs in model calls.
 
+### Digest
+
+| Variable | Default | What it does |
+|---|---|---|
+| `ADGUARD_URL` | *(none)* | AdGuard Home's address, for the Digest's admin-only DNS section (e.g. `http://localhost:8083`). Unset, the section is skipped |
+| `ADGUARD_USER` / `ADGUARD_PASSWORD` | *(none)* | Its web login, if it has one |
+
 ### Telegram bot
 
 | Variable | Default | What it does |
@@ -132,6 +139,13 @@ admin = false                          # media, the ringlight, server health
 # [lists] replaces the default.
 [lists]
 compras = "household"
+
+# Where the house is, for the Digest's weather (Open-Meteo, free for personal home
+# automation, credited in the message). Unset, the Digest has no weather.
+[digest]
+latitude = -23.55
+longitude = -46.63
+place = "São Paulo"
 
 # The chat's guardrails (D29, D30). `house_rules` goes into every conversation:
 # a SOFT guardrail that shapes answers, and nothing depends on it for safety. The

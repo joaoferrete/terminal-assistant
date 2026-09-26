@@ -467,3 +467,20 @@ def chat_config() -> dict:
         "daily_usd_per_member": ceiling("daily_usd_per_member", 0.50),
         "monthly_usd_household": ceiling("monthly_usd_household", 10.0),
     }
+
+
+def digest_weather() -> dict | None:
+    """`[digest]` latitude/longitude/place, for the weather section. Unset, the
+    Digest simply has no weather — the house's location is not something to guess.
+
+        [digest]
+        latitude = -23.55
+        longitude = -46.63
+        place = "São Paulo"
+    """
+    raw = _user_config().get("digest", {})
+    raw = raw if isinstance(raw, dict) else {}
+    lat, lon = raw.get("latitude"), raw.get("longitude")
+    if not (isinstance(lat, int | float) and isinstance(lon, int | float)):
+        return None
+    return {"latitude": lat, "longitude": lon, "place": str(raw.get("place", ""))}

@@ -258,3 +258,44 @@ async def web_search(ctx: ToolContext, question: str) -> ToolResult:
     except LLMUnavailable as e:
         return ToolResult(text=f"web search failed: {e}")
     return ToolResult(text=text, sources=[Source("web", uri, title) for uri, title in links])
+
+
+@tool(
+    description="Set up the member's daily summary: turn it on or off, the hour, or "
+    "which sections it has (calendar, notes, lists, weather)",
+    args={"enabled": "yes or no, or empty to keep", "time": "HH:MM, or empty to keep",
+          "sections": "comma-separated section names, or empty to keep"},
+    changes_state=True,
+)
+async def digest_set(ctx: ToolContext, enabled: str = "", time: str = "",
+                     sections: str = "") -> ToolResult:
+    from . import digest
+
+    s = digest.Settings.load(ctx.conn, ctx.turn.member_id)
+    if enabled.strip().lower() in ("yes", "sim", "true", "on"):
+        s.enabled = True
+    elif enabled.strip().lower() in ("no", "não", "nao", "false", "off"):
+        s.enabled = False
+    if time.strip():
+        parsed = digest.parse_time(time)
+        if parsed is None:
+            return ToolResult(text=f"not a time: {time!r}; use HH:MM")
+        s.time, s.enabled = parsed, True
+    if sections.strip():
+        chosen = tuple(x.strip() for x in sections.split(",") if x.strip() in digest.SECTIONS)
+        if chosen:
+            s.sections = chosen
+    s.save(ctx.conn, ctx.turn.member_id)
+    state = f"on at {s.time}" if s.enabled else "off"
+    return ToolResult(text=f"daily summary {state}; sections: {', '.join(s.sections)}",
+                      receipt={"summary": f"digest {state}"})
+
+
+@tool(
+    description="Build the member's daily summary right now and return it",
+)
+async def digest_now(ctx: ToolContext) -> ToolResult:
+    build = ctx.services.get("digest")
+    if build is None:
+        return ToolResult(text="the summary is not available here")
+    return ToolResult(text=await build(ctx.turn.member_id))

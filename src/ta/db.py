@@ -20,7 +20,7 @@ from pathlib import Path
 
 log = logging.getLogger("ta")
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 # The states of a Note. Stored in English because the rest of the vocabulary is
 # (see CONTEXT.md); the translated labels live in the interface.
@@ -341,6 +341,18 @@ MIGRATIONS: list[tuple[int, str]] = [
         -- CLI, the Digest prose). Calls before this migration were all the Owner's.
         ALTER TABLE llm_usage ADD COLUMN member_id INTEGER REFERENCES members(id);
         UPDATE llm_usage SET member_id = 1;
+        """,
+    ),
+    (
+        12,
+        """
+        -- Each Member's pushed Digest (D15): whether, when, and the last day it
+        -- went out. JSON, like `persona`, because the Member sets it from the chat.
+        --
+        -- Only the Owner is on by default (decided 2026-09-26): a daily message
+        -- nobody asked for is how a bot gets muted. The others ask for it.
+        ALTER TABLE members ADD COLUMN digest TEXT;
+        UPDATE members SET digest = '{"enabled": true, "time": "07:00"}' WHERE is_owner = 1;
         """,
     ),
 ]
