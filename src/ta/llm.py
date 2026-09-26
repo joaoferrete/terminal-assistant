@@ -57,6 +57,24 @@ TASKS = ("review_capture", "organize", "detect_event", "digest_prose", "prioriti
 _TASK: ContextVar[str | None] = ContextVar("ta_llm_task", default=None)
 
 
+# Whose request the current call serves, for the per-Member ceiling (D30). Same
+# mechanism and same reason as `_TASK`.
+_MEMBER: ContextVar[int | None] = ContextVar("ta_llm_member", default=None)
+
+
+def current_member() -> int | None:
+    return _MEMBER.get()
+
+
+@contextlib.contextmanager
+def for_member(member_id: int | None) -> Iterator[None]:
+    token = _MEMBER.set(member_id)
+    try:
+        yield
+    finally:
+        _MEMBER.reset(token)
+
+
 @contextlib.contextmanager
 def for_task(name: str) -> Iterator[None]:
     """Route the model calls made inside the block as task `name`."""

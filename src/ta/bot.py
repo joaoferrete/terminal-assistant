@@ -32,6 +32,7 @@ from . import members as members_mod
 from .builtin_tools import ToolContext
 from .channel import Button, Channel, ChannelError, Inbound
 from .i18n import t
+from .llm import for_member
 from .members import OWNER_ID
 from .speech import Transcriber, TranscriptionFailed
 from .tools import NotAllowed, Tool, Turn, allowed
@@ -90,6 +91,9 @@ class AgentDeps:
     services: dict = field(default_factory=dict)
     persona: Callable[[int], str] = lambda member_id: ""
     house_rules: Callable[[], str] = lambda: ""
+    # True while the Member's day and the household's month are under the
+    # ceilings (D30). Checked before every model call the chat makes.
+    within_budget: Callable[[int], bool] = lambda member_id: True
 
 
 class Bot:
@@ -128,6 +132,9 @@ class Bot:
         # seconds to transcribe, and every text behind it would wait. The set
         # holds the tasks so the GC does not collect one mid-flight.
         self._voice_tasks: set[asyncio.Task] = set()
+        # (member, day) pairs the Owner was already told about, so a spent budget
+        # sends one message a day, not one per message.
+        self._budget_told: set[tuple[int, str]] = set()
 
     def _recognise(self, msg: Inbound) -> tuple[int | None, bool]:
         """(member id, just paired). None is a stranger, answered with silence (D8).
@@ -270,6 +277,15 @@ class Bot:
         deps = self.agent
         if await self._prerouted(msg, member_id, text):
             return
+        if not deps.within_budget(member_id):
+            # Chat and search stop; capture goes on (D30, invariant 1).
+            note = self.capture(text, owner_id=member_id)
+            await self._say(msg, t("bot.budget_spent", line=self._captured_line(note)))
+            key = (member_id, datetime.now().date().isoformat())
+            if key not in self._budget_told:
+                self._budget_told.add(key)
+                await self._tell_owner(msg, t("bot.budget_owner", who=member_id))
+            return
         turn = Turn(member_id=member_id, conversation_id=msg.conversation_id,
                     in_group=not msg.private, permissions=deps.permissions(member_id))
         ctx = ToolContext(conn=self.conn, turn=turn, channel=msg.channel,
@@ -283,11 +299,12 @@ class Bot:
                 self.conn, channel=msg.channel, conversation_id=msg.conversation_id,
                 message_id=msg.reply_to_message_id)] or ["(nothing recorded)"]
         try:
-            reply = await agent_mod.respond(
-                deps.llm, turn=turn, ctx=ctx, text=text, history=history,
-                available=available, persona=deps.persona(member_id),
-                house_rules=deps.house_rules(), about=about,
-            )
+            with for_member(member_id):
+                reply = await agent_mod.respond(
+                    deps.llm, turn=turn, ctx=ctx, text=text, history=history,
+                    available=available, persona=deps.persona(member_id),
+                    house_rules=deps.house_rules(), about=about,
+                )
         except agent_mod.AgentFailed as e:
             log.warning("agent failed, capturing instead: %s", e)
             note = self.capture(text, owner_id=member_id)

@@ -429,6 +429,16 @@ MESSAGES: dict[str, dict[str, str]] = {
     "bot.undone": {"pt": "Desfeito.", "en": "Undone."},
     "bot.stale": {"pt": "Isso já foi resolvido.", "en": "That was already settled."},
     "bot.home_done": {"pt": "Feito · {what}", "en": "Done · {what}"},
+    "bot.budget_spent": {
+        "pt": "{line}\n(o limite de uso do chat por hoje acabou, então só anotei)",
+        "en": "{line}\n(today's chat budget is spent, so I only noted it)",
+    },
+    "bot.budget_owner": {
+        "pt": "O Member #{who} bateu o teto de custo do chat. Ele segue anotando; o limite "
+              "fica em [chat] no config.toml.",
+        "en": "Member #{who} hit the chat's cost ceiling. Notes still work; the limit is "
+              "under [chat] in config.toml.",
+    },
     "agent.sources": {"pt": "Fontes: {list}", "en": "Sources: {list}"},
     "bot.hello": {
         "pt": "Oi! Tudo o que você mandar aqui vira nota.",

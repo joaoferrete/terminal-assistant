@@ -20,7 +20,7 @@ from pathlib import Path
 
 log = logging.getLogger("ta")
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 # The states of a Note. Stored in English because the rest of the vocabulary is
 # (see CONTEXT.md); the translated labels live in the interface.
@@ -331,6 +331,16 @@ MIGRATIONS: list[tuple[int, str]] = [
             at               TEXT    NOT NULL
         );
         CREATE INDEX idx_receipts_message ON receipts(channel, conversation_id, message_id);
+        """,
+    ),
+    (
+        11,
+        """
+        -- Whose request a model call served, for the per-Member daily ceiling
+        -- (D30). NULL for calls made for nobody in particular (organize from the
+        -- CLI, the Digest prose). Calls before this migration were all the Owner's.
+        ALTER TABLE llm_usage ADD COLUMN member_id INTEGER REFERENCES members(id);
+        UPDATE llm_usage SET member_id = 1;
         """,
     ),
 ]

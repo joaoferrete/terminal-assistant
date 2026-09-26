@@ -115,3 +115,106 @@ def test_a_failure_to_record_never_fails_the_call(client, monkeypatch):
     client.app.state.llm = llm
 
     assert client.post("/digest-prose").json() == {"text": "ok"}
+
+
+# ── Ceilings (D30) and house rules (D29) ────────────────────────────────────
+def test_unpriced_calls_count_at_the_worst_known_price(tmp_path):
+    """Otherwise a model with no price would slip under every ceiling."""
+    conn = db.connect(tmp_path / "t.db")
+    prices = {"cheap": Price(1.0, 1.0), "dear": Price(10.0, 10.0)}
+    usage.record(conn, provider="x", model="nobody-priced-this", task="agent",
+                 usage=Usage(1_000_000, 0), prices=prices, member_id=1, now=NOON)
+    assert usage.spent_by_member(conn, 1, datetime(2026, 9, 25), prices) == 10.0
+
+
+def test_a_search_costs_its_grounding_too(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    usage.record(conn, provider="gemini", model="m", task="web_search", usage=Usage(0, 0),
+                 prices={"m": Price(0, 0)}, member_id=1, now=NOON)
+    assert usage.spent_total(conn, datetime(2026, 9, 25), {"m": Price(0, 0)}) == \
+        usage.SEARCH_PER_CALL
+
+
+def test_a_bad_ceiling_falls_back_to_the_default_not_to_none(tmp_path, monkeypatch, caplog):
+    (tmp_path / "ta").mkdir()
+    (tmp_path / "ta" / "config.toml").write_text(
+        '[chat]\ndaily_usd_per_member = 0\nmonthly_usd_household = "muito"\n'
+        'house_rules = "Sem diagnóstico médico."\n')
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    cfg_mod._user_config.cache_clear()
+    chat = cfg_mod.chat_config()
+    assert chat["daily_usd_per_member"] == 0.50 and chat["monthly_usd_household"] == 10.0
+    assert chat["house_rules"] == "Sem diagnóstico médico."
+    assert "daily_usd_per_member" in caplog.text
+
+
+def test_within_budget_checks_the_day_and_the_month(tmp_path, monkeypatch):
+    from ta.daemon import _within_budget
+
+    monkeypatch.setattr("ta.daemon.chat_config", lambda: {
+        "house_rules": "", "daily_usd_per_member": 1.0, "monthly_usd_household": 5.0})
+    monkeypatch.setattr("ta.daemon.llm_prices", lambda: {"m": Price(1.0, 0)})
+    conn = db.connect(tmp_path / "t.db")
+    for mid in (2, 3):
+        conn.execute("INSERT INTO members (id, handle, is_owner, created_at)"
+                     " VALUES (?, ?, 0, 'x')", (mid, f"m{mid}"))
+    assert _within_budget(conn, 1, now=NOON)
+    usage.record(conn, provider="p", model="m", task="agent", usage=Usage(1_000_000, 0),
+                 prices={"m": Price(1.0, 0)}, member_id=1, now=NOON)
+    assert not _within_budget(conn, 1, now=NOON), "a dollar spent today hits the daily 1.0"
+    assert _within_budget(conn, 2, now=NOON), "another Member's day is untouched"
+    for _ in range(5):
+        usage.record(conn, provider="p", model="m", task="agent", usage=Usage(1_000_000, 0),
+                     prices={"m": Price(1.0, 0)}, member_id=3,
+                     now=datetime(2026, 9, 2, 12, 0))
+    assert not _within_budget(conn, 2, now=NOON), "the household's month is spent"
+
+
+def test_a_spent_budget_still_captures_and_calls_no_model(tmp_path):
+    import asyncio
+
+    from test_agent import ScriptedLLM
+    from test_bot import inbound
+    from test_grants import TellingChannel
+
+    from ta import store
+    from ta.bot import AgentDeps, Bot
+    from ta.grants import OWNER_PERMISSIONS
+    from ta.tools import registered
+
+    conn = db.connect(tmp_path / "t.db")
+    llm = ScriptedLLM()      # any call would fail: none must happen
+    b = Bot(conn, TellingChannel(), owner_username="dono",
+            capture=lambda text, owner_id=1: store.add_note(conn, text, owner_id=owner_id),
+            agent=AgentDeps(llm=llm, registry=registered,
+                            permissions=lambda m: OWNER_PERMISSIONS,
+                            within_budget=lambda m: False))
+    asyncio.run(b.handle(inbound("/start")))
+    asyncio.run(b.handle(inbound("qual a capital da Mongólia?")))
+    asyncio.run(b.handle(inbound("e da Bolívia?")))
+    assert llm.prompts == []
+    assert len(store.list_notes(conn, viewer=__import__("ta.members").members.SYSTEM)) == 2
+    assert len(b.channel.told) == 1, "the Owner hears about it once a day, not per message"
+
+
+def test_house_rules_reach_the_agents_system_prompt(tmp_path):
+    import asyncio
+
+    from test_agent import ScriptedLLM, answer
+    from test_bot import FakeChannel, inbound
+
+    from ta import store
+    from ta.bot import AgentDeps, Bot
+    from ta.grants import OWNER_PERMISSIONS
+    from ta.tools import registered
+
+    conn = db.connect(tmp_path / "t.db")
+    llm = ScriptedLLM(answer("ok"))
+    b = Bot(conn, FakeChannel(), owner_username="dono",
+            capture=lambda text, owner_id=1: store.add_note(conn, text, owner_id=owner_id),
+            agent=AgentDeps(llm=llm, registry=registered,
+                            permissions=lambda m: OWNER_PERMISSIONS,
+                            house_rules=lambda: "Nunca dê diagnóstico médico."))
+    asyncio.run(b.handle(inbound("/start")))
+    asyncio.run(b.handle(inbound("o que é uma febre de 39?")))
+    assert "Nunca dê diagnóstico médico." in llm.prompts[0][0]

@@ -132,10 +132,19 @@ admin = false                          # media, the ringlight, server health
 [lists]
 compras = "household"
 
-# USD per million tokens, for the cost the Digest reports. DeepSeek's models ship
-# with their peak price (an upper bound: off-peak is half). Gemini ships with none,
-# because the free tier costs nothing and this cannot tell which tier you are on;
-# an unpriced call is counted as "unknown", never as free.
+# The chat's guardrails (D29, D30). `house_rules` goes into every conversation:
+# a SOFT guardrail that shapes answers, and nothing depends on it for safety. The
+# ceilings are hard: when one is spent, chat and web search stop for the day (or
+# month) and every message is still captured as a note. The owner is told once.
+[chat]
+house_rules = "Não dê diagnóstico médico; sugira procurar um profissional."
+daily_usd_per_member = 0.50
+monthly_usd_household = 10.0
+
+# USD per million tokens, for the cost the Digest reports and the ceilings above.
+# DeepSeek ships with its peak price and Gemini with its paid tier: upper bounds,
+# since off-peak and the free tier cost less. A model with no price counts at the
+# most expensive known one, so it cannot slip under a ceiling.
 [llm.prices.gemini-flash-latest]
 input = 0.30
 output = 2.50

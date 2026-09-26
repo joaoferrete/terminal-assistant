@@ -48,6 +48,7 @@ from .config import (
     Config,
     ConfigError,
     _commandable,
+    chat_config,
     config_dir,
     grants_config,
     lists_config,
@@ -59,7 +60,7 @@ from .config import (
 )
 from .config import groups as config_groups
 from .db import connect, default_db_path
-from .llm import LLM, LLMUnavailable
+from .llm import LLM, LLMUnavailable, current_member, for_member
 from .members import OWNER, OWNER_ID, SYSTEM, Viewer
 from .scheduler import Scheduler, lateness_label, lateness_of
 from .sensors.calendar import Calendar
@@ -393,7 +394,19 @@ def _agent_deps(app: Starlette) -> AgentDeps:
                 app, raw, owner_id=owner_id, list_id=list_id),
         },
         persona=lambda member_id: builtin_tools.persona_line(app.state.conn, member_id),
+        house_rules=lambda: chat_config()["house_rules"],
+        within_budget=lambda member_id: _within_budget(app.state.conn, member_id),
     )
+
+
+def _within_budget(conn, member_id: int, now: datetime | None = None) -> bool:
+    """Under the Member's daily and the household's monthly ceiling (D30)."""
+    limits, prices = chat_config(), llm_prices()
+    now = now or datetime.now()
+    day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return (usage.spent_by_member(conn, member_id, day, prices) < limits["daily_usd_per_member"]
+            and usage.spent_total(conn, day.replace(day=1), prices)
+            < limits["monthly_usd_household"])
 
 
 def _sync_household(conn) -> None:
@@ -497,6 +510,25 @@ def _schedule_review(
         task.add_done_callback(app.state.reviews.discard)
 
 
+async def _review_call(app: Starlette, note: store.Note, targets):
+    return await app.state.llm.review_capture(
+        note.text,
+        due=note.due,
+        remind_at=note.remind_at,
+        # The WRITER's Priorities: Ana's note is weighed by what matters to
+        # Ana, not to the Owner (D22).
+        priorities=priorities.current(app.state.conn, note.owner_id) or "",
+        # Only the domain, not the address: it is what decides the routing,
+        # and sending the whole email outside would be extra data for the
+        # same result.
+        accounts=", ".join(
+            f"{'pessoal' if a.personal else 'trabalho'}: "
+            f"{a.account.rsplit('@', 1)[-1] if '@' in a.account else '?'}"
+            for a in targets
+        ),
+    )
+
+
 async def _review_capture(app: Starlette, note_id: int) -> None:
     """Fix what the regex could not know, and create the event if appropriate.
 
@@ -526,22 +558,9 @@ async def _review_one(app: Starlette, note_id: int) -> None:
         # A broad Exception on purpose: this function is optional by design, and
         # nothing it does is worth taking down the daemon or losing the Note.
         targets = await asyncio.to_thread(app.state.calendar.write_targets)
-        r = await app.state.llm.review_capture(
-            note.text,
-            due=note.due,
-            remind_at=note.remind_at,
-            # The WRITER's Priorities: Ana's note is weighed by what matters to
-            # Ana, not to the Owner (D22).
-            priorities=priorities.current(app.state.conn, note.owner_id) or "",
-            # Only the domain, not the address: it is what decides the routing,
-            # and sending the whole email outside would be extra data for the
-            # same result.
-            accounts=", ".join(
-                f"{'pessoal' if a.personal else 'trabalho'}: "
-                f"{a.account.rsplit('@', 1)[-1] if '@' in a.account else '?'}"
-                for a in targets
-            ),
-        )
+        # The review serves the Note's writer: it counts against their ceiling.
+        with for_member(note.owner_id):
+            r = await _review_call(app, note, targets)
     except Exception as e:
         # Not marked reviewed: it stays queued for the next capture with network.
         if attempts >= MAX_REVIEW_ATTEMPTS:
@@ -1346,7 +1365,7 @@ def _usage_recorder(app: Starlette):
     def on_usage(provider: str, model: str, task: str, spent) -> None:
         try:
             usage.record(app.state.conn, provider=provider, model=model, task=task,
-                         usage=spent, prices=prices)
+                         usage=spent, prices=prices, member_id=current_member())
         except Exception:
             log.exception("could not record model usage for %s/%s", provider, task)
 

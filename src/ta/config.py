@@ -437,3 +437,33 @@ def telegram_groups() -> set[str]:
     raw = raw.get("telegram", {}) if isinstance(raw, dict) else {}
     groups = raw.get("groups", []) if isinstance(raw, dict) else []
     return {str(g) for g in groups} if isinstance(groups, list) else set()
+
+
+def chat_config() -> dict:
+    """`[chat]` — the soft guardrail and the hard ceilings (D29, D30).
+
+        [chat]
+        house_rules = "Não dê diagnóstico médico; sugira procurar um profissional."
+        daily_usd_per_member = 0.50
+        monthly_usd_household = 10.0
+
+    A ceiling of 0 or less, or a malformed one, falls back to the default rather
+    than to "no ceiling": a typo must not remove the limit.
+    """
+    raw = _user_config().get("chat", {})
+    raw = raw if isinstance(raw, dict) else {}
+
+    def ceiling(key: str, default: float) -> float:
+        value = raw.get(key, default)
+        if isinstance(value, int | float) and value > 0:
+            return float(value)
+        log.warning("config.toml: chat.%s = %r is not a positive number; using %s",
+                    key, value, default)
+        return default
+
+    rules = raw.get("house_rules", "")
+    return {
+        "house_rules": rules if isinstance(rules, str) else "",
+        "daily_usd_per_member": ceiling("daily_usd_per_member", 0.50),
+        "monthly_usd_household": ceiling("monthly_usd_household", 10.0),
+    }
