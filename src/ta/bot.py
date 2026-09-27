@@ -586,6 +586,23 @@ class Bot:
                 "mail_link": self.mail_link}
 
     @staticmethod
+    def _switched(tool: str, receipt: dict) -> str:
+        """What a home Tool did, in the catalogue's words, honest about the
+        Entities that did not confirm the new state."""
+        key = "bot.home_on_done" if tool == "home_on" else "bot.home_off_done"
+        # "Bedroom lamp", not light.bedroom_lamp_2: the Tool records each
+        # Entity's friendly name, and the id is only the fallback.
+        names = receipt.get("names") or {}
+
+        def said(entities):
+            return ", ".join(names.get(e, e) for e in entities or [])
+
+        line = t(key, what=said(receipt.get("entities")))
+        if receipt.get("unconfirmed"):
+            line += "\n" + t("bot.home_unconfirmed", what=said(receipt["unconfirmed"]))
+        return line
+
+    @staticmethod
     def _undo_button(rid: int, undo: dict) -> Button:
         # Undoing a schedule is cancelling it, and the button should say so: a
         # plain "Undo" under "I'll turn it on at 7" reads as undoing the light.
@@ -731,8 +748,10 @@ class Bot:
         switched = [e for done in turn.receipts for e in done.get("entities", [])]
         if not switched:
             return False
-        key = "bot.home_on_done" if name == "home_on" else "bot.home_off_done"
-        await self._say(msg, t(key, what=", ".join(switched)), buttons, rids)
+        receipt = {"entities": switched, "unconfirmed": [
+            e for done in turn.receipts for e in done.get("unconfirmed", [])],
+            "names": {k: v for done in turn.receipts for k, v in (done.get("names") or {}).items()}}
+        await self._say(msg, self._switched(name, receipt), buttons, rids)
         return True
 
     def _propose(self, msg: Inbound, member_id: int, pending) -> tuple[int, str]:
@@ -850,11 +869,7 @@ class Bot:
         buttons = [self._undo_button(r.id, undo)] if undo else None
         # Not `result.text`: that is written for the model, in English.
         switched = (result.receipt or {}).get("entities")
-        if switched:
-            key = "bot.home_on_done" if r.tool == "home_on" else "bot.home_off_done"
-            done = t(key, what=", ".join(switched))
-        else:
-            done = t("bot.done")
+        done = self._switched(r.tool, result.receipt) if switched else t("bot.done")
         await self._say(msg, done, buttons, [r.id])
 
     async def _undo(self, msg: Inbound, member_id: int, r) -> None:
@@ -1030,10 +1045,8 @@ class Bot:
                                   message_id=None, member_id=s.member_id, tool=s.tool,
                                   summary=done.get("summary", s.summary), args=s.args,
                                   undo=done.get("undo"))
-            switched = done.get("entities")
-            if switched:
-                key = "bot.home_on_done" if s.tool == "home_on" else "bot.home_off_done"
-                line = t(key, what=", ".join(switched))
+            if done.get("entities"):
+                line = self._switched(s.tool, done)
             else:
                 line = t("bot.done") + f" ({s.summary})"
             undo = done.get("undo")

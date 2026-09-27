@@ -114,7 +114,8 @@ def test_apaga_a_luz_needs_no_model(bot):
     assert b.home.turned_off == ["light.sala"]
     assert b.llm.prompts == []
     assert "turned" not in b.channel.sent[-1], "the reply comes from the catalogue, not the Tool"
-    assert "light.sala" in b.channel.sent[-1]
+    assert "Sala" in b.channel.sent[-1] and "light.sala" not in b.channel.sent[-1], \
+        "the name people know, not the entity_id"
     assert b.channel.buttons[-1][0].data.startswith("undo:")
 
 
@@ -236,3 +237,15 @@ def test_blue_at_ten_percent_whatever_form_the_model_sends(ctx, brightness):
     home.set_color = set_color
     run(c, "home_on", target="sala", color="blue", brightness=brightness)
     assert colours == [("light.sala", "blue", 10)]
+
+
+def test_a_lamp_that_does_not_confirm_is_said_not_claimed(bot):
+    """The first real "apaga a luz em 1min" said "Feito" while the lamp stayed on:
+    Home Assistant accepts at once, and the vendor's cloud is slow."""
+    b = bot()
+
+    async def never(entity_id, expected, tries=12):
+        return "on", False
+    b.home.confirm = never
+    asyncio.run(b.handle(inbound("apaga a luz da sala")))
+    assert "ainda não confirmou: Sala" in b.channel.sent[-1]

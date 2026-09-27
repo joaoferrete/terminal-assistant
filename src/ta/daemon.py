@@ -534,14 +534,26 @@ async def _publish_menu(app: Starlette) -> None:
 
 
 async def _scheduled_loop(app: Starlette, *, every: float = 20.0) -> None:
-    """Run the scheduled actions that are due (F9, D39). Every 20 s: "in 10
-    minutes" should not mean eleven."""
+    """Run the scheduled actions that are due (F9, D39).
+
+    It sleeps until the next one is due, at most `every`: with a flat 20 s tick,
+    "apaga a luz em 1min" fired up to 20 s late, and on top of the lamp's cloud it
+    read as "it did not work" (F10).
+    """
     while True:
         try:
             await app.state.bot.run_scheduled()
         except Exception:
             log.exception("scheduled round failed")
-        await asyncio.sleep(every)
+        await asyncio.sleep(_until_next(app.state.conn, every))
+
+
+def _until_next(conn, every: float, now: datetime | None = None) -> float:
+    row = conn.execute("SELECT MIN(next_at) FROM scheduled WHERE state = 'active'").fetchone()
+    if not row or not row[0]:
+        return every
+    wait = (datetime.fromisoformat(row[0]) - (now or datetime.now())).total_seconds()
+    return max(0.5, min(every, wait + 0.1))
 
 
 async def _send_due_digests(app: Starlette, now: datetime | None = None) -> int:

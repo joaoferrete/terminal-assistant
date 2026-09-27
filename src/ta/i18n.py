@@ -479,6 +479,12 @@ MESSAGES: dict[str, dict[str, str]] = {
     "bot.done": {"pt": "Feito.", "en": "Done."},
     "bot.home_on_done": {"pt": "Feito · ligado: {what}", "en": "Done · on: {what}"},
     "bot.home_off_done": {"pt": "Feito · desligado: {what}", "en": "Done · off: {what}"},
+    "bot.home_unconfirmed": {
+        "pt": "⚠️ Mandei, mas ainda não confirmou: {what}. Pode estar offline ou lento — "
+              "confira em instantes.",
+        "en": "⚠️ Sent, but not confirmed yet: {what}. It may be offline or slow — check in "
+              "a moment.",
+    },
     "bot.event_created": {"pt": "📅 Criei na agenda: {title} · {at}",
                           "en": "📅 Added to your calendar: {title} · {at}"},
     # /help, /agendado and the / menu (F10, D61).

@@ -59,7 +59,9 @@ async def execute(ctx: ToolContext, routine: routines.Routine) -> ToolResult:
             skipped.append(f"{label} ({result.text})")
             continue
         done.append(result.receipt.get("summary", label))
-        lines.append(", ".join(result.receipt.get("entities") or []) or label)
+        names = result.receipt.get("names") or {}
+        lines.append(", ".join(names.get(e, e) for e in result.receipt.get("entities") or [])
+                     or label)
         if result.receipt.get("undo"):
             undos.append(result.receipt["undo"])
     return ToolResult(

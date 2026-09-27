@@ -121,6 +121,36 @@ async def list_show(ctx: ToolContext, list: str = "") -> ToolResult:  # noqa: A0
 # Each one checks the asker's Grant per argument, because only it knows which
 # Entity or List an argument names, and each returns the Receipt with its undo.
 
+async def _names(ctx: ToolContext, entities: list[str]) -> dict[str, str]:
+    """entity_id → the name people know it by (Home Assistant's friendly_name)."""
+    try:
+        inventory = await _home(ctx).entities("light.", "switch.")
+    except Exception:
+        return {}
+    return {e["entity_id"]: e.get("attributes", {}).get("friendly_name") or e["entity_id"]
+            for e in inventory if e["entity_id"] in entities}
+
+
+async def _unconfirmed(ctx: ToolContext, entities: list[str], expected: str) -> list[str]:
+    """The Entities that did not reach `expected` within ~3 s.
+
+    Home Assistant answers 200 as soon as it accepted the command, and a Tuya lamp
+    then goes through the vendor's cloud. The first real "apaga a luz em 1min"
+    said "⏰ Feito · desligado" while the lamp was still on (it went off later).
+    The board's routes always confirmed; the agent's Tools now do too, and say
+    which ones did not answer rather than claiming they did.
+    """
+    import asyncio
+
+    home = _home(ctx)
+    if not hasattr(home, "confirm"):
+        return []
+    results = await asyncio.gather(*(home.confirm(e, expected) for e in entities),
+                                   return_exceptions=True)
+    return [e for e, r in zip(entities, results, strict=True)
+            if isinstance(r, BaseException) or not r[1]]
+
+
 def _home(ctx: ToolContext):
     app = ctx.services.get("app")
     return app.state.home if app is not None else ctx.services.get("home")
@@ -157,9 +187,13 @@ async def home_on(ctx: ToolContext, target: str, brightness: str = "",
             await _home(ctx).set_color(e, color, level if digits else None)
         else:
             await _home(ctx).switch_on(e, level)
+    slow = await _unconfirmed(ctx, entities, "on")
     return ToolResult(
-        text="turned on: " + ", ".join(entities),
+        text="turned on: " + ", ".join(entities)
+             + (f"; but after 3 s these still did not report on: {', '.join(slow)} (the "
+                "device may be offline or slow; say so)" if slow else ""),
         receipt={"summary": "turned on " + ", ".join(entities), "entities": entities,
+                 "unconfirmed": slow, "names": await _names(ctx, entities),
                  "undo": {"tool": "home_off", "args": {"target": ",".join(entities)}}},
     )
 
@@ -180,9 +214,13 @@ async def home_off(ctx: ToolContext, target: str) -> ToolResult:
         return ToolResult(text=f"nothing you may switch matches {target!r}")
     for e in entities:
         await _home(ctx).turn_off(e)
+    slow = await _unconfirmed(ctx, entities, "off")
     return ToolResult(
-        text="turned off: " + ", ".join(entities),
+        text="turned off: " + ", ".join(entities)
+             + (f"; but after 3 s these still did not report off: {', '.join(slow)} (the "
+                "device may be offline or slow; say so)" if slow else ""),
         receipt={"summary": "turned off " + ", ".join(entities), "entities": entities,
+                 "unconfirmed": slow, "names": await _names(ctx, entities),
                  "undo": {"tool": "home_on", "args": {"target": ",".join(entities)}}
                  if len(entities) == 1 else None},
     )
