@@ -89,7 +89,7 @@ in its tasks and in Discoveries; this section is only where things stand.*
 - **F10 in progress on `feat/agent-catalogue`; deployed up to T10.5 on 2026-09-27**
   (schema 15). Next deploy brings migration 16.
 - **Next: F10** (D43–D61, ADR 0020), continuing
-  with T10.8 (T10.1–T10.7 done, T10.8's house state too; also Telegram formatting and progress messages).
+  with T10.9 (T10.1–T10.8 done, T10.8's house state too; also Telegram formatting and progress messages).
 - Open the PRs for the stack, in order, if the user asks. Each targets the branch
   below it, or everything goes to `main` one after another, whichever the user
   prefers.
@@ -837,7 +837,7 @@ Build order, one stage at a time:
       firing with [Undo] and [Switch this rule off], plus `/agendado` listing
       everything.
 - [x] **T10.7** The Satellite catalogue (D43, D56).
-- [ ] **T10.8** Note search by meaning (D52b). The house's state (D52c, `home_status`)
+- [x] **T10.8** Note search by meaning (D52b). The house's state (D52c, `home_status`)
       came with T10.6, because a Rule needs real entity ids.
 - [ ] **T10.9** The board: the header, author badges and the polish (D50, D51),
       showing chat Rules and Routines. Seen on screen.

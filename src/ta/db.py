@@ -20,7 +20,7 @@ from pathlib import Path
 
 log = logging.getLogger("ta")
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 # The states of a Note. Stored in English because the rest of the vocabulary is
 # (see CONTEXT.md); the translated labels live in the interface.
@@ -458,6 +458,19 @@ MIGRATIONS: list[tuple[int, str]] = [
             created_at      TEXT    NOT NULL,
             last_fired_at   TEXT,
             deleted_at      TEXT
+        );
+        """,
+    ),
+    (
+        17,
+        """
+        -- Notes by meaning (F10, D52b): one embedding per Note, computed the first
+        -- time a search needs it and again when its text changes (`sha`). The
+        -- same local model as the folder index (D36): nothing leaves the house.
+        CREATE TABLE note_vectors (
+            note_id  INTEGER PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
+            sha      TEXT    NOT NULL,
+            vector   BLOB    NOT NULL
         );
         """,
     ),

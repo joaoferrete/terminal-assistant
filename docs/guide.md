@@ -45,7 +45,9 @@ deadline is a task. A note with a time is a reminder. The bot reads dates in
 plain language ("sexta", "amanhã", "dia 10", "às 15h") and marks such as `!alta`,
 `#trabalho` and `@sexta`.
 
-- **Find:** "o que eu anotei sobre o carro?" (`notes_search`); "o que está
+- **Find:** "o que eu anotei sobre o carro?" (`notes_search`). It matches words
+  and meaning, so "aquela coisa do carro" finds "trocar o óleo" (with the `[rag]`
+  extra on the server, locally); "o que está
   vencido / pra hoje / pra semana?" (`notes_due`).
 - **Change:** "muda o texto da #12", "tira o prazo da #12", "põe prioridade
   alta" (`notes_edit`).

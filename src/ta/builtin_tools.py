@@ -6,6 +6,7 @@ invariant 9): the context it gets is already what the asker may see.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from dataclasses import dataclass
 from typing import Any
@@ -13,6 +14,8 @@ from typing import Any
 from . import memory, store
 from .members import Viewer
 from .tools import Source, ToolResult, Turn, tool
+
+log = logging.getLogger("ta.agent")
 
 
 @dataclass
@@ -35,12 +38,13 @@ def _quote(text: str) -> str:
 
 
 @tool(
-    description="Search the asker's notes (and the household's) for words. Use it "
-    "for questions about their own data: tasks, what they wrote down, deadlines.",
+    description="Search the asker's notes (and the household's) by words and by meaning. "
+    "Use it for questions about their own data: tasks, what they wrote down, deadlines.",
     args={"query": "the words to look for"},
 )
 async def notes_search(ctx: ToolContext, query: str) -> ToolResult:
     found = store.search_notes(ctx.conn, query, viewer=ctx.viewer)
+    found += [n for n in await _by_meaning(ctx, query) if n.id not in {f.id for f in found}]
     if not found:
         return ToolResult(text="no note matches")
     lines = [
@@ -56,6 +60,34 @@ async def notes_search(ctx: ToolContext, query: str) -> ToolResult:
         # asker did not write: it taints the turn (D27).
         tainted=any(n.owner_id != ctx.turn.member_id for n in found),
     )
+
+
+async def _by_meaning(ctx: ToolContext, query: str) -> list:
+    """Notes close in meaning (D52b): "aquela coisa do carro" finds "trocar o óleo",
+    which no shared word would. Only among the Notes the asker may see, with the
+    local model; without the `[rag]` extra this is simply empty."""
+    import asyncio
+
+    from . import rag
+
+    app = ctx.services.get("app")
+    embedder = ctx.services.get("embedder") or (getattr(app.state, "embedder", None)
+                                                if app else None)
+    if embedder is None or (not ctx.services.get("embedder") and not rag.available()):
+        return []
+    notes = store.list_notes(ctx.conn, viewer=ctx.viewer, include_done=True)
+    try:
+        stale = rag.stale_notes(ctx.conn, notes)
+        # Embedding is slow and runs in a thread; the writes stay on the loop's
+        # thread, which owns the connection (the lesson of T7.1).
+        if stale:
+            vectors = await asyncio.to_thread(embedder.embed, [n.text for n in stale])
+            rag.store_note_vectors(ctx.conn, stale, vectors)
+        [q] = await asyncio.to_thread(embedder.embed, [query])
+    except Exception:
+        log.exception("search by meaning failed; words only")
+        return []
+    return rag.closest_notes(ctx.conn, q, notes)
 
 
 @tool(
