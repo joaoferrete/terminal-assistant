@@ -87,7 +87,7 @@ in its tasks and in Discoveries; this section is only where things stand.*
   `ta-satellite`), `/conectar_agenda`, `/conectar_email`, a timer, and a
   scheduled light.
 - **Next: F10** (D43–D61, ADR 0020), built on `feat/agent-catalogue`, starting
-  with T10.1.
+  with T10.2 (T10.1 done).
 - Open the PRs for the stack, in order, if the user asks. Each targets the branch
   below it, or everything goes to `main` one after another, whichever the user
   prefers.
@@ -820,7 +820,7 @@ the guide with one example per area.
 
 Build order, one stage at a time:
 
-- [ ] **T10.1** Agent base: `MAX_STEPS` 8 (D44), honest Tool errors (D52a), Tiers
+- [x] **T10.1** Agent base: `MAX_STEPS` 8 (D44), honest Tool errors (D52a), Tiers
       (D53).
 - [ ] **T10.2** Parity Tools (D47): edit/status/delete/restore a note, calendar
       read and create, lists create and remove, board link, Satellite code,

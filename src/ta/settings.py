@@ -110,7 +110,8 @@ FIELDS: tuple[Field, ...] = (
 # Tables: edited as TOML text, one each. `restart` for those read only at boot.
 TABLES: dict[str, bool] = {
     "aliases": False, "groups": False, "sensors": False, "lists": True,
-    "members": False, "grants": False, "llm.tasks": True, "llm.prices": True,
+    "members": False, "grants": False, "llm.tasks": True, "llm.tiers": True,
+    "llm.prices": True,
 }
 
 
@@ -186,7 +187,7 @@ def _field_value(f: Field, raw):
 def _check_table(name: str, table: dict) -> None:
     """The same rules the daemon applies on read — but here they refuse, where the
     daemon would log and ignore: the page is where a mistake is cheapest to fix."""
-    from .config import SENSOR_ROLES
+    from .config import SENSOR_ROLES, TIERS, route_ok
     from .llm import TASKS
     from .providers import PROVIDER_NAMES
 
@@ -217,9 +218,11 @@ def _check_table(name: str, table: dict) -> None:
                     strings(value[k], f"{where}.{k}")
             if "admin" in value and not isinstance(value["admin"], bool):
                 raise Invalid(f"{where}.admin: true or false")
-        if name == "llm.tasks" and (key not in TASKS or value not in PROVIDER_NAMES):
-            raise Invalid(f"{where}: tasks are {', '.join(TASKS)}; providers "
-                          f"{', '.join(PROVIDER_NAMES)}")
+        if name == "llm.tasks" and (key not in TASKS or not route_ok(value, tier_allowed=True)):
+            raise Invalid(f"{where}: tasks are {', '.join(TASKS)}; a route is one of the providers "
+                          f"({', '.join(PROVIDER_NAMES)}), provider:model, lite or pro")
+        if name == "llm.tiers" and (key not in TIERS or not route_ok(value, tier_allowed=False)):
+            raise Invalid(f"{where}: tiers are {', '.join(TIERS)}; each is provider[:model]")
         numeric = isinstance(value, dict) and all(
             isinstance(value.get(k), int | float) for k in ("input", "output"))
         if name == "llm.prices" and not numeric:

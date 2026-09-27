@@ -11,7 +11,7 @@ import pytest
 from test_bot import FakeChannel, inbound
 
 from ta import db, memory, store
-from ta.agent import AgentStep
+from ta.agent import MAX_STEPS, AgentStep
 from ta.bot import AgentDeps, Bot
 from ta.builtin_tools import list_show, memory_search, notes_search  # noqa: F401 - registers
 from ta.grants import OWNER_PERMISSIONS
@@ -115,7 +115,7 @@ def test_a_model_outage_captures_the_message(make):
 
 
 def test_a_model_that_never_answers_captures_too(make):
-    b = make(*[call("list_show")] * 4)
+    b = make(*[call("list_show")] * MAX_STEPS)
     say(b, "algo")
     assert notes(make.conn) == ["algo"]
 
@@ -285,7 +285,7 @@ def test_notes_due_lists_what_is_overdue_with_sources(make):
 
 
 def test_the_last_step_tells_the_model_to_answer_now(make):
-    b = make(*[call("list_show")] * 3, answer("Não achei."))
+    b = make(*[call("list_show")] * (MAX_STEPS - 1), answer("Não achei."))
     assert say(b, "algo difícil") == "Não achei."
     assert "LAST step" in b.llm.prompts[-1][1]
     assert "LAST step" not in b.llm.prompts[0][1]
@@ -294,7 +294,7 @@ def test_the_last_step_tells_the_model_to_answer_now(make):
 def test_running_out_of_steps_is_not_reported_as_the_model_being_down(make):
     """The model was up and spent its steps; "the model is down" sent the user
     looking for the wrong problem."""
-    b = make(*[call("list_show")] * 4)
+    b = make(*[call("list_show")] * MAX_STEPS)
     out = say(b, "algo")
     assert "fora" not in out and "unavailable" not in out
     b2 = make(LLMUnavailable("down"))

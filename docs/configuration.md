@@ -120,6 +120,16 @@ fallback = "gemini"
 [llm.tasks]
 organize = "gemini"
 
+# Tiers (D53): which model each class of task gets. `pro` covers the chat (agent),
+# organize and priorities; `lite` covers the passes that run on every note or group
+# message (review_capture, classify, detect_event, digest_prose). The fallback
+# applies to both. Unset, every task uses the default provider's model. A line in
+# [llm.tasks] still wins for its task, and may name a Tier ("pro") or a
+# provider:model.
+[llm.tiers]
+lite = "deepseek:deepseek-flash"
+pro  = "deepseek:deepseek-v4-pro"
+
 # The Telegram username allowed to talk to the bot. It is only used once: the first
 # message from it binds that account's numeric id, and from then on the id is what
 # counts, so a changed or stolen username does not change who the bot obeys.

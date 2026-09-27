@@ -21,6 +21,7 @@ the language the model **answers** in, through a system instruction in one place
 from __future__ import annotations
 
 import contextlib
+import copy
 import functools
 import logging
 import os
@@ -49,6 +50,14 @@ DEFAULT_MODEL = GEMINI_DEFAULT_MODEL
 # The routable tasks, as `config.toml` names them under `[llm.tasks]`.
 TASKS = ("review_capture", "organize", "detect_event", "digest_prose", "priorities",
          "agent", "web_search", "classify")
+
+# The Tier each task deserves by default (D53). The conversation and the rare
+# tasks where quality shows are `pro`; the passes that run on every note or group
+# message are `lite`. web_search is not here: it is always the provider that can
+# ground in a search engine.
+TASK_TIERS = {"agent": "pro", "organize": "pro", "priorities": "pro",
+              "review_capture": "lite", "classify": "lite", "detect_event": "lite",
+              "digest_prose": "lite"}
 
 # Which task the current call belongs to. A context variable rather than an
 # argument to `_structured`, because tests subclass `LLM` and override
@@ -189,6 +198,7 @@ class LLM:
         default: str = "gemini",
         fallback: str | None = None,
         routes: dict[str, str] | None = None,
+        tiers: dict[str, str] | None = None,
     ) -> None:
         if providers is None:
             providers = {
@@ -198,13 +208,17 @@ class LLM:
         self.default = default
         self.fallback = fallback
         self.routes = routes or {}
+        self.tiers = tiers or {}
+        # "deepseek:deepseek-v4-pro" is the deepseek provider with another model;
+        # one copy per such route, made on first use.
+        self._variants: dict[str, Provider] = {}
         # Called with (provider, model, task, Usage) after every answered call.
         # The daemon points it at the usage table; nothing else needs to know.
         self.on_usage: Callable[[str, str, str, Usage], None] | None = None
 
     @classmethod
     def from_config(cls, cfg) -> LLM:
-        from .config import llm_routing
+        from .config import llm_routing, llm_tiers
 
         default, fallback, routes = llm_routing()
         return cls(
@@ -217,7 +231,25 @@ class LLM:
             default=default,
             fallback=fallback,
             routes=routes,
+            tiers=llm_tiers(),
         )
+
+    def _provider(self, route: str | None) -> Provider | None:
+        """A route → the provider that answers it: a Tier resolves to its model,
+        `provider:model` to that provider running that model."""
+        if not route:
+            return None
+        if route in TASK_TIERS.values():
+            route = self.tiers.get(route) or self.default
+        name, _, model = route.partition(":")
+        base = self.providers.get(name)
+        if base is None or not model or model == base.model:
+            return base
+        if route not in self._variants:
+            variant = copy.copy(base)
+            variant.model = model
+            self._variants[route] = variant
+        return self._variants[route]
 
     def chain(self, task: str | None = None) -> list[Provider]:
         """The providers that would be tried for `task`, in order.
@@ -226,10 +258,14 @@ class LLM:
         `GEMINI_API_KEY` set — every installation before DeepSeek existed — the
         DeepSeek default is passed over and Gemini answers, as it always did.
         """
-        names = [self.routes.get(task or "", self.default), self.fallback]
+        # An explicit route for the task wins; then the task's Tier, if one is
+        # configured; then the default. The fallback is the same for all.
+        tier = TASK_TIERS.get(task or "")
+        route = (self.routes.get(task or "")
+                 or (tier if tier in self.tiers else None)
+                 or self.default)
         seen: list[Provider] = []
-        for n in names:
-            p = self.providers.get(n) if n else None
+        for p in (self._provider(route), self._provider(self.fallback)):
             if p is not None and p.configured and p not in seen:
                 seen.append(p)
         return seen

@@ -34,7 +34,10 @@ from .tools import NeedsConfirmation, NotAllowed, Source, Tool, Turn
 
 log = logging.getLogger("ta.agent")
 
-MAX_STEPS = 4
+# D44: "find the bill in my email, put it on the calendar and remind me the day
+# before" is one request. The cost ceilings (D30) still bound a runaway turn, and
+# the last step always forces an answer.
+MAX_STEPS = 8
 
 
 class AgentStep(BaseModel):
@@ -155,6 +158,10 @@ async def respond(
     )
     by_name = {t_.name: t_ for t_ in available}
     steps: list[str] = []
+    # Calls that already failed, by tool and arguments. The first real "luz azul
+    # em 10%" failed three times in a row on the same bug: the model retried the
+    # identical call because all it saw was "failed (AttributeError)" (D52a).
+    failed: set[str] = set()
 
     for n in range(MAX_STEPS):
         last = n == MAX_STEPS - 1
@@ -185,6 +192,11 @@ async def respond(
             steps.append(f"- {step.tool}: unknown arguments {sorted(unknown)}")
             continue
 
+        signature = f"{chosen.name} {json.dumps(args, sort_keys=True, ensure_ascii=False)}"
+        if signature in failed:
+            steps.append(f"- {chosen.name}: this exact call already failed this turn. Do not "
+                         "try it again: answer the member with the reason, or try something else.")
+            continue
         first = len(turn.sources)
         try:
             result = await tools_mod.run(chosen, turn, ctx, args)
@@ -195,7 +207,8 @@ async def respond(
             continue
         except Exception as e:   # a Tool is somebody's code; it must not end the turn
             log.exception("tool %s failed", chosen.name)
-            steps.append(f"- {chosen.name}: failed ({type(e).__name__})")
+            failed.add(signature)
+            steps.append(f"- {chosen.name}: failed: {_reason(e)}")
             continue
         numbered = "".join(f" [S{i + 1}]" for i in range(first, len(turn.sources)))
         steps.append(f"- {chosen.name}({json.dumps(args, ensure_ascii=False)}) returned"
@@ -204,6 +217,20 @@ async def respond(
     log.warning("no answer within the step limit; steps: %s",
                 " | ".join(x.splitlines()[0] for x in steps))
     raise AgentFailed("no answer within the step limit", unavailable=False)
+
+
+def _reason(e: Exception) -> str:
+    """Why a Tool failed, readable by the model and safe to show: the message of
+    our own errors (Home Assistant's refusal, Gmail's status), which never hold a
+    token by construction (ChannelError, CalendarError, HomeError), and for anything
+    else only the kind of error — a bug's message can hold anything."""
+    from .actuators.home import HomeError
+    from .channel import ChannelError
+    from .sensors.google_calendar import CalendarError
+
+    if isinstance(e, HomeError | ChannelError | CalendarError):
+        return " ".join(str(e).split())[:300]
+    return f"an internal error ({type(e).__name__}) in the tool, not in the member's house"
 
 
 def _cited(sources: list[Source], cites: list[int]) -> list[Source]:
