@@ -211,6 +211,12 @@ async def run(t: Tool, turn: Turn, ctx, args: dict, *, confirmed: bool = False) 
         raise NotAllowed(f"{t.name} is not in your Grant")
     if t.changes_state and not confirmed and (t.destructive or turn.tainted):
         raise NeedsConfirmation(t, args)
+    # Every argument is described to the model as text, but the model sends
+    # numbers as numbers: the first real "luz azul em 10%" failed three times on
+    # `10 .strip()`. Scalars become text here, once, for every Tool; objects and
+    # lists (schedule_action's tool_args) pass as they are.
+    args = {k: str(v).lower() if isinstance(v, bool) else str(v)
+            if isinstance(v, (int, float)) else v for k, v in args.items()}
     result = await t.fn(ctx, **args)
     if t.third_party or result.tainted:
         turn.tainted = True

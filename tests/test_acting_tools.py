@@ -222,3 +222,17 @@ def test_home_on_with_a_colour_colours_the_lights_and_just_turns_on_the_rest(ctx
                                    }]
     run(c, "home_on", target="sala", color="blue")
     assert colored == [("light.sala", "blue")]
+
+
+@pytest.mark.parametrize("brightness", [10, "10", "10%", " 10 % "])
+def test_blue_at_ten_percent_whatever_form_the_model_sends(ctx, brightness):
+    """The first real request, "muda a luz pra azul em 10%", failed three times:
+    the model sent 10 as a number, and the Tool called `.strip()` on it."""
+    c, home = ctx()
+    colours = []
+
+    async def set_color(e, color, level=None):
+        colours.append((e, color, level))
+    home.set_color = set_color
+    run(c, "home_on", target="sala", color="blue", brightness=brightness)
+    assert colours == [("light.sala", "blue", 10)]

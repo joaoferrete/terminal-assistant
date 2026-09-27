@@ -147,11 +147,14 @@ async def home_on(ctx: ToolContext, target: str, brightness: str = "",
     entities = await _targets(ctx, target)
     if not entities:
         return ToolResult(text=f"nothing you may switch matches {target!r}")
-    level = int(brightness) if str(brightness).strip().isdigit() else 100
+    # "10%", "10", " 10 " all mean 10. "10%" used to fall through to 100: the
+    # opposite of what was asked, at full brightness.
+    digits = "".join(ch for ch in brightness if ch.isdigit())
+    level = max(1, min(100, int(digits))) if digits else 100
     for e in entities:
         if color.strip() and e.startswith("light."):
             # A plug in the same room just turns on; only lights take the colour.
-            await _home(ctx).set_color(e, color, level if brightness.strip() else None)
+            await _home(ctx).set_color(e, color, level if digits else None)
         else:
             await _home(ctx).switch_on(e, level)
     return ToolResult(
