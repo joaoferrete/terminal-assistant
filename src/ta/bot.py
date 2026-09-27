@@ -176,6 +176,8 @@ class Bot:
         # (member, day) pairs the Owner was already told about, so a spent budget
         # sends one message a day, not one per message.
         self._budget_told: set[tuple[int, str]] = set()
+        # (sender, day) pairs of strangers already answered and reported (D60).
+        self._strangers_told: set[tuple[str, str]] = set()
 
     def _recognise(self, msg: Inbound) -> tuple[int | None, bool]:
         """(member id, just paired). None is a stranger, answered with silence (D8).
@@ -221,6 +223,103 @@ class Bot:
         # that paired — the takeover D21 exists to refuse.
         return None, False
 
+    async def _stranger(self, msg: Inbound) -> None:
+        """Somebody not allowed, in private (D60, amending D8's silence).
+
+        One standard reply, which names neither the household nor the Owner, and
+        one message to the Owner with [Allow] and [Ignore] — each at most once per
+        person per day, so a stranger typing all day costs the Owner one ping.
+        """
+        if msg.callback is not None or not owner_paired(self.conn, msg.channel):
+            return
+        key = (msg.sender_id, datetime.now().date().isoformat())
+        if key in self._strangers_told:
+            return
+        self._strangers_told.add(key)
+        await self.channel.reply(msg, t("bot.stranger"))
+        owner = _identity_of(self.conn, msg.channel, OWNER_ID)
+        if owner is None or not hasattr(self.channel, "send"):
+            return
+        who = " ".join(x for x in (msg.sender_name, f"@{msg.sender_username}"
+                                   if msg.sender_username else None) if x) or msg.sender_id
+        rid = receipts.record(self.conn, channel=msg.channel, conversation_id=owner,
+                              message_id=None, member_id=OWNER_ID, tool="stranger",
+                              args={"username": msg.sender_username or ""}, state="pending",
+                              summary=f"stranger {who}")
+        snippet = " ".join((msg.text or "").split())[:80]
+        try:
+            await self.channel.send(owner, t("bot.stranger_owner", who=who, text=snippet),
+                                    [Button(t("bot.btn_allow"), f"allow:{rid}"),
+                                     Button(t("bot.btn_ignore"), f"no:{rid}")])
+        except ChannelError as e:
+            log.warning("could not tell the owner about a stranger: %s", e)
+
+    async def _allow_stranger(self, msg: Inbound, r) -> None:
+        """[Allow] on a stranger: pick the Grant, then D59's confirmed add."""
+        from .config import grants_config
+
+        username = r.args.get("username") or ""
+        receipts.set_state(self.conn, r.id, "done")
+        if not username:
+            await self.channel.answered(msg)
+            await self._say(msg, t("bot.stranger_no_username"))
+            return
+        _, grants = grants_config()
+        buttons = []
+        for grant in [*sorted(grants), ""]:
+            rid = self._receipt(msg, OWNER_ID, tool="member_add",
+                                args={"username": username, "grant": grant}, state="pending",
+                                summary=f"allow @{username} as {grant or 'notes only'}")
+            buttons.append(Button(grant or t("bot.no_grant"), f"ok:{rid}"))
+        await self.channel.answered(msg)
+        await self._say(msg, t("bot.pick_grant", who=f"@{username}"), buttons)
+
+    def last_talked(self) -> dict[str, str]:
+        """handle → when that Member last wrote to the bot (from the chat memory)."""
+        rows = self.conn.execute(
+            "SELECT m.handle, MAX(x.at) FROM messages x JOIN members m ON m.id = x.member_id"
+            " GROUP BY m.handle").fetchall()
+        return {h: at for h, at in rows if h}
+
+    def _members_text(self) -> str:
+        """`/moradores`: who may use the bot, and when they last talked (D61)."""
+        from .config import grants_config
+
+        invited, _ = grants_config()
+        if not invited:
+            return t("bot.members_none")
+        last = self.last_talked()
+
+        def when(handle: str) -> str:
+            at = last.get(handle)
+            return (t("bot.last_talked", at=datetime.fromisoformat(at).strftime("%d/%m %H:%M"))
+                    if at else t("bot.never_talked"))
+
+        return "\n".join([t("bot.members_title"), *(
+            f"• @{h} — {', '.join(g) or t('bot.no_grant')} · {when(h)}"
+            for h, g in sorted(invited.items()))])
+
+    def _hub(self):
+        services = self.agent.services if self.agent else {}
+        app = services.get("app")
+        return services.get("hub") or (getattr(app.state, "hub", None) if app else None)
+
+    def _satellites_text(self, member_id: int) -> str:
+        """`/satellites`: the computers connected, and whether they are on now.
+        The Owner sees every Member's; everyone else sees their own."""
+        hub = self._hub()
+        rows = hub.machines(None if member_id == OWNER_ID else member_id) if hub else []
+        if not rows:
+            return t("bot.satellites_none")
+        names = {m.id: m.handle for m in members_mod.all_members(self.conn)}
+        lines = [t("bot.satellites_title")]
+        for r in rows:
+            seen = datetime.fromtimestamp(r["last_seen"]).strftime("%d/%m %H:%M")
+            state = t("bot.satellite_on") if r["online"] else t("bot.satellite_off", at=seen)
+            owner = f" (@{names.get(r['member_id'], '?')})" if member_id == OWNER_ID else ""
+            lines.append(f"• {r['machine']}{owner} — {state}")
+        return "\n".join(lines)
+
     async def _tell_owner(self, msg: Inbound, text: str) -> None:
         """A private note to the Owner. Their private chat id is their user id."""
         owner = _identity_of(self.conn, msg.channel, OWNER_ID)
@@ -238,6 +337,7 @@ class Bot:
             return
         member_id, just_paired = self._recognise(msg)
         if member_id is None:
+            await self._stranger(msg)
             return
         if msg.callback is not None:
             await self._button(msg, member_id)
@@ -280,6 +380,10 @@ class Bot:
             elif command in ("/help", "/ajuda"):
                 # From the catalogue, with no model: the cheapest answer there is.
                 await self.channel.reply(msg, t("bot.help"))
+            elif command in ("/moradores", "/members") and member_id == OWNER_ID:
+                await self.channel.reply(msg, self._members_text())
+            elif command in ("/satellites", "/computadores"):
+                await self.channel.reply(msg, self._satellites_text(member_id))
             elif command in ("/agendado", "/scheduled"):
                 await self.channel.reply(msg, self._scheduled_text(member_id))
             elif command == "/board":
@@ -680,6 +784,8 @@ class Bot:
                 await self.channel.answered(msg, t("bot.stale"))
                 return
             await self.channel.answered(msg, answer)
+        elif kind == "allow" and r.state == "pending" and r.tool == "stranger":
+            await self._allow_stranger(msg, r)
         elif kind == "no" and r.state == "pending":
             receipts.set_state(self.conn, r.id, "refused")
             await self.channel.answered(msg, t("bot.cancelled"))
@@ -781,7 +887,15 @@ class Bot:
     def menu(self) -> list[tuple[str, str]]:
         """The `/` menu Telegram shows (D61), in the installation's language."""
         return [(c, t(f"bot.menu_{c}")) for c in
-                ("help", "board", "agendado", "conectar_agenda", "conectar_email", "satellite")]
+                ("help", "board", "agendado", "conectar_agenda", "conectar_email", "satellite",
+                 "satellites")]
+
+    def owner_menu(self) -> list[tuple[str, str]]:
+        """The Owner's own menu: everyone's, plus `/moradores`."""
+        return [*self.menu(), ("moradores", t("bot.menu_moradores"))]
+
+    def owner_chat(self) -> str | None:
+        return _identity_of(self.conn, self.channel.name, OWNER_ID)
 
     # ── Reminders on the chat (F9) ──────────────────────────────────────────
     async def remind(self, note, late: str = "") -> bool:

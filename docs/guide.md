@@ -189,6 +189,10 @@ A **Satellite** is your own computer connected to the server.
   folders = ["~/notas"]
   ```
 
+"Quais computadores estão conectados?" or `/satellites` (`satellites_list`) shows
+each computer by name, whether it is on now, and when it was last seen. The owner
+sees everyone's.
+
 Hidden files and anything named like a secret never leave the computer. Each
 person reaches only their own computer.
 
@@ -246,8 +250,19 @@ init` or on the board.
 
 The bot answers only people the owner allowed.
 
-**To allow someone:** they need a Telegram **@username** (Settings → Username).
-Then the owner adds them on the config page (Members) or in `config.toml`:
+**To allow someone from the chat** (owner only): "libera o bot pra @ana como
+morador" (`member_add`), "tira o acesso da Ana" (`member_remove`), "quem usa o
+bot?" (`members_list`, or `/moradores`, which also shows when each person last
+talked to the bot). It always asks you to confirm, and it
+applies at once with no restart. It can only give an existing Grant. What a Grant
+allows, and `admin`, are set on the config page.
+
+When someone who is not allowed messages the bot, they get a polite "no access"
+reply, and you get a message with [Allow] and [Ignore], at most once per person
+per day.
+
+**Or by the config:** they need a Telegram **@username** (Settings → Username).
+The owner adds them on the config page (Members) or in `config.toml`:
 
 ```toml
 [members.ana_silva]
@@ -348,6 +363,8 @@ Telegram shows the menu.
 | `/conectar_agenda` | connect Google Calendar |
 | `/conectar_email` | connect Gmail |
 | `/satellite` | a code to pair a computer |
+| `/satellites` | your connected computers, and whether they are on now |
+| `/moradores` | who may use the bot, and when each last talked (owner only) |
 
 ## When something does not work
 

@@ -16,6 +16,7 @@ from ta import config as cfg_mod
 from ta import members as members_mod
 from ta.bot import Bot
 from ta.grants import Grant, Permissions
+from ta.i18n import t
 
 GROUPS = {"luz": ("light.",), "tudo": ("light.", "switch.")}
 DEFINED = {
@@ -161,7 +162,7 @@ class TellingChannel(FakeChannel):
         super().__init__()
         self.told = []
 
-    async def send(self, conversation_id, text):
+    async def send(self, conversation_id, text, buttons=None):
         self.told.append((conversation_id, text))
 
 
@@ -198,7 +199,8 @@ def test_removing_a_member_from_the_config_revokes_them(house_bot):
     b.invited_set.clear()
     sent = len(b.channel.sent)
     asyncio.run(b.handle(inbound("ainda aqui?", sender_id="2002", username="ana")))
-    assert len(b.channel.sent) == sent and b.captured[-1][0] == "oi"
+    # Revoked is a stranger again: the standard reply once (D60), nothing captured.
+    assert b.channel.sent[sent:] == [t("bot.stranger")] and b.captured[-1][0] == "oi"
 
 
 def test_an_invited_username_taken_over_after_pairing_gets_nobody(house_bot):

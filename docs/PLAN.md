@@ -87,7 +87,7 @@ in its tasks and in Discoveries; this section is only where things stand.*
   `ta-satellite`), `/conectar_agenda`, `/conectar_email`, a timer, and a
   scheduled light.
 - **Next: F10** (D43–D61, ADR 0020), built on `feat/agent-catalogue`, starting
-  with T10.4 (T10.1–T10.3 done; also Telegram formatting and progress messages).
+  with T10.5 (T10.1–T10.4 done; also Telegram formatting and progress messages).
 - Open the PRs for the stack, in order, if the user asks. Each targets the branch
   below it, or everything goes to `main` one after another, whichever the user
   prefers.
@@ -827,7 +827,9 @@ Build order, one stage at a time:
       connect calendar/email, rules/priorities/trash reads, media and ring light.
 - [x] **T10.3** `docs/guide.md`, the `help` Tool, `/help`, the `/` menu (D48, D49,
       D61, D52e), the AGENTS rule, and the test that keeps the guide complete.
-- [ ] **T10.4** Strangers (D60) and invitations from the chat (D59), `/moradores`.
+- [x] **T10.4** Strangers (D60) and invitations from the chat (D59), `/moradores`
+      (with each Member's last conversation), and `/satellites` (each computer by name,
+      on or off now), asked by the user during the build.
 - [ ] **T10.5** Routines (D57, D58).
 - [ ] **T10.6** Chat Rules (D46, D54, D45): the store, triggers, conditions,
       firing with [Undo] and [Switch this rule off], plus `/agendado` listing
@@ -909,3 +911,5 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T9.7 | **A privacy leak, in production since F3.** `_fire_reminders` sent every Member's Reminder to the Owner's desktop (the Satellite's notifier), read it aloud on the house speakers, and passed it to the Owner's Rules. A housemate's "ligar pro médico" would have popped up on the Owner's laptop. Nobody else used the bot yet, so nothing leaked | The desktop, the speakers and the Rules get only the Owner's Reminders. Every Reminder also goes to its writer's private chat. Tested with two Members |
 | 2026-09-26 | T9.7 | The parser had no relative times, so "daqui 10 min" was captured with no reminder at all, silently | `_nl_delay` in both languages, only after a lead-in ("daqui", "em", "timer de", "in"), so "leva 10 min" stays a duration. The capture reply now says when it will ring, so a misread shows at once |
 | 2026-09-26 | T5.2 | The review's "#12 reviewed: event created: Dentista" went to the Owner's desktop for every Member's Note, the same leak T9.7 found in the Reminders | Only the Owner's Notes are announced on the desktop. A created event is announced in its writer's private chat, with [Undo], which deletes it through `calendar.events` |
+| 2026-09-27 | T10.4 | The Hub knew a Satellite only by its Member, so two computers of the same person were one, and `/satellites` could not name them. The catalogue (T10.7) will need to say which computer to act on | The Satellite sends its hostname in `X-Satellite-Name`, and the Hub keeps each computer's last poll. An older Satellite sends nothing and is not listed by name until it is restarted |
+| 2026-09-27 | T10.4 | Tests pinned D8's silence towards strangers | Updated to D60: one standard reply a day, nothing captured. Before an Owner is paired, a stranger still gets silence, because there is nobody to tell |

@@ -163,6 +163,8 @@ class TelegramChannel:
             reply_to_message_id=(str(msg["reply_to_message"]["message_id"])
                                  if msg.get("reply_to_message") else None),
             mentioned=mentioned,
+            sender_name=" ".join(x for x in (sender.get("first_name"), sender.get("last_name"))
+                                 if x) or None,
         )
 
     async def run(self, handler: Handler) -> None:
@@ -240,10 +242,14 @@ class TelegramChannel:
             log.info("telegram refused the formatting; sending plain: %s", e)
             return await self._call("sendMessage", payload)
 
-    async def set_commands(self, commands: list[tuple[str, str]]) -> None:
-        """The menu Telegram shows when a person types `/` (D61)."""
-        await self._call("setMyCommands", {"commands": [
-            {"command": c, "description": d} for c, d in commands]})
+    async def set_commands(self, commands: list[tuple[str, str]],
+                           chat_id: str | None = None) -> None:
+        """The menu Telegram shows when a person types `/` (D61); for one chat
+        only when `chat_id` is given."""
+        payload: dict = {"commands": [{"command": c, "description": d} for c, d in commands]}
+        if chat_id is not None:
+            payload["scope"] = {"type": "chat", "chat_id": int(chat_id)}
+        await self._call("setMyCommands", payload)
 
     async def send_document(self, conversation_id: str, filename: str, data: bytes,
                             caption: str = "") -> str | None:

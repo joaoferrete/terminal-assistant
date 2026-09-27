@@ -44,6 +44,9 @@ class Inbound:
     # In a group: the bot was @mentioned, or this replies to one of its messages.
     # Only then is a group message addressed to the bot (T4.6).
     mentioned: bool = False
+    # The display name ("Joana Silva"), only to tell the Owner who knocked (D60).
+    # Never an identity: anyone can call themselves anything.
+    sender_name: str | None = None
 
 
 @dataclass(frozen=True)

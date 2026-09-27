@@ -414,3 +414,105 @@ async def help_(ctx: ToolContext, topic: str = "") -> ToolResult:
         return ToolResult(text="Topics: " + "; ".join(secs))
     title, body = found
     return ToolResult(text=f"## {title}\n{body}")
+
+
+# ── Members, from the Owner's chat (D59) ────────────────────────────────────
+def _owner_only(ctx: ToolContext) -> str | None:
+    from . import members as members_mod
+
+    member = members_mod.get(ctx.conn, ctx.turn.member_id)
+    if member is None or not member.is_owner or ctx.turn.in_group:
+        return "only the owner, in a private chat, manages who uses the bot"
+    return None
+
+
+@tool(
+    description="List who may use the bot and with which permission (Grant), and the "
+    "Grants that exist. Owner only.",
+    grant="admin",
+)
+async def members_list(ctx: ToolContext) -> ToolResult:
+    from .config import grants_config
+
+    if (why := _owner_only(ctx)) is not None:
+        return ToolResult(text=why)
+    invited, grants = grants_config()
+    last = dict(ctx.conn.execute(
+        "SELECT m.handle, MAX(x.at) FROM messages x JOIN members m ON m.id = x.member_id"
+        " GROUP BY m.handle").fetchall())
+    lines = [f"@{h}: {', '.join(g) or 'no Grant (notes only)'}; last talked "
+             f"{last.get(h, 'never')}" for h, g in sorted(invited.items())]
+    return ToolResult(text=("\n".join(lines) or "nobody besides the owner")
+                      + f"\nGrants that exist: {', '.join(sorted(grants)) or 'none'}")
+
+
+@tool(
+    description="Allow a person to use the bot, by Telegram @username, with an EXISTING "
+    "Grant (see members_list). Owner only; always asks the owner to confirm. Creating "
+    "or changing what a Grant allows is done on the config page: explain with help.",
+    args={"username": "their Telegram @username", "grant": "an existing Grant, or empty for "
+          "none (they can only take notes)"},
+    grant="admin",
+    destructive=True,          # "always confirm", as D59 asks; it is reversible
+)
+async def member_add(ctx: ToolContext, username: str, grant: str = "") -> ToolResult:
+    return await _set_member(ctx, username, [grant.strip()] if grant.strip() else [])
+
+
+@tool(
+    description="Take away a person's access to the bot. Their notes stay theirs. Owner "
+    "only; always asks the owner to confirm.",
+    args={"username": "their Telegram @username"},
+    grant="admin",
+    destructive=True,
+)
+async def member_remove(ctx: ToolContext, username: str) -> ToolResult:
+    return await _set_member(ctx, username, None)
+
+
+async def _set_member(ctx: ToolContext, username: str, grants: list[str] | None) -> ToolResult:
+    from . import config as cfg_mod
+    from . import members as members_mod
+    from . import settings
+
+    if (why := _owner_only(ctx)) is not None:
+        return ToolResult(text=why)
+    handle = username.strip().lstrip("@").lower()
+    try:
+        settings.set_member(cfg_mod.config_file(), handle, grants)
+    except settings.Invalid as e:
+        return ToolResult(text=f"not changed: {e}")
+    # Applies now, with no restart: the config is read again, and a new Member
+    # gets their row so the first message pairs them.
+    cfg_mod._user_config.cache_clear()
+    if grants is not None:
+        members_mod.sync(ctx.conn, owner=None, invited=[handle])
+        return ToolResult(
+            text=f"@{handle} may use the bot now ({', '.join(grants) or 'notes only'}); they "
+                 "send it any message to connect, and the owner is told",
+            receipt={"summary": f"allowed @{handle}",
+                     "undo": {"tool": "member_remove", "args": {"username": handle}}})
+    return ToolResult(text=f"@{handle} no longer has access; their notes stay theirs",
+                      receipt={"summary": f"removed @{handle}"})
+
+
+@tool(
+    description="List the computers (Satellites) connected to the server and whether each is "
+    "on right now. The owner sees everyone's; others see their own.",
+)
+async def satellites_list(ctx: ToolContext) -> ToolResult:
+    from . import members as members_mod
+
+    app = ctx.services.get("app")
+    hub = ctx.services.get("hub") or (getattr(app.state, "hub", None) if app else None)
+    member = members_mod.get(ctx.conn, ctx.turn.member_id)
+    everyone = bool(member and member.is_owner)
+    rows = hub.machines(None if everyone else ctx.turn.member_id) if hub else []
+    if not rows:
+        return ToolResult(text="no computer has connected since the server started")
+    names = {m.id: m.handle for m in members_mod.all_members(ctx.conn)}
+    return ToolResult(text="\n".join(
+        f"{r['machine']}" + (f" (@{names.get(r['member_id'], '?')})" if everyone else "")
+        + (" — on now" if r["online"] else
+           f" — off, last seen {datetime.fromtimestamp(r['last_seen']):%Y-%m-%d %H:%M}")
+        for r in rows))

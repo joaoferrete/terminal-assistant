@@ -525,6 +525,10 @@ async def _publish_menu(app: Starlette) -> None:
         return
     try:
         await set_commands(app.state.bot.menu())
+        # The Owner's chat gets its own menu, with /moradores (Telegram scopes a
+        # menu per chat, so housemates never see an entry they cannot use).
+        if (owner := app.state.bot.owner_chat()) is not None:
+            await set_commands(app.state.bot.owner_menu(), chat_id=owner)
     except Exception as e:
         log.warning("could not publish the command menu: %s", e)
 
@@ -995,7 +999,10 @@ async def satellite_signal(request: Request) -> JSONResponse:
 async def satellite_actions(request: Request) -> JSONResponse:
     """Long poll: the actions waiting for this Member's Satellite (T6.3)."""
     wait = min(float(request.query_params.get("wait", 25)), 50)
-    actions = await request.app.state.hub.next(_viewer(request).member_id, wait)
+    # The laptop names itself (hostname) so `/satellites` can tell two apart. An
+    # older Satellite sends nothing and is simply not listed by name.
+    machine = (request.headers.get("x-satellite-name") or "").strip()[:64] or None
+    actions = await request.app.state.hub.next(_viewer(request).member_id, wait, machine)
     return JSONResponse({"actions": actions})
 
 

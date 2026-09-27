@@ -265,6 +265,40 @@ def write(path: Path, changes: dict, *, now: datetime | None = None) -> Path | N
     return backup
 
 
+def set_member(path: Path, handle: str, grants: list[str] | None, *,
+               now: datetime | None = None) -> Path | None:
+    """Add a Member with existing Grants, or remove one (`grants=None`) — the one
+    config change the Owner may make from the chat (D59). Same guarantees as the
+    page: validated, backed up, comments kept. A Grant that does not exist is
+    refused: creating what a Grant allows stays behind the page's two factors.
+    """
+    doc = tomlkit.parse(path.read_text()) if path.exists() else tomlkit.document()
+    handle = handle.strip().lstrip("@").lower()
+    if not handle or not all(c.isalnum() or c == "_" for c in handle):
+        raise Invalid(f"{handle!r} is not a Telegram username")
+    members = doc.get("members")
+    if grants is None:
+        if members is None or handle not in members:
+            raise Invalid(f"@{handle} is not a member")
+        del members[handle]
+    else:
+        known = set((doc.get("grants") or {}).keys())
+        unknown = [g for g in grants if g not in known]
+        if unknown:
+            raise Invalid(f"no such Grant: {', '.join(unknown)}; they are "
+                          f"{', '.join(sorted(known)) or 'none yet'}")
+        if members is None:
+            members = tomlkit.table(is_super_table=True)
+            doc["members"] = members
+        entry = tomlkit.table()
+        entry["grants"] = list(grants)
+        members[handle] = entry
+    _check_table("members", doc.get("members", {}).unwrap() if doc.get("members") else {})
+    backup = _backup(path, now)
+    _atomic_write(path, tomlkit.dumps(doc), mode=0o644)
+    return backup
+
+
 # ── .env ────────────────────────────────────────────────────────────────────
 ENV_FIELDS: dict[str, bool] = {      # name → applies only after a restart
     "TA_HOST": True, "TA_PORT": True, "TA_PUBLIC_URL": False, "HA_URL": True,

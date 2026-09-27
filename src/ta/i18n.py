@@ -517,6 +517,41 @@ MESSAGES: dict[str, dict[str, str]] = {
                                  "en": "connect Google Calendar"},
     "bot.menu_conectar_email": {"pt": "conectar o Gmail", "en": "connect Gmail"},
     "bot.menu_satellite": {"pt": "parear um computador", "en": "pair a computer"},
+    "bot.menu_moradores": {"pt": "quem usa o bot", "en": "who uses the bot"},
+    "bot.members_title": {"pt": "👥 Quem pode usar o bot:", "en": "👥 Who may use the bot:"},
+    "bot.members_none": {"pt": "Só você, por enquanto. Pra liberar alguém: “libera o bot pra "
+                               "@fulano”.",
+                         "en": "Only you, for now. To allow someone: “allow @someone”."},
+    "bot.no_grant": {"pt": "só notas", "en": "notes only"},
+    "bot.last_talked": {"pt": "falou {at}", "en": "last talked {at}"},
+    "bot.never_talked": {"pt": "ainda não falou", "en": "has not talked yet"},
+    "bot.menu_satellites": {"pt": "computadores conectados", "en": "connected computers"},
+    "bot.satellites_title": {"pt": "💻 Computadores:", "en": "💻 Computers:"},
+    "bot.satellites_none": {
+        "pt": "Nenhum computador conectado desde que o servidor ligou. Pra parear um: /satellite",
+        "en": "No computer connected since the server started. To pair one: /satellite",
+    },
+    "bot.satellite_on": {"pt": "🟢 ligado", "en": "🟢 on"},
+    "bot.satellite_off": {"pt": "⚪ desligado (visto {at})", "en": "⚪ off (seen {at})"},
+    # Strangers (D60).
+    "bot.stranger": {
+        "pt": "Oi! Este é um assistente particular e você ainda não tem acesso. Peça para "
+              "quem cuida dele te liberar.",
+        "en": "Hi! This is a private assistant and you do not have access yet. Ask whoever "
+              "runs it to let you in.",
+    },
+    "bot.stranger_owner": {"pt": "🚪 {who} tentou usar o bot: “{text}”",
+                           "en": "🚪 {who} tried to use the bot: “{text}”"},
+    "bot.btn_allow": {"pt": "Liberar", "en": "Allow"},
+    "bot.btn_ignore": {"pt": "Ignorar", "en": "Ignore"},
+    "bot.stranger_no_username": {
+        "pt": "Essa pessoa não tem @username no Telegram, e é por ele que o bot libera. Peça "
+              "para ela criar um (Configurações → Nome de usuário) e falar com o bot de novo.",
+        "en": "This person has no Telegram @username, which is how the bot allows people. Ask "
+              "them to set one (Settings → Username) and message the bot again.",
+    },
+    "bot.pick_grant": {"pt": "Liberar {who} com qual permissão?",
+                       "en": "Allow {who} with which permission?"},
     # Said before a Tool that takes seconds (F10). Written here, not by the model.
     "progress.generic": {"pt": "⏳ Um instante, já volto…", "en": "⏳ One moment…"},
     "progress.web_search": {"pt": "🔎 Pesquisando na internet…", "en": "🔎 Searching the web…"},

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 
 import httpx
 
@@ -44,7 +45,9 @@ class Satellite:
         token = cfg.credential()
         self.http = httpx.AsyncClient(
             base_url=cfg.server, timeout=POLL_WAIT + 10, transport=transport,
-            headers={"Authorization": f"Bearer {token}"} if token else {})
+            headers={**({"Authorization": f"Bearer {token}"} if token else {}),
+                     # Which computer this is, for `/satellites` (F10).
+                     "X-Satellite-Name": socket.gethostname()[:64]})
 
     async def on_mic(self, active: bool, apps: list[str]) -> None:
         try:

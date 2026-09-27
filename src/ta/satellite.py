@@ -33,12 +33,26 @@ class Hub:
         self._queues: dict[int, asyncio.Queue] = defaultdict(
             lambda: asyncio.Queue(maxsize=MAX_QUEUED))
         self._seen: dict[int, float] = {}
+        self._machines: dict[tuple[int, str], tuple[float, float]] = {}
         # Questions waiting for a Satellite's answer (F9, D41): id → (member, future).
         self._pending: dict[str, tuple[int, asyncio.Future]] = {}
         self._ids = itertools.count(1)
 
-    def seen(self, member_id: int) -> None:
+    def seen(self, member_id: int, machine: str | None = None) -> None:
         self._seen[member_id] = time.monotonic()
+        if machine:
+            # Per computer, for `/satellites` (F10): a Member may pair two, and
+            # the catalogue will need to say which one to act on.
+            self._machines[(member_id, machine)] = (time.monotonic(), time.time())
+
+    def machines(self, member_id: int | None = None) -> list[dict]:
+        """The computers seen since the server started: whose, their name,
+        whether they are connected now, and when they were last seen."""
+        now = time.monotonic()
+        return [{"member_id": m, "machine": name, "online": now - mono < SEEN_FOR,
+                 "last_seen": wall}
+                for (m, name), (mono, wall) in sorted(self._machines.items())
+                if member_id is None or m == member_id]
 
     def connected(self, member_id: int) -> bool:
         return time.monotonic() - self._seen.get(member_id, -SEEN_FOR * 2) < SEEN_FOR
@@ -49,9 +63,9 @@ class Hub:
             q.get_nowait()        # drop the oldest
         q.put_nowait(action)
 
-    async def next(self, member_id: int, wait: float) -> list[dict]:
+    async def next(self, member_id: int, wait: float, machine: str | None = None) -> list[dict]:
         """Everything queued for the Member, waiting up to `wait` for the first."""
-        self.seen(member_id)
+        self.seen(member_id, machine)
         q = self._queues[member_id]
         try:
             first = await asyncio.wait_for(q.get(), timeout=wait)
@@ -60,7 +74,7 @@ class Hub:
         actions = [first]
         while not q.empty():
             actions.append(q.get_nowait())
-        self.seen(member_id)
+        self.seen(member_id, machine)
         return actions
 
 
