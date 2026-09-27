@@ -459,6 +459,16 @@ class Bot:
                                conversation_id=msg.conversation_id,
                                message_id=msg.message_id, member_id=member_id, **kw)
 
+    def _chat_services(self, msg: Inbound) -> dict:
+        """What only the bot has, for the Tools (D47, D48): the message, a way to
+        send into this conversation, and the things the commands hand out."""
+        async def say(text: str) -> None:
+            await self._say(msg, text)
+
+        return {"message": msg, "say": say, "board_link": self.board_link,
+                "satellite_code": self.satellite_code, "calendar_link": self.calendar_link,
+                "mail_link": self.mail_link}
+
     @staticmethod
     def _undo_button(rid: int, undo: dict) -> Button:
         # Undoing a schedule is cancelling it, and the button should say so: a
@@ -497,7 +507,7 @@ class Bot:
         turn = Turn(member_id=member_id, conversation_id=msg.conversation_id,
                     in_group=not msg.private, permissions=deps.permissions(member_id))
         ctx = ToolContext(conn=self.conn, turn=turn, channel=msg.channel,
-                          services={**deps.services, "message": msg})
+                          services={**deps.services, **self._chat_services(msg)})
         available = [t_ for t_ in deps.registry().values() if allowed(t_, turn)]
         about = None
         if msg.reply_to_message_id:
@@ -678,7 +688,7 @@ class Bot:
                     permissions=self.agent.permissions(member_id) if self.agent else None)
         ctx = ToolContext(conn=self.conn, turn=turn, channel=msg.channel,
                           services={**(self.agent.services if self.agent else {}),
-                                    "message": msg})
+                                    **self._chat_services(msg)})
         return turn, ctx
 
     async def _confirmed(self, msg: Inbound, member_id: int, r) -> None:
@@ -709,7 +719,12 @@ class Bot:
 
     async def _undo(self, msg: Inbound, member_id: int, r) -> None:
         u = r.undo or {}
-        if u.get("kind") == "reopen_notes":
+        if u.get("kind") == "delete_calendar_event":
+            build = (self.agent.services if self.agent else {}).get("calendar")
+            cal = build(member_id) if build else None
+            if cal is not None and hasattr(cal, "delete_event"):
+                await asyncio.to_thread(cal.delete_event, u["source_uid"], u["uid"])
+        elif u.get("kind") == "reopen_notes":
             viewer = members_mod.Viewer(member_id)
             for note_id in u.get("ids", []):
                 try:

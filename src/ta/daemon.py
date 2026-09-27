@@ -437,6 +437,8 @@ def _agent_deps(app: Starlette) -> AgentDeps:
                 app, raw, owner_id=owner_id, list_id=list_id),
             "digest": lambda member_id: _build_digest(app, member_id),
             "delete_event": lambda member_id, note_id: _delete_event(app, member_id, note_id),
+            "calendar": lambda member_id: _calendar_for(app, member_id),
+            "file_rules": lambda: app.state.rules,
             "mail": lambda member_id: gmail_mod.Gmail(
                 member_id, app.state.google_mail, app.state.mail_tokens),
         },
