@@ -193,6 +193,25 @@ A **Satellite** is your own computer connected to the server.
   folders = ["~/notas"]
   ```
 
+- **Control it:** "bloqueia a tela", "abaixa o volume", "volume 30", "pausa a
+  música", "abre o firefox", "abre o youtube.com" (`computer_act`). "Tira um
+  print da tela" (sent only to you), "suspende o notebook", and your own scripts
+  always ask for your button first (`computer_confirmed`). "O que você consegue
+  fazer no meu computador?" lists what that computer offers (`computer_actions`).
+  Scripts are listed on the computer, by name, and the bot never passes them
+  arguments. A script marked `safe = true` runs without asking:
+
+  ```toml
+  [satellite.scripts.backup]
+  run = "~/bin/backup.sh"
+  description = "backs up the photos to the external disk"
+  safe = false
+  ```
+
+  Each computer offers only what it can do: volume needs `wpctl`, and a
+  screenshot needs `gnome-screenshot` or `grim` installed there. With two
+  computers on, say which one ("bloqueia o desktop").
+
 "Quais computadores estão conectados?" or `/satellites` (`satellites_list`) shows
 each computer by name, whether it is on now, and when it was last seen. The owner
 sees everyone's. A phone is not a Satellite: phones talk to the bot through

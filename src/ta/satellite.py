@@ -30,12 +30,14 @@ MAX_QUEUED = 50
 
 class Hub:
     def __init__(self) -> None:
-        self._queues: dict[int, asyncio.Queue] = defaultdict(
+        self._queues: dict[int | tuple[int, str], asyncio.Queue] = defaultdict(
             lambda: asyncio.Queue(maxsize=MAX_QUEUED))
         self._seen: dict[int, float] = {}
         self._machines: dict[tuple[int, str], tuple[float, float]] = {}
         # Questions waiting for a Satellite's answer (F9, D41): id → (member, future).
         self._pending: dict[str, tuple[int, asyncio.Future]] = {}
+        # Set on every push, so pollers of any queue wake and look at theirs.
+        self._arrived = asyncio.Event()
         self._ids = itertools.count(1)
 
     def seen(self, member_id: int, machine: str | None = None) -> None:
@@ -57,28 +59,47 @@ class Hub:
     def connected(self, member_id: int) -> bool:
         return time.monotonic() - self._seen.get(member_id, -SEEN_FOR * 2) < SEEN_FOR
 
-    def push(self, member_id: int, action: dict) -> None:
-        q = self._queues[member_id]
+    def push(self, member_id: int, action: dict, machine: str | None = None) -> None:
+        """Queue an action for any of the Member's computers, or for one by name
+        (F10: "lock my desktop" must not be taken by the laptop)."""
+        q = self._queues[(member_id, machine) if machine else member_id]
         if q.full():
             q.get_nowait()        # drop the oldest
         q.put_nowait(action)
+        self._arrived.set()
 
     async def next(self, member_id: int, wait: float, machine: str | None = None) -> list[dict]:
-        """Everything queued for the Member, waiting up to `wait` for the first."""
+        """Everything queued for the Member (and for this computer, by name),
+        waiting up to `wait` for the first."""
         self.seen(member_id, machine)
-        q = self._queues[member_id]
-        try:
-            first = await asyncio.wait_for(q.get(), timeout=wait)
-        except TimeoutError:
-            return []
-        actions = [first]
-        while not q.empty():
-            actions.append(q.get_nowait())
+        queues = [self._queues[member_id]]
+        if machine:
+            queues.append(self._queues[(member_id, machine)])
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + wait
+        while True:
+            # Cleared BEFORE looking, so a push between the look and the wait
+            # still wakes us instead of waiting out the timeout.
+            self._arrived.clear()
+            if any(not q.empty() for q in queues):
+                break
+            left = deadline - loop.time()
+            if left <= 0:
+                return []
+            try:
+                await asyncio.wait_for(self._arrived.wait(), timeout=left)
+            except TimeoutError:
+                return []
+        actions = []
+        for q in queues:
+            while not q.empty():
+                actions.append(q.get_nowait())
         self.seen(member_id, machine)
         return actions
 
 
-    async def ask(self, member_id: int, request: dict, timeout: float = 30.0) -> dict:
+    async def ask(self, member_id: int, request: dict, timeout: float = 30.0,
+                  machine: str | None = None) -> dict:
         """Send a question to the Member's Satellite and wait for its answer.
 
         The same long poll carries it out, and the answer comes back on
@@ -89,7 +110,7 @@ class Hub:
         rid = f"q{next(self._ids)}"
         future = asyncio.get_running_loop().create_future()
         self._pending[rid] = (member_id, future)
-        self.push(member_id, {**request, "id": rid})
+        self.push(member_id, {**request, "id": rid}, machine)
         try:
             return await asyncio.wait_for(future, timeout)
         finally:

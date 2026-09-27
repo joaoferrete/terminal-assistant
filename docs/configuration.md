@@ -176,6 +176,14 @@ folders = ["~/notas"]
 [files]
 folders = ["~/Documentos", "~/Downloads"]
 
+# On a Satellite: scripts the bot may run on this computer, by name (F10, D56).
+# It never passes them arguments. `safe = true` runs without asking; otherwise the
+# bot asks for your button every time.
+[satellite.scripts.backup]
+run = "~/bin/backup.sh"
+description = "backs up the photos to the external disk"
+safe = false
+
 # The chat's guardrails (D29, D30). `house_rules` goes into every conversation:
 # a SOFT guardrail that shapes answers, and nothing depends on it for safety. The
 # ceilings are hard: when one is spent, chat and web search stop for the day (or

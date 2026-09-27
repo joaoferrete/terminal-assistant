@@ -593,3 +593,18 @@ def files_folders() -> list[str]:
     raw = _user_config().get("files", {})
     folders = raw.get("folders", []) if isinstance(raw, dict) else []
     return [str(f) for f in folders if isinstance(f, str)] if isinstance(folders, list) else []
+
+
+def satellite_scripts() -> dict[str, dict]:
+    """`[satellite.scripts.<name>]` — on a Satellite, the scripts the agent may run
+    here, by name (F10, D56). `safe = true` skips the confirmation.
+
+        [satellite.scripts.backup]
+        run = "~/bin/backup.sh"
+        description = "backs up the photos to the external disk"
+        safe = false
+    """
+    raw = _user_config().get("satellite", {})
+    scripts = raw.get("scripts", {}) if isinstance(raw, dict) else {}
+    return {str(k): v for k, v in (scripts.items() if isinstance(scripts, dict) else ())
+            if isinstance(v, dict) and isinstance(v.get("run"), str)}

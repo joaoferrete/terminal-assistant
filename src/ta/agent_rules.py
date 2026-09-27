@@ -191,3 +191,99 @@ async def rule_delete(ctx: ToolContext, name: str) -> ToolResult:
         return ToolResult(text=f"no Rule {name!r} you may delete")
     return ToolResult(text=f"deleted Rule {rule.name}",
                       receipt={"summary": f"deleted Rule {rule.name}"})
+
+
+# ── The Satellite catalogue (D43, D56) ──────────────────────────────────────
+async def _computer(ctx: ToolContext, request: dict, machine: str) -> dict | str:
+    """Ask one of the asker's own computers. Returns its answer, or why not."""
+    if ctx.turn.in_group:
+        return "your computer is private; ask in a private chat"
+    app = ctx.services.get("app")
+    hub = ctx.services.get("hub") or (getattr(app.state, "hub", None) if app else None)
+    if hub is None or not hub.connected(ctx.turn.member_id):
+        return "your computer is not connected right now (off, asleep, or its Satellite stopped)"
+    online = [m["machine"] for m in hub.machines(ctx.turn.member_id) if m["online"]]
+    chosen = machine.strip() or None
+    if chosen and chosen not in online:
+        return f"{chosen!r} is not on; connected now: {', '.join(online) or 'none by name'}"
+    if not chosen and len(online) > 1:
+        return f"which computer? connected now: {', '.join(online)}"
+    try:
+        return await hub.ask(ctx.turn.member_id, {"kind": "act", **request}, machine=chosen)
+    except TimeoutError:
+        return "your computer did not answer; its Satellite may need updating"
+
+
+@tool(
+    slow=True,
+    description="What the asker's computer can do from here: its actions (lock, volume, "
+    "media, open, screenshot, suspend) and the scripts it offers",
+    args={"machine": "the computer's name (see satellites_list), or empty for the only one"},
+)
+async def computer_actions(ctx: ToolContext, machine: str = "") -> ToolResult:
+    answer = await _computer(ctx, {"op": "offer"}, machine)
+    if isinstance(answer, str) or answer.get("error"):
+        return ToolResult(text=answer if isinstance(answer, str) else answer["error"])
+    scripts = [f"{n}{' (safe)' if e['safe'] else ''}: {e['description']}"
+               for n, e in answer.get("scripts", {}).items()]
+    return ToolResult(text=f"actions: {', '.join(answer.get('actions', [])) or 'none'}"
+                           + (f"\nscripts: {'; '.join(scripts)}" if scripts else ""))
+
+
+@tool(
+    slow=True,
+    description="Do something on the asker's computer: lock (the screen), volume (up, "
+    "down, mute, or 0-100), media (play, pause, next, previous), open (a web address or an "
+    "app like firefox), or run one of its scripts marked safe",
+    args={"action": "lock, volume, media, open, or script",
+          "value": "for volume/media/open/script: what to do or which one",
+          "machine": "the computer's name, or empty for the only one"},
+    changes_state=True,
+)
+async def computer_act(ctx: ToolContext, action: str, value: str = "",
+                       machine: str = "") -> ToolResult:
+    action = action.strip().lower()
+    if action not in ("lock", "volume", "media", "open", "script"):
+        return ToolResult(text="for screenshot or suspend use computer_confirmed")
+    answer = await _computer(ctx, {"op": action, "value": value}, machine)
+    if isinstance(answer, str):
+        return ToolResult(text=answer)
+    if answer.get("error"):
+        # A script not marked safe comes back here: the laptop wants the button.
+        return ToolResult(text=answer["error"] + ("; use computer_confirmed for it"
+                                                  if action == "script" else ""))
+    return ToolResult(text=answer.get("text", "done"),
+                      receipt={"summary": f"computer: {action} {value}".strip()})
+
+
+@tool(
+    slow=True,
+    description="On the asker's computer, what ALWAYS needs their button: screenshot (sent "
+    "to them here), suspend, or a script not marked safe",
+    args={"action": "screenshot, suspend, or script", "value": "the script's name, for script",
+          "machine": "the computer's name, or empty for the only one"},
+    destructive=True,
+)
+async def computer_confirmed(ctx: ToolContext, action: str, value: str = "",
+                             machine: str = "") -> ToolResult:
+    import base64
+
+    action = action.strip().lower()
+    if action not in ("screenshot", "suspend", "script"):
+        return ToolResult(text="only screenshot, suspend or script here")
+    # `confirmed` is true only because tools.run let a destructive Tool through,
+    # which it does only after the button (D56). The laptop checks it again.
+    answer = await _computer(ctx, {"op": action, "value": value, "confirmed": True}, machine)
+    if isinstance(answer, str) or answer.get("error"):
+        return ToolResult(text=answer if isinstance(answer, str) else answer["error"])
+    if action == "screenshot":
+        channel = ctx.services.get("channel") or (
+            getattr(ctx.services.get("app").state, "channel", None)
+            if ctx.services.get("app") else None)
+        if channel is None or not hasattr(channel, "send_document"):
+            return ToolResult(text="this chat cannot receive the picture")
+        await channel.send_document(ctx.turn.conversation_id, answer["name"],
+                                    base64.b64decode(answer["data"]))
+        return ToolResult(text="sent the screenshot here", receipt={"summary": "screenshot"})
+    return ToolResult(text=answer.get("text", "done"),
+                      receipt={"summary": f"computer: {action} {value}".strip()})
