@@ -240,6 +240,11 @@ class TelegramChannel:
             log.info("telegram refused the formatting; sending plain: %s", e)
             return await self._call("sendMessage", payload)
 
+    async def set_commands(self, commands: list[tuple[str, str]]) -> None:
+        """The menu Telegram shows when a person types `/` (D61)."""
+        await self._call("setMyCommands", {"commands": [
+            {"command": c, "description": d} for c, d in commands]})
+
     async def send_document(self, conversation_id: str, filename: str, data: bytes,
                             caption: str = "") -> str | None:
         """A file from a Member's own computer (F9, D41), sent to their own chat."""

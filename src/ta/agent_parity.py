@@ -368,7 +368,7 @@ async def media_control(ctx: ToolContext, action: str, target: str = "") -> Tool
     echoes = app.state.config.echo_entities if app else ()
     entity = resolve_entity(target) if target.strip() else next(iter(echoes), "")
     if not entity.startswith("media_player."):
-        return ToolResult(text="no speaker is configured (TA_ECHO_ENTITIES); see help")
+        return ToolResult(text="no speaker is configured (TA_ECHOS); see help")
     await _home(ctx).media(entity, action.strip().lower())
     return ToolResult(text=f"{action} on {entity}", receipt={"summary": f"{action} {entity}"})
 
@@ -390,3 +390,27 @@ async def ringlight(ctx: ToolContext, action: str) -> ToolResult:
     return ToolResult(text=f"ring light: {action} ({'ok' if ok else 'not applied'})",
                       receipt={"summary": f"ring light {action}"} if ok else None)
 
+
+
+# ── The guide (D48) ─────────────────────────────────────────────────────────
+@tool(
+    name="help",
+    description="How to do something with this assistant, from its own guide: what you "
+    "can do, connecting the calendar or email, pairing a computer, sharing folders, "
+    "allowing a housemate, permissions, the config page, models and cost, the household "
+    "group. Call it BEFORE explaining any setup or answering 'what can you do'. Empty "
+    "topic lists the topics.",
+    args={"topic": "what the member wants to know, in a few words, or empty"},
+)
+async def help_(ctx: ToolContext, topic: str = "") -> ToolResult:
+    from . import guide
+
+    secs = guide.sections()
+    if not secs:
+        return ToolResult(text="the guide is missing on this server; say you do not know "
+                               "the exact steps rather than guessing")
+    found = guide.find(topic) if topic.strip() else None
+    if found is None:
+        return ToolResult(text="Topics: " + "; ".join(secs))
+    title, body = found
+    return ToolResult(text=f"## {title}\n{body}")

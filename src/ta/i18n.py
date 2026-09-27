@@ -481,6 +481,42 @@ MESSAGES: dict[str, dict[str, str]] = {
     "bot.home_off_done": {"pt": "Feito · desligado: {what}", "en": "Done · off: {what}"},
     "bot.event_created": {"pt": "📅 Criei na agenda: {title} · {at}",
                           "en": "📅 Added to your calendar: {title} · {at}"},
+    # /help, /agendado and the / menu (F10, D61).
+    "bot.help": {
+        "pt": "Fala comigo como falaria com uma pessoa. O que não for pergunta vira nota.\n\n"
+              "📝 Notas: “comprar presente sexta”, “o que tá vencido?”, “terminei o relatório”\n"
+              "🛒 Listas: “põe leite na lista”, “comprei o leite”\n"
+              "⏰ Lembretes: “me lembra às 15h de ligar pro dentista”, “timer de 10 min”\n"
+              "💡 Casa: “apaga a luz”, “luz do quarto azul em 10%”, “liga a luz daqui 10 min”\n"
+              "📅 Agenda: “o que tenho amanhã?”, “marca janta sexta 20h”\n"
+              "📬 E-mail: “tem e-mail do banco?”, “responde que pago amanhã”\n"
+              "💻 Computador: “me manda o PDF do contrato”\n"
+              "🔎 Web: “vai chover amanhã?”\n\n"
+              "Pra configurar algo, pergunte: “como conecto meu e-mail?”, “como libero a Ana?”",
+        "en": "Talk to me as you would to a person. What is not a question becomes a note.\n\n"
+              "📝 Notes: “buy a present on Friday”, “what is overdue?”, “finished the report”\n"
+              "🛒 Lists: “add milk to the list”, “bought the milk”\n"
+              "⏰ Reminders: “remind me at 3pm to call the dentist”, “10 minute timer”\n"
+              "💡 House: “lights off”, “bedroom light blue at 10%”, “light on in 10 minutes”\n"
+              "📅 Calendar: “what do I have tomorrow?”, “dinner Friday 8pm”\n"
+              "📬 Email: “any email from the bank?”, “reply that I pay tomorrow”\n"
+              "💻 Computer: “send me the contract PDF”\n"
+              "🔎 Web: “will it rain tomorrow?”\n\n"
+              "To set something up, ask: “how do I connect my email?”",
+    },
+    "bot.scheduled_title": {"pt": "⏰ Agendado:", "en": "⏰ Scheduled:"},
+    "bot.scheduled_item": {"pt": "• #{id} {what} — {at} (em {left}){repeat}",
+                           "en": "• #{id} {what} — {at} (in {left}){repeat}"},
+    "bot.reminder_item": {"pt": "• ⏰ {text} — {at} (em {left})",
+                          "en": "• ⏰ {text} — {at} (in {left})"},
+    "bot.nothing_scheduled": {"pt": "Nada agendado.", "en": "Nothing scheduled."},
+    "bot.menu_help": {"pt": "o que eu sei fazer", "en": "what I can do"},
+    "bot.menu_board": {"pt": "link do seu quadro", "en": "a link to your board"},
+    "bot.menu_agendado": {"pt": "agendamentos e timers", "en": "scheduled actions and timers"},
+    "bot.menu_conectar_agenda": {"pt": "conectar o Google Agenda",
+                                 "en": "connect Google Calendar"},
+    "bot.menu_conectar_email": {"pt": "conectar o Gmail", "en": "connect Gmail"},
+    "bot.menu_satellite": {"pt": "parear um computador", "en": "pair a computer"},
     # Said before a Tool that takes seconds (F10). Written here, not by the model.
     "progress.generic": {"pt": "⏳ Um instante, já volto…", "en": "⏳ One moment…"},
     "progress.web_search": {"pt": "🔎 Pesquisando na internet…", "en": "🔎 Searching the web…"},

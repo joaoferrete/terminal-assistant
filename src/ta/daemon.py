@@ -518,6 +518,17 @@ async def _digest_loop(app: Starlette, *, every: float = 60.0) -> None:
         await asyncio.sleep(every)
 
 
+async def _publish_menu(app: Starlette) -> None:
+    """Register the `/` menu once at boot (D61). A failure only costs the menu."""
+    set_commands = getattr(app.state.channel, "set_commands", None)
+    if set_commands is None:
+        return
+    try:
+        await set_commands(app.state.bot.menu())
+    except Exception as e:
+        log.warning("could not publish the command menu: %s", e)
+
+
 async def _scheduled_loop(app: Starlette, *, every: float = 20.0) -> None:
     """Run the scheduled actions that are due (F9, D39). Every 20 s: "in 10
     minutes" should not mean eleven."""
@@ -1896,6 +1907,7 @@ def create_app(
                 tasks.append(asyncio.create_task(
                     app.state.channel.run(app.state.bot.handle), name="channel"
                 ))
+                tasks.append(asyncio.create_task(_publish_menu(app), name="menu"))
                 tasks.append(asyncio.create_task(_digest_loop(app), name="digest"))
                 tasks.append(asyncio.create_task(_scheduled_loop(app), name="scheduled"))
         log.info(

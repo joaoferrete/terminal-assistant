@@ -277,6 +277,11 @@ class Bot:
                 await self._connect_calendar(msg, member_id)
             elif command in ("/conectar_email", "/connect_email"):
                 await self._connect_mail(msg, member_id)
+            elif command in ("/help", "/ajuda"):
+                # From the catalogue, with no model: the cheapest answer there is.
+                await self.channel.reply(msg, t("bot.help"))
+            elif command in ("/agendado", "/scheduled"):
+                await self.channel.reply(msg, self._scheduled_text(member_id))
             elif command == "/board":
                 url = self.board_link(member_id)
                 await self.channel.reply(
@@ -757,6 +762,26 @@ class Bot:
             if chosen is not None:
                 turn, ctx = self._turn(msg, member_id)
                 await run_tool(chosen, turn, ctx, u.get("args", {}), confirmed=True)
+
+    def _scheduled_text(self, member_id: int) -> str:
+        """`/agendado`: the Member's scheduled actions and timers, with no model."""
+        now = datetime.now()
+        lines = [t("bot.scheduled_item", id=s.id, what=s.summary, at=f"{s.next_at:%d/%m %H:%M}",
+                   left=scheduled.remaining(s.next_at, now),
+                   repeat=f" · {s.repeat} {s.time_of_day}" if s.time_of_day else "")
+                 for s in scheduled.active(self.conn, member_id)]
+        for n in store.upcoming_reminders(self.conn, member_id):
+            at = datetime.fromisoformat(n.remind_at)
+            lines.append(t("bot.reminder_item", text=n.text, at=f"{at:%d/%m %H:%M}",
+                           left=scheduled.remaining(at, now)))
+        if not lines:
+            return t("bot.nothing_scheduled")
+        return "\n".join([t("bot.scheduled_title"), *lines])
+
+    def menu(self) -> list[tuple[str, str]]:
+        """The `/` menu Telegram shows (D61), in the installation's language."""
+        return [(c, t(f"bot.menu_{c}")) for c in
+                ("help", "board", "agendado", "conectar_agenda", "conectar_email", "satellite")]
 
     # ── Reminders on the chat (F9) ──────────────────────────────────────────
     async def remind(self, note, late: str = "") -> bool:

@@ -87,7 +87,7 @@ in its tasks and in Discoveries; this section is only where things stand.*
   `ta-satellite`), `/conectar_agenda`, `/conectar_email`, a timer, and a
   scheduled light.
 - **Next: F10** (D43–D61, ADR 0020), built on `feat/agent-catalogue`, starting
-  with T10.3 (T10.1–T10.2 done).
+  with T10.4 (T10.1–T10.3 done; also Telegram formatting and progress messages).
 - Open the PRs for the stack, in order, if the user asks. Each targets the branch
   below it, or everything goes to `main` one after another, whichever the user
   prefers.
@@ -825,7 +825,7 @@ Build order, one stage at a time:
 - [x] **T10.2** Parity Tools (D47): edit/status/delete/restore a note, calendar
       read and create, lists create and remove, board link, Satellite code,
       connect calendar/email, rules/priorities/trash reads, media and ring light.
-- [ ] **T10.3** `docs/guide.md`, the `help` Tool, `/help`, the `/` menu (D48, D49,
+- [x] **T10.3** `docs/guide.md`, the `help` Tool, `/help`, the `/` menu (D48, D49,
       D61, D52e), the AGENTS rule, and the test that keeps the guide complete.
 - [ ] **T10.4** Strangers (D60) and invitations from the chat (D59), `/moradores`.
 - [ ] **T10.5** Routines (D57, D58).

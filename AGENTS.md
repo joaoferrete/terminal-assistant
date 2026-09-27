@@ -19,6 +19,15 @@ Close every iteration in the same commit as the code: tick the task, rewrite
 **Now** to name the next one, and add anything that contradicted the plan to
 **Discoveries**. The next session knows only what that file says.
 
+## A capability the user can see goes into the guide, in the same commit
+
+[`docs/guide.md`](docs/guide.md) is what the bot answers "how do I…?" from, so a
+feature missing there is a question it answers wrong. A new Tool, command, setting
+or behaviour a person can notice gets its lines in the guide in the same commit.
+`tests/test_guide.py` fails when a Tool or a menu command is missing, or when the
+guide shows a setting `configuration.md` does not have. It cannot tell when the
+*words* went stale, so reread the section you touched.
+
 ## Before you finish, run these three
 
 ```bash
