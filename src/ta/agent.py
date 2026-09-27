@@ -82,7 +82,8 @@ SYSTEM = """{identity}You are the assistant of a household, talking to one of it
 messaging app. You can answer anything — about their own notes and lists, or general \
 questions — and you act only through the tools listed below.
 
-It is now {now}.
+It is now {now}. Always say times in this local time; convert any time you read in \
+UTC or another zone before saying it.
 
 Tools you may use now:
 {tools}
@@ -156,7 +157,9 @@ async def respond(
         identity=intro,
         # Without it "amanhã às 8h" or "sexta" cannot become a date (F9); the
         # weekday is spelled out because models get it wrong from a date alone.
-        now=datetime.now().strftime("%A %Y-%m-%d %H:%M"),
+        # The zone too (F10): with only a clock, the model repeated the UTC times
+        # it read in tool results as if they were local.
+        now=datetime.now().astimezone().strftime("%A %Y-%m-%d %H:%M (UTC%z, local time)"),
         tools=_tool_specs(available),
         persona=f"\nHow to address this member: {persona}" if persona else "",
         house_rules=f"\nHouse rules from the owner: {house_rules}" if house_rules else "",

@@ -75,7 +75,7 @@ class Gmail:
                 h = _headers(meta)
                 found.append({"id": f"{account}|{m['id']}", "account": account,
                               "from": h.get("from", ""), "subject": h.get("subject", ""),
-                              "date": h.get("date", ""),
+                              "date": local_date(h.get("date", "")),
                               "snippet": html.unescape(meta.get("snippet", ""))})
         return found
 
@@ -89,7 +89,7 @@ class Gmail:
         h = _headers(full)
         body = _text(full.get("payload", {}))
         return {"from": h.get("from", ""), "subject": h.get("subject", ""),
-                "date": h.get("date", ""), "text": body[:MAX_BODY_CHARS],
+                "date": local_date(h.get("date", "")), "text": body[:MAX_BODY_CHARS],
                 "truncated": len(body) > MAX_BODY_CHARS}
 
     def draft(self, *, to: str, subject: str, body: str, reply_to: str = "") -> str:
@@ -163,6 +163,21 @@ class Gmail:
         if r.status_code >= 400:
             raise MailError(f"gmail {path.split('/')[1]}: HTTP {r.status_code}")
         return r.json()
+
+
+def local_date(header: str) -> str:
+    """An email's `Date` header in the house's time, as "2026-09-26 22:12".
+
+    Senders stamp their own zone, often `+0000`, and the model repeated it: the bot
+    said a message arrived at 01:12 when it was 22:12 here (F10). Unparseable
+    headers pass through as they came.
+    """
+    from email.utils import parsedate_to_datetime
+
+    try:
+        return parsedate_to_datetime(header).astimezone().strftime("%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return header
 
 
 def _headers(message: dict) -> dict[str, str]:
