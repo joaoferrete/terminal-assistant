@@ -825,6 +825,13 @@ class Bot:
                 await self.channel.answered(msg, t("bot.stale"))
                 return
             await self.channel.answered(msg, answer)
+        elif kind == "ruleoff" and r.tool == "chat_rule":
+            from . import chat_rules
+
+            chat_rules.set_enabled(self.conn, r.args["id"], False, member_id=member_id,
+                                   is_owner=member_id == OWNER_ID)
+            receipts.set_state(self.conn, r.id, "done")
+            await self.channel.answered(msg, t("bot.rule_switched_off"))
         elif kind == "allow" and r.state == "pending" and r.tool == "stranger":
             await self._allow_stranger(msg, r)
         elif kind == "no" and r.state == "pending":
@@ -927,6 +934,13 @@ class Bot:
             at = datetime.fromisoformat(n.remind_at)
             lines.append(t("bot.reminder_item", text=n.text, at=f"{at:%d/%m %H:%M}",
                            left=scheduled.remaining(at, now)))
+        from . import chat_rules, routines
+
+        for rule in chat_rules.visible(self.conn, member_id):
+            lines.append(f"• ⚙️ {rule.name}: {rule.describe()}")
+        for routine in routines.visible(self.conn, member_id):
+            lines.append(f"• 🏠 {routine.name}"
+                         + (f" — “{'”, “'.join(routine.phrases)}”" if routine.phrases else ""))
         if not lines:
             return t("bot.nothing_scheduled")
         return "\n".join([t("bot.scheduled_title"), *lines])
@@ -943,6 +957,74 @@ class Bot:
 
     def owner_chat(self) -> str | None:
         return _identity_of(self.conn, self.channel.name, OWNER_ID)
+
+    # ── Chat Rules (F10, D45, D46) ──────────────────────────────────────────
+    async def fire_chat_rules(self, kind: str, entity: str | None, new: str,
+                              now: datetime | None = None) -> int:
+        """Run the chat Rules a signal starts, each with its creator's Grant read
+        now, and tell the creator every time, with [Undo] and [Switch it off].
+        Returns how many acted."""
+        from . import chat_rules
+
+        if self.agent is None:
+            return 0
+        now = now or datetime.now()
+        acted = 0
+        for rule in chat_rules.triggered(self.conn, kind, entity, new, now):
+            if not chat_rules.in_window(rule, now) or not await self._rule_condition(rule):
+                continue
+            chat_rules.mark_fired(self.conn, rule.id, now)
+            chat = _identity_of(self.conn, self.channel.name, rule.owner_id)
+            chosen = self.agent.registry().get(rule.action_tool)
+            turn = Turn(member_id=rule.owner_id, conversation_id=chat or "", in_group=False,
+                        permissions=self.agent.permissions(rule.owner_id))
+            ctx = ToolContext(conn=self.conn, turn=turn, channel=self.channel.name,
+                              services=dict(self.agent.services))
+            try:
+                if chosen is None:
+                    raise NotAllowed(f"{rule.action_tool} is gone")
+                result = await run_tool(chosen, turn, ctx, dict(rule.action_args))
+            except NotAllowed:
+                result = None
+            except Exception:
+                log.exception("chat rule %s failed", rule.name)
+                result = None
+            if chat is None:
+                continue
+            off = receipts.record(self.conn, channel=self.channel.name, conversation_id=chat,
+                                  message_id=None, member_id=rule.owner_id, tool="chat_rule",
+                                  args={"id": rule.id}, state="pending",
+                                  summary=f"rule {rule.name} fired")
+            buttons = [Button(t("bot.btn_rule_off"), f"ruleoff:{off}")]
+            if result is None or result.receipt is None:
+                await self._push(self.channel.name, chat,
+                                 t("bot.rule_failed", name=rule.name), buttons, off)
+                continue
+            acted += 1
+            done = result.receipt
+            rid = receipts.record(self.conn, channel=self.channel.name, conversation_id=chat,
+                                  message_id=None, member_id=rule.owner_id,
+                                  tool=rule.action_tool, summary=done.get("summary", rule.name),
+                                  args=rule.action_args, undo=done.get("undo"))
+            what = (self._switched(rule.action_tool, done) if done.get("entities")
+                    else t("bot.done"))
+            if done.get("undo"):
+                buttons.insert(0, self._undo_button(rid, done["undo"]))
+            await self._push(self.channel.name, chat,
+                             t("bot.rule_fired", name=rule.name, what=what), buttons, rid)
+        return acted
+
+    async def _rule_condition(self, rule) -> bool:
+        if not rule.cond_entity:
+            return True
+        services = self.agent.services if self.agent else {}
+        app = services.get("app")
+        home = app.state.home if app is not None else services.get("home")
+        try:
+            state = (await home.state(rule.cond_entity)).get("state", "")
+        except Exception:
+            return False          # cannot tell: do not act on a guess
+        return str(state).lower() == (rule.cond_state or "").lower()
 
     # ── Reminders on the chat (F9) ──────────────────────────────────────────
     async def remind(self, note, late: str = "") -> bool:

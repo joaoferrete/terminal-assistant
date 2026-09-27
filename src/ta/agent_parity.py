@@ -326,8 +326,8 @@ async def connect_email(ctx: ToolContext) -> ToolResult:
 
 # ── Reading the household's setup ───────────────────────────────────────────
 @tool(
-    description="List the automations: the house's file Rules (for admins), and the "
-    "asker's scheduled actions and timers",
+    description="List the automations: the asker's chat Rules, scheduled actions and "
+    "timers, and the house's file Rules (for admins)",
 )
 async def rules_list(ctx: ToolContext) -> ToolResult:
     lines = []
@@ -335,8 +335,13 @@ async def rules_list(ctx: ToolContext) -> ToolResult:
         rules = ctx.services.get("file_rules")
         for r in (rules() if rules else []):
             lines.append(f"file Rule {r.name}: on {', '.join(str(t) for t in r.on)}")
+    from . import chat_rules
     from .builtin_tools import schedule_list
 
+    for rule in chat_rules.visible(ctx.conn, ctx.turn.member_id):
+        lines.append(f"chat Rule {rule.name}"
+                     + (" (household)" if rule.scope == "household" else "")
+                     + f": {rule.describe()}")
     scheduled = await schedule_list(ctx)
     if scheduled.text != "nothing is scheduled":
         lines.append(scheduled.text)

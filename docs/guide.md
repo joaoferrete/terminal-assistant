@@ -121,6 +121,10 @@ Lights and plugs go through Home Assistant.
 - The owner's desk ring light: "liga a ring light", "perfil Meet"
   (`ringlight`, for admins). It needs the owner's computer on.
 
+- **What is on?** "a luz da sala tá acesa?", "tem alguma luz ligada?", "a porta
+  tá aberta?" (`home_status`). It shows what your permission covers. Admins see
+  everything.
+
 What each person may switch is set by their permission. Names like "quarto" come
 from Home Assistant, or from aliases in the config:
 
@@ -191,7 +195,9 @@ A **Satellite** is your own computer connected to the server.
 
 "Quais computadores estão conectados?" or `/satellites` (`satellites_list`) shows
 each computer by name, whether it is on now, and when it was last seen. The owner
-sees everyone's.
+sees everyone's. A phone is not a Satellite: phones talk to the bot through
+Telegram. A computer shows up once its Satellite has run a version that sends its
+name, so restart it after an update (`systemctl --user restart ta-satellite`).
 
 Hidden files and anything named like a secret never leave the computer. Each
 person reaches only their own computer.
@@ -256,10 +262,36 @@ A Routine is **yours** unless you say "da casa" when creating it. Then anyone in
 the house can start it, each with their own permissions: a step someone may not
 do is skipped, and the answer says so. Only you, or the owner, can delete it.
 
+## Rules from the chat
+
+A **Rule** acts on its own when something happens in the house: "quando a porta
+abrir depois das 22h, acende a luz do corredor", "quando o sensor do banheiro
+ficar sem movimento, apaga a luz" (`rule_create`).
+
+- **When:** a device reaching a state (a door opening, a sensor, a light turning
+  off). The owner can also use their microphone ("quando eu entrar em reunião").
+  The bot finds the device's name in Home Assistant first (`home_status`).
+- **Only if (optional):** a time window ("depois das 22h", "entre 22h e 6h")
+  and another device's state ("se a sala estiver apagada").
+- **Then:** one action, such as a light, a plug, a List or a Routine ("roda a
+  rotina boa noite").
+- **Each time it acts, you are told**, with [Undo] and [Switch this rule off].
+  It runs with your permissions as they are at that moment, and it does not fire
+  twice within a minute.
+- "Desliga a regra corredor" (`rule_toggle`), "apaga a regra corredor"
+  (`rule_delete`). "O que está automatizado?" lists everything.
+
+A Rule is yours unless you say "da casa". Presence ("quando eu sair de casa") is
+not supported yet: use a Routine and tell the bot "saí" or "cheguei".
+
+The owner's **file Rules** are Python files written by hand in
+`~/.config/ta/rules/`, and are listed together with these.
+
 ## Automations
 
-"O que está automatizado?" (`rules_list`) lists your scheduled actions and
-timers, plus the house's file Rules (for admins).
+"O que está automatizado?" (`rules_list`), or `/agendado`, lists your chat
+Rules, Routines, scheduled actions and timers, plus the house's file Rules (for
+admins).
 
 Your **Priorities** are what matters to you, used to order your notes. See them
 with "quais são minhas prioridades?" (`priorities_show`). They are set with `ta

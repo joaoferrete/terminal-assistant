@@ -86,8 +86,10 @@ in its tasks and in Discoveries; this section is only where things stand.*
   (T9.5): the Satellite files (the laptop needs `[files] folders` and a restart of
   `ta-satellite`), `/conectar_agenda`, `/conectar_email`, a timer, and a
   scheduled light.
-- **Next: F10** (D43–D61, ADR 0020), built on `feat/agent-catalogue`, starting
-  with T10.6 (T10.1–T10.5 done; also Telegram formatting and progress messages).
+- **F10 in progress on `feat/agent-catalogue`; deployed up to T10.5 on 2026-09-27**
+  (schema 15). Next deploy brings migration 16.
+- **Next: F10** (D43–D61, ADR 0020), continuing
+  with T10.7 (T10.1–T10.6 done, T10.8's house state too; also Telegram formatting and progress messages).
 - Open the PRs for the stack, in order, if the user asks. Each targets the branch
   below it, or everything goes to `main` one after another, whichever the user
   prefers.
@@ -831,11 +833,12 @@ Build order, one stage at a time:
       (with each Member's last conversation), and `/satellites` (each computer by name,
       on or off now), asked by the user during the build.
 - [x] **T10.5** Routines (D57, D58).
-- [ ] **T10.6** Chat Rules (D46, D54, D45): the store, triggers, conditions,
+- [x] **T10.6** Chat Rules (D46, D54, D45): the store, triggers, conditions,
       firing with [Undo] and [Switch this rule off], plus `/agendado` listing
       everything.
 - [ ] **T10.7** The Satellite catalogue (D43, D56).
-- [ ] **T10.8** Note search by meaning (D52b) and the house's state (D52c).
+- [ ] **T10.8** Note search by meaning (D52b). The house's state (D52c, `home_status`)
+      came with T10.6, because a Rule needs real entity ids.
 - [ ] **T10.9** The board: the header, author badges and the polish (D50, D51),
       showing chat Rules and Routines. Seen on screen.
 - [ ] **T10.10** Deploy (with the user's yes), and the laptop's Satellite updated.
@@ -914,3 +917,4 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-27 | T10.4 | The Hub knew a Satellite only by its Member, so two computers of the same person were one, and `/satellites` could not name them. The catalogue (T10.7) will need to say which computer to act on | The Satellite sends its hostname in `X-Satellite-Name`, and the Hub keeps each computer's last poll. An older Satellite sends nothing and is not listed by name until it is restarted |
 | 2026-09-27 | T10.4 | Tests pinned D8's silence towards strangers | Updated to D60: one standard reply a day, nothing captured. Before an Owner is paired, a stranger still gets silence, because there is nobody to tell |
 | 2026-09-27 | F9 | The first real "apaga a luz em 1min" answered "⏰ Feito · desligado" while the lamp stayed on, and it went off later. Home Assistant answers 200 once it accepts a command, and a Tuya lamp then goes through the vendor's cloud. The board's routes always confirmed the state, but the agent's Tools did not. The scheduler's flat 20 s tick added up to 20 s more | The home Tools confirm the state (~3 s) and say which Entities did not answer. The loop sleeps until the next action is due. Replies use the friendly name ("Sala"), not the entity_id, as the user asked |
+| 2026-09-27 | T10.6 | The guide test only looked at two modules, so the Routine Tools could have shipped undocumented. Also, the user expected `/satellites` to show their phone | The test covers every `agent_*` module, and it caught four new Tools. The guide now says a phone is not a Satellite (it talks through Telegram), and that a computer is listed by name only after its Satellite is restarted on a version that sends it |

@@ -583,6 +583,14 @@ MESSAGES: dict[str, dict[str, str]] = {
     "bot.reminder_done": {"pt": "Concluída ✓", "en": "Done ✓"},
     "bot.reminder_snoozed": {"pt": "Te lembro de novo às {at}.",
                              "en": "I'll remind you again at {at}."},
+    # Chat Rules (F10, D45, D46).
+    "bot.rule_fired": {"pt": "⚙️ Regra {name}: {what}", "en": "⚙️ Rule {name}: {what}"},
+    "bot.rule_failed": {"pt": "⚙️ A regra {name} disparou, mas não consegui agir (permissão "
+                              "ou aparelho fora do ar).",
+                        "en": "⚙️ Rule {name} fired, but I could not act (permission, or the "
+                              "device is unreachable)."},
+    "bot.btn_rule_off": {"pt": "Desligar esta regra", "en": "Switch this rule off"},
+    "bot.rule_switched_off": {"pt": "Regra desligada.", "en": "Rule switched off."},
     # Routines (F10, D57).
     "bot.btn_undo_all": {"pt": "Desfazer tudo", "en": "Undo all"},
     "bot.routine_ran": {"pt": "🏠 Rotina {name}:", "en": "🏠 Routine {name}:"},
@@ -657,11 +665,11 @@ MESSAGES: dict[str, dict[str, str]] = {
     "digest.adguard_top": {"pt": "mais bloqueados: {domains}\nclientes mais ativos: {clients}",
                            "en": "most blocked: {domains}\nmost active clients: {clients}"},
     "bot.satellite_code": {
-        "pt": "No seu computador, rode:\nta satellite login {code}\n"
+        "pt": "No seu computador, rode:\n```\nta satellite login {code}\n```\n"
               "O código vale 5 minutos e funciona uma vez só.\n"
               "Se você indexar pastas ([rag] no config), quem administra a casa também "
               "pode buscar nelas.",
-        "en": "On your computer, run:\nta satellite login {code}\n"
+        "en": "On your computer, run:\n```\nta satellite login {code}\n```\n"
               "The code works once, for 5 minutes.\n"
               "If you index folders ([rag] in the config), whoever runs the house can "
               "search them too.",

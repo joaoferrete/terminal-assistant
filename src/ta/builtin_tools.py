@@ -711,4 +711,4 @@ async def mail_draft(ctx: ToolContext, body: str, to: str = "", subject: str = "
 
 # The parity and Routine Tools (F10) live in their own modules; importing them here
 # is what registers them wherever the built-ins are registered.
-from . import agent_parity, agent_routines  # noqa: E402, F401
+from . import agent_parity, agent_routines, agent_rules  # noqa: E402, F401

@@ -1748,11 +1748,21 @@ async def _fire_reminders(app: Starlette, now: datetime) -> None:
 
 
 def _wire_engine(app: Starlette) -> None:
+    async def chat_rules(kind: str, entity: str | None, new: str) -> None:
+        # The chat Rules (D46) hear the same signals as the file Rules.
+        bot = getattr(app.state, "bot", None)
+        if bot is not None:
+            try:
+                await bot.fire_chat_rules(kind, entity, new)
+            except Exception:
+                log.exception("chat rules failed on %s %s", kind, entity)
+
     async def on_mic(ativo: bool, apps: list[str]) -> None:
         await engine.dispatch(
             app.state.rules,
             _make_context(app, engine.Trigger("mic", ativo), extra={"apps": apps}),
         )
+        await chat_rules("mic", None, "on" if ativo else "off")
 
     async def on_time(minuto: str, now: datetime) -> None:
         await engine.dispatch(app.state.rules, _make_context(app, engine.Trigger("time", minuto)))
@@ -1764,6 +1774,7 @@ def _wire_engine(app: Starlette) -> None:
                 app, engine.Trigger("state", entity_id), extra={"from": old, "to": new}
             ),
         )
+        await chat_rules("state", entity_id, new)
 
     app.state.mic = MicWatcher(on_mic)
     # The same callback serves a Satellite's report (F6): the meeting Rule does

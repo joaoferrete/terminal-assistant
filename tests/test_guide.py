@@ -20,8 +20,10 @@ CONFIG_DOC = (ROOT / "docs" / "configuration.md").read_text()
 
 
 def shipped_tools():
+    # Every module that ships Tools: the built-ins and each `agent_*` module.
     return sorted(n for n, t in registered().items()
-                  if t.fn.__module__ in ("ta.builtin_tools", "ta.agent_parity"))
+                  if t.fn.__module__ == "ta.builtin_tools"
+                  or t.fn.__module__.startswith("ta.agent_"))
 
 
 @pytest.mark.parametrize("name", shipped_tools())
