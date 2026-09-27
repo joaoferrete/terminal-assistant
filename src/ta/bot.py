@@ -465,7 +465,14 @@ class Bot:
         async def say(text: str) -> None:
             await self._say(msg, text)
 
-        return {"message": msg, "say": say, "board_link": self.board_link,
+        async def progress(tool_name: str) -> None:
+            key = f"progress.{tool_name}"
+            text = t(key)
+            await self.channel.reply(msg, text if text != key else t("progress.generic"),
+                                     quiet=True)
+
+        return {"message": msg, "say": say, "progress": progress,
+                "board_link": self.board_link,
                 "satellite_code": self.satellite_code, "calendar_link": self.calendar_link,
                 "mail_link": self.mail_link}
 

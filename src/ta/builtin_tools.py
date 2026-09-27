@@ -286,6 +286,7 @@ def persona_line(conn, member_id: int) -> str:
 
 
 @tool(
+    slow=True,
     description="Search the web for current or factual information the notes do not "
     "have: news, weather, opening hours, prices, anything recent",
     args={"question": "what to find out, as a full question"},
@@ -350,6 +351,7 @@ async def digest_now(ctx: ToolContext) -> ToolResult:
 
 
 @tool(
+    slow=True,
     description="Search the member's own documents and code — the folders their "
     "computer indexes — by meaning. Use it for 'how did I solve X', 'where did I "
     "write about Y', or anything that sounds like their files rather than their notes.",
@@ -517,6 +519,7 @@ async def _ask_computer(ctx: ToolContext, op: str, path: str) -> dict | str:
 
 
 @tool(
+    slow=True,
     description="List a folder on the asker's own computer, among the folders it shares. "
     "Empty path lists the shared folders themselves.",
     args={"path": "a folder as a previous listing showed it, or empty"},
@@ -534,6 +537,7 @@ async def files_list(ctx: ToolContext, path: str = "") -> ToolResult:
 
 
 @tool(
+    slow=True,
     description="Read a text file on the asker's own computer (notes, code, markdown, "
     "config). For a PDF, an image or anything to keep, use files_send.",
     args={"path": "the file, as files_list showed it"},
@@ -549,6 +553,7 @@ async def files_read(ctx: ToolContext, path: str) -> ToolResult:
 
 
 @tool(
+    slow=True,
     description="Send a file from the asker's own computer to them, here in this chat",
     args={"path": "the file, as files_list showed it"},
 )
@@ -581,6 +586,7 @@ def _mailbox(ctx: ToolContext):
 
 
 @tool(
+    slow=True,
     description="Search the asker's own Gmail, only when they ask about their email. "
     "Takes Gmail search syntax: words, from:, subject:, newer_than:7d, is:unread.",
     args={"query": "a Gmail search, e.g. 'from:banco newer_than:7d'"},
@@ -608,6 +614,7 @@ async def mail_search(ctx: ToolContext, query: str) -> ToolResult:
 
 
 @tool(
+    slow=True,
     description="Read one of the asker's emails in full, by the id mail_search gave",
     args={"id": "the message id, exactly as mail_search showed it"},
     third_party=True,
@@ -630,6 +637,7 @@ async def mail_read(ctx: ToolContext, id: str) -> ToolResult:  # noqa: A002
 
 
 @tool(
+    slow=True,
     description="Write an email DRAFT in the asker's Gmail, for them to review and send "
     "themselves. You cannot send email. For a reply, give reply_to (an id from "
     "mail_search); to and subject may then be empty.",

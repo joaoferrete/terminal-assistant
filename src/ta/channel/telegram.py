@@ -13,7 +13,9 @@ else.
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
+import re
 
 import httpx
 
@@ -28,6 +30,29 @@ log = logging.getLogger("ta.channel")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 API = "https://api.telegram.org"
+
+
+def to_html(text: str) -> str:
+    """The model's Markdown → the HTML subset Telegram renders (F10).
+
+    Models write `**bold**`, `_italic_`, `` `code` `` and `[text](url)`, and
+    Telegram showed the asterisks. Everything is escaped first, so a `<` in a Note
+    cannot open a tag, and only these few forms become tags afterwards.
+    """
+    out = html.escape(text, quote=False)
+    out = re.sub(r"```(?:\w+\n)?(.+?)```", r"<pre>\1</pre>", out, flags=re.S)
+    out = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", out)
+    out = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", out, flags=re.S)
+    out = re.sub(r"__(.+?)__", r"<b>\1</b>", out, flags=re.S)
+    out = re.sub(r"(?<![\w*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![\w*])", r"<i>\1</i>", out)
+    out = re.sub(r"(?<![\w_])_(?!\s)([^_\n]+?)(?<!\s)_(?![\w_])", r"<i>\1</i>", out)
+    out = re.sub(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)",
+                 lambda m: f'<a href="{m[2].replace(chr(34), "%22")}">{m[1]}</a>', out)
+    # Headings and bullets have no HTML in Telegram: a heading becomes bold, a
+    # "- item" keeps its line with a bullet.
+    out = re.sub(r"(?m)^#{1,6}\s+(.+)$", r"<b>\1</b>", out)
+    out = re.sub(r"(?m)^\s*[-*]\s+", "• ", out)
+    return out
 
 
 class TelegramChannel:
@@ -199,8 +224,21 @@ class TelegramChannel:
         if buttons:
             payload["reply_markup"] = {"inline_keyboard": [[
                 {"text": b.label, "callback_data": b.data} for b in buttons]]}
-        sent = await self._call("sendMessage", payload)
+        sent = await self._send_text(payload)
         return str(sent["message_id"]) if isinstance(sent, dict) and "message_id" in sent else None
+
+    async def _send_text(self, payload: dict):
+        """sendMessage with the text as Telegram HTML; if Telegram cannot parse
+        what the conversion produced, the same text again, plain. A formatting
+        slip must never cost the message."""
+        try:
+            return await self._call("sendMessage", {**payload, "text": to_html(payload["text"]),
+                                                    "parse_mode": "HTML"})
+        except ChannelError as e:
+            if "parse" not in str(e).lower() and "entit" not in str(e).lower():
+                raise
+            log.info("telegram refused the formatting; sending plain: %s", e)
+            return await self._call("sendMessage", payload)
 
     async def send_document(self, conversation_id: str, filename: str, data: bytes,
                             caption: str = "") -> str | None:
@@ -226,7 +264,7 @@ class TelegramChannel:
                 "inline_keyboard": [[{"text": b.label, "callback_data": b.data}
                                      for b in buttons]]
             }
-        sent = await self._call("sendMessage", payload)
+        sent = await self._send_text(payload)
         return str(sent["message_id"]) if isinstance(sent, dict) and "message_id" in sent else None
 
     async def answered(self, to: Inbound, text: str | None = None) -> None:

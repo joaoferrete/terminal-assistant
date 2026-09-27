@@ -162,6 +162,7 @@ async def respond(
     # em 10%" failed three times in a row on the same bug: the model retried the
     # identical call because all it saw was "failed (AttributeError)" (D52a).
     failed: set[str] = set()
+    announced = False
 
     for n in range(MAX_STEPS):
         last = n == MAX_STEPS - 1
@@ -197,6 +198,16 @@ async def respond(
             steps.append(f"- {chosen.name}: this exact call already failed this turn. Do not "
                          "try it again: answer the member with the reason, or try something else.")
             continue
+        if chosen.slow and not announced:
+            # "🔎 Procurando nos seus e-mails…" before seconds of silence (F10).
+            # Written by the code from the catalogue: no model call for it.
+            announced = True
+            progress = ctx.services.get("progress") if hasattr(ctx, "services") else None
+            if progress is not None:
+                try:
+                    await progress(chosen.name)
+                except Exception:          # a courtesy; it must not cost the answer
+                    log.info("progress message not sent", exc_info=True)
         first = len(turn.sources)
         try:
             result = await tools_mod.run(chosen, turn, ctx, args)

@@ -208,6 +208,7 @@ def _day(raw: str) -> date | None:
 
 
 @tool(
+    slow=True,
     description="Read the asker's calendar for a day",
     args={"day": "today, tomorrow, or YYYY-MM-DD"},
 )
@@ -230,6 +231,7 @@ async def calendar_day(ctx: ToolContext, day: str = "today") -> ToolResult:
 
 
 @tool(
+    slow=True,
     description="Create an event in the asker's calendar (in its 'Terminal Assistant' "
     "calendar, never with guests)",
     args={"title": "the event's title", "start": "YYYY-MM-DD HH:MM",
