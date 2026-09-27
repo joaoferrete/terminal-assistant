@@ -187,7 +187,7 @@ def test_a_due_action_runs_and_says_so_with_an_undo(bot):
     plant(b.conn)
     assert asyncio.run(b.run_scheduled(NOW + timedelta(seconds=20))) == 1
     assert b.home.calls == [("light.sala", 100)]
-    assert "⏰" in b.channel.sent[-1] and "light.sala" in b.channel.sent[-1]
+    assert "⏰" in b.channel.sent[-1] and "Sala" in b.channel.sent[-1]
     assert b.channel.buttons[-1][0].data.startswith("undo:")
     assert scheduled.active(b.conn, 1) == [], "a one-off is finished"
     assert asyncio.run(b.run_scheduled(NOW + timedelta(minutes=1))) == 0, "never twice"
@@ -251,3 +251,12 @@ def test_the_agent_is_told_what_time_it_is(bot):
     b = bot(answer("ok"))
     asyncio.run(b.handle(inbound("que horas são?")))
     assert datetime.now().strftime("%Y-%m-%d") in b.agent.llm.prompts[-1][0]
+
+
+def test_the_loop_wakes_when_the_next_action_is_due(tmp_path):
+    from ta.daemon import _until_next
+
+    conn = db.connect(tmp_path / "t.db")
+    assert _until_next(conn, 20.0, now=NOW) == 20.0, "nothing scheduled: the usual tick"
+    plant(conn, at=NOW + timedelta(seconds=7))
+    assert 7.0 <= _until_next(conn, 20.0, now=NOW) <= 7.2, "not up to 20 s late"

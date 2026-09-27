@@ -71,6 +71,8 @@ class Tool:
     changes_state: bool = False
     destructive: bool = False
     third_party: bool = False
+    # Takes seconds (a mailbox, the web, a laptop): the bot says so first (F10).
+    slow: bool = False
 
     def spec(self) -> str:
         args = ", ".join(f"{k}: {v}" for k, v in self.args.items()) or "no arguments"
@@ -90,6 +92,7 @@ def tool(
     changes_state: bool = False,
     destructive: bool = False,
     third_party: bool = False,
+    slow: bool = False,
     registry: dict[str, Tool] | None = None,
 ):
     """Declare a Tool. `destructive` implies `changes_state`: nothing that deletes
@@ -107,6 +110,7 @@ def tool(
             changes_state=changes_state or destructive,
             destructive=destructive,
             third_party=third_party,
+            slow=slow,
         )
         (registry if registry is not None else _REGISTRY)[t.name] = t
         return fn

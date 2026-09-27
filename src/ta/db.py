@@ -20,7 +20,7 @@ from pathlib import Path
 
 log = logging.getLogger("ta")
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 17
 
 # The states of a Note. Stored in English because the rest of the vocabulary is
 # (see CONTEXT.md); the translated labels live in the interface.
@@ -409,6 +409,69 @@ MIGRATIONS: list[tuple[int, str]] = [
             last_run_at     TEXT
         );
         CREATE INDEX idx_scheduled_due ON scheduled(state, next_at);
+        """,
+    ),
+    (
+        15,
+        """
+        -- Routines (F10, D57, D58): a named sequence of Tool calls a Member made in
+        -- the chat, started by one of its phrases ("cheguei em casa"). `steps` is a
+        -- JSON list of {"tool", "args"}; `phrases` a JSON list of texts. Private
+        -- unless `scope` is 'household'.
+        CREATE TABLE routines (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id    INTEGER NOT NULL REFERENCES members(id),
+            name        TEXT    NOT NULL,
+            scope       TEXT    NOT NULL DEFAULT 'personal'
+                        CHECK (scope IN ('personal', 'household')),
+            steps       TEXT    NOT NULL,
+            phrases     TEXT    NOT NULL DEFAULT '[]',
+            created_at  TEXT    NOT NULL,
+            deleted_at  TEXT
+        );
+        """,
+    ),
+    (
+        16,
+        """
+        -- Chat Rules (F10, D46, D54): "when the door opens after 22h, turn on the
+        -- hall light", asked in conversation and stored as data — never as code.
+        -- Trigger: an Entity reaching a state, or the microphone. Condition: an
+        -- optional time window and an optional Entity state. Action: one Tool call
+        -- (which may be `routine_run`). Fires with its creator's Grant, read then.
+        CREATE TABLE chat_rules (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id        INTEGER NOT NULL REFERENCES members(id),
+            name            TEXT    NOT NULL,
+            scope           TEXT    NOT NULL DEFAULT 'personal'
+                            CHECK (scope IN ('personal', 'household')),
+            trigger_kind    TEXT    NOT NULL CHECK (trigger_kind IN ('state', 'mic')),
+            trigger_entity  TEXT,
+            trigger_to      TEXT,
+            cond_after      TEXT,
+            cond_before     TEXT,
+            cond_entity     TEXT,
+            cond_state      TEXT,
+            action_tool     TEXT    NOT NULL,
+            action_args     TEXT    NOT NULL DEFAULT '{}',
+            enabled         INTEGER NOT NULL DEFAULT 1,
+            created_at      TEXT    NOT NULL,
+            last_fired_at   TEXT,
+            deleted_at      TEXT
+        );
+        """,
+    ),
+    (
+        17,
+        """
+        -- Notes by meaning (F10, D52b): one embedding per Note, computed the first
+        -- time a search needs it and again when its text changes (`sha`). The
+        -- same local model as the folder index (D36): nothing leaves the house.
+        CREATE TABLE note_vectors (
+            note_id  INTEGER PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
+            sha      TEXT    NOT NULL,
+            vector   BLOB    NOT NULL
+        );
         """,
     ),
 ]

@@ -176,6 +176,8 @@ class Bot:
         # (member, day) pairs the Owner was already told about, so a spent budget
         # sends one message a day, not one per message.
         self._budget_told: set[tuple[int, str]] = set()
+        # (sender, day) pairs of strangers already answered and reported (D60).
+        self._strangers_told: set[tuple[str, str]] = set()
 
     def _recognise(self, msg: Inbound) -> tuple[int | None, bool]:
         """(member id, just paired). None is a stranger, answered with silence (D8).
@@ -221,6 +223,103 @@ class Bot:
         # that paired — the takeover D21 exists to refuse.
         return None, False
 
+    async def _stranger(self, msg: Inbound) -> None:
+        """Somebody not allowed, in private (D60, amending D8's silence).
+
+        One standard reply, which names neither the household nor the Owner, and
+        one message to the Owner with [Allow] and [Ignore] — each at most once per
+        person per day, so a stranger typing all day costs the Owner one ping.
+        """
+        if msg.callback is not None or not owner_paired(self.conn, msg.channel):
+            return
+        key = (msg.sender_id, datetime.now().date().isoformat())
+        if key in self._strangers_told:
+            return
+        self._strangers_told.add(key)
+        await self.channel.reply(msg, t("bot.stranger"))
+        owner = _identity_of(self.conn, msg.channel, OWNER_ID)
+        if owner is None or not hasattr(self.channel, "send"):
+            return
+        who = " ".join(x for x in (msg.sender_name, f"@{msg.sender_username}"
+                                   if msg.sender_username else None) if x) or msg.sender_id
+        rid = receipts.record(self.conn, channel=msg.channel, conversation_id=owner,
+                              message_id=None, member_id=OWNER_ID, tool="stranger",
+                              args={"username": msg.sender_username or ""}, state="pending",
+                              summary=f"stranger {who}")
+        snippet = " ".join((msg.text or "").split())[:80]
+        try:
+            await self.channel.send(owner, t("bot.stranger_owner", who=who, text=snippet),
+                                    [Button(t("bot.btn_allow"), f"allow:{rid}"),
+                                     Button(t("bot.btn_ignore"), f"no:{rid}")])
+        except ChannelError as e:
+            log.warning("could not tell the owner about a stranger: %s", e)
+
+    async def _allow_stranger(self, msg: Inbound, r) -> None:
+        """[Allow] on a stranger: pick the Grant, then D59's confirmed add."""
+        from .config import grants_config
+
+        username = r.args.get("username") or ""
+        receipts.set_state(self.conn, r.id, "done")
+        if not username:
+            await self.channel.answered(msg)
+            await self._say(msg, t("bot.stranger_no_username"))
+            return
+        _, grants = grants_config()
+        buttons = []
+        for grant in [*sorted(grants), ""]:
+            rid = self._receipt(msg, OWNER_ID, tool="member_add",
+                                args={"username": username, "grant": grant}, state="pending",
+                                summary=f"allow @{username} as {grant or 'notes only'}")
+            buttons.append(Button(grant or t("bot.no_grant"), f"ok:{rid}"))
+        await self.channel.answered(msg)
+        await self._say(msg, t("bot.pick_grant", who=f"@{username}"), buttons)
+
+    def last_talked(self) -> dict[str, str]:
+        """handle → when that Member last wrote to the bot (from the chat memory)."""
+        rows = self.conn.execute(
+            "SELECT m.handle, MAX(x.at) FROM messages x JOIN members m ON m.id = x.member_id"
+            " GROUP BY m.handle").fetchall()
+        return {h: at for h, at in rows if h}
+
+    def _members_text(self) -> str:
+        """`/moradores`: who may use the bot, and when they last talked (D61)."""
+        from .config import grants_config
+
+        invited, _ = grants_config()
+        if not invited:
+            return t("bot.members_none")
+        last = self.last_talked()
+
+        def when(handle: str) -> str:
+            at = last.get(handle)
+            return (t("bot.last_talked", at=datetime.fromisoformat(at).strftime("%d/%m %H:%M"))
+                    if at else t("bot.never_talked"))
+
+        return "\n".join([t("bot.members_title"), *(
+            f"• @{h} — {', '.join(g) or t('bot.no_grant')} · {when(h)}"
+            for h, g in sorted(invited.items()))])
+
+    def _hub(self):
+        services = self.agent.services if self.agent else {}
+        app = services.get("app")
+        return services.get("hub") or (getattr(app.state, "hub", None) if app else None)
+
+    def _satellites_text(self, member_id: int) -> str:
+        """`/satellites`: the computers connected, and whether they are on now.
+        The Owner sees every Member's; everyone else sees their own."""
+        hub = self._hub()
+        rows = hub.machines(None if member_id == OWNER_ID else member_id) if hub else []
+        if not rows:
+            return t("bot.satellites_none")
+        names = {m.id: m.handle for m in members_mod.all_members(self.conn)}
+        lines = [t("bot.satellites_title")]
+        for r in rows:
+            seen = datetime.fromtimestamp(r["last_seen"]).strftime("%d/%m %H:%M")
+            state = t("bot.satellite_on") if r["online"] else t("bot.satellite_off", at=seen)
+            owner = f" (@{names.get(r['member_id'], '?')})" if member_id == OWNER_ID else ""
+            lines.append(f"• {r['machine']}{owner} — {state}")
+        return "\n".join(lines)
+
     async def _tell_owner(self, msg: Inbound, text: str) -> None:
         """A private note to the Owner. Their private chat id is their user id."""
         owner = _identity_of(self.conn, msg.channel, OWNER_ID)
@@ -238,6 +337,7 @@ class Bot:
             return
         member_id, just_paired = self._recognise(msg)
         if member_id is None:
+            await self._stranger(msg)
             return
         if msg.callback is not None:
             await self._button(msg, member_id)
@@ -277,6 +377,15 @@ class Bot:
                 await self._connect_calendar(msg, member_id)
             elif command in ("/conectar_email", "/connect_email"):
                 await self._connect_mail(msg, member_id)
+            elif command in ("/help", "/ajuda"):
+                # From the catalogue, with no model: the cheapest answer there is.
+                await self.channel.reply(msg, t("bot.help"))
+            elif command in ("/moradores", "/members") and member_id == OWNER_ID:
+                await self.channel.reply(msg, self._members_text())
+            elif command in ("/satellites", "/computadores"):
+                await self.channel.reply(msg, self._satellites_text(member_id))
+            elif command in ("/agendado", "/scheduled"):
+                await self.channel.reply(msg, self._scheduled_text(member_id))
             elif command == "/board":
                 url = self.board_link(member_id)
                 await self.channel.reply(
@@ -459,12 +568,48 @@ class Bot:
                                conversation_id=msg.conversation_id,
                                message_id=msg.message_id, member_id=member_id, **kw)
 
+    def _chat_services(self, msg: Inbound) -> dict:
+        """What only the bot has, for the Tools (D47, D48): the message, a way to
+        send into this conversation, and the things the commands hand out."""
+        async def say(text: str) -> None:
+            await self._say(msg, text)
+
+        async def progress(tool_name: str) -> None:
+            key = f"progress.{tool_name}"
+            text = t(key)
+            await self.channel.reply(msg, text if text != key else t("progress.generic"),
+                                     quiet=True)
+
+        return {"message": msg, "say": say, "progress": progress,
+                "board_link": self.board_link,
+                "satellite_code": self.satellite_code, "calendar_link": self.calendar_link,
+                "mail_link": self.mail_link}
+
+    @staticmethod
+    def _switched(tool: str, receipt: dict) -> str:
+        """What a home Tool did, in the catalogue's words, honest about the
+        Entities that did not confirm the new state."""
+        key = "bot.home_on_done" if tool == "home_on" else "bot.home_off_done"
+        # "Bedroom lamp", not light.bedroom_lamp_2: the Tool records each
+        # Entity's friendly name, and the id is only the fallback.
+        names = receipt.get("names") or {}
+
+        def said(entities):
+            return ", ".join(names.get(e, e) for e in entities or [])
+
+        line = t(key, what=said(receipt.get("entities")))
+        if receipt.get("unconfirmed"):
+            line += "\n" + t("bot.home_unconfirmed", what=said(receipt["unconfirmed"]))
+        return line
+
     @staticmethod
     def _undo_button(rid: int, undo: dict) -> Button:
         # Undoing a schedule is cancelling it, and the button should say so: a
         # plain "Undo" under "I'll turn it on at 7" reads as undoing the light.
         if undo.get("kind") == "cancel_scheduled":
             return Button(t("bot.btn_cancel_scheduled"), f"undo:{rid}")
+        if undo.get("kind") == "undo_all":
+            return Button(t("bot.btn_undo_all"), f"undo:{rid}")
         return Button(t("bot.btn_undo"), f"undo:{rid}")
 
     async def _text(self, msg: Inbound, member_id: int, text: str) -> None:
@@ -483,6 +628,8 @@ class Bot:
             return
 
         deps = self.agent
+        if await self._routine_phrase(msg, member_id, text):
+            return
         if await self._prerouted(msg, member_id, text):
             return
         if not deps.within_budget(member_id):
@@ -497,7 +644,7 @@ class Bot:
         turn = Turn(member_id=member_id, conversation_id=msg.conversation_id,
                     in_group=not msg.private, permissions=deps.permissions(member_id))
         ctx = ToolContext(conn=self.conn, turn=turn, channel=msg.channel,
-                          services={**deps.services, "message": msg})
+                          services={**deps.services, **self._chat_services(msg)})
         available = [t_ for t_ in deps.registry().values() if allowed(t_, turn)]
         about = None
         if msg.reply_to_message_id:
@@ -551,6 +698,24 @@ class Bot:
             parts.append(cited)
         await self._say(msg, "\n\n".join(parts), buttons or None, rids)
 
+    async def _routine_phrase(self, msg: Inbound, member_id: int, text: str) -> bool:
+        """"Cheguei em casa": one of a Routine's phrases runs it, with no model
+        (D57). True if it was one."""
+        from . import agent_routines, routines
+
+        routine = routines.by_phrase(self.conn, member_id, text)
+        if routine is None:
+            return False
+        turn, ctx = self._turn(msg, member_id)
+        result = await agent_routines.execute(ctx, routine)
+        done = result.receipt or {}
+        rid = self._receipt(msg, member_id, tool="routine_run", summary=done.get(
+            "summary", f"routine {routine.name}"), undo=done.get("undo"))
+        await self._say(msg, agent_routines.report(routine, done),
+                        [self._undo_button(rid, done["undo"])] if done.get("undo") else None,
+                        [rid])
+        return True
+
     async def _prerouted(self, msg: Inbound, member_id: int, text: str) -> bool:
         """Switching the house with no model (D9). True if it was handled."""
         route = prerouter.home(text)
@@ -583,8 +748,10 @@ class Bot:
         switched = [e for done in turn.receipts for e in done.get("entities", [])]
         if not switched:
             return False
-        key = "bot.home_on_done" if name == "home_on" else "bot.home_off_done"
-        await self._say(msg, t(key, what=", ".join(switched)), buttons, rids)
+        receipt = {"entities": switched, "unconfirmed": [
+            e for done in turn.receipts for e in done.get("unconfirmed", [])],
+            "names": {k: v for done in turn.receipts for k, v in (done.get("names") or {}).items()}}
+        await self._say(msg, self._switched(name, receipt), buttons, rids)
         return True
 
     def _propose(self, msg: Inbound, member_id: int, pending) -> tuple[int, str]:
@@ -658,6 +825,15 @@ class Bot:
                 await self.channel.answered(msg, t("bot.stale"))
                 return
             await self.channel.answered(msg, answer)
+        elif kind == "ruleoff" and r.tool == "chat_rule":
+            from . import chat_rules
+
+            chat_rules.set_enabled(self.conn, r.args["id"], False, member_id=member_id,
+                                   is_owner=member_id == OWNER_ID)
+            receipts.set_state(self.conn, r.id, "done")
+            await self.channel.answered(msg, t("bot.rule_switched_off"))
+        elif kind == "allow" and r.state == "pending" and r.tool == "stranger":
+            await self._allow_stranger(msg, r)
         elif kind == "no" and r.state == "pending":
             receipts.set_state(self.conn, r.id, "refused")
             await self.channel.answered(msg, t("bot.cancelled"))
@@ -678,7 +854,7 @@ class Bot:
                     permissions=self.agent.permissions(member_id) if self.agent else None)
         ctx = ToolContext(conn=self.conn, turn=turn, channel=msg.channel,
                           services={**(self.agent.services if self.agent else {}),
-                                    "message": msg})
+                                    **self._chat_services(msg)})
         return turn, ctx
 
     async def _confirmed(self, msg: Inbound, member_id: int, r) -> None:
@@ -700,16 +876,27 @@ class Bot:
         buttons = [self._undo_button(r.id, undo)] if undo else None
         # Not `result.text`: that is written for the model, in English.
         switched = (result.receipt or {}).get("entities")
-        if switched:
-            key = "bot.home_on_done" if r.tool == "home_on" else "bot.home_off_done"
-            done = t(key, what=", ".join(switched))
-        else:
-            done = t("bot.done")
+        done = self._switched(r.tool, result.receipt) if switched else t("bot.done")
         await self._say(msg, done, buttons, [r.id])
 
     async def _undo(self, msg: Inbound, member_id: int, r) -> None:
-        u = r.undo or {}
-        if u.get("kind") == "reopen_notes":
+        await self._apply_undo(msg, member_id, r.undo or {})
+
+    async def _apply_undo(self, msg: Inbound, member_id: int, u: dict) -> None:
+        if u.get("kind") == "undo_all":
+            # A Routine's [Undo all] (D57): each step's own undo, last first, so
+            # the house goes back the way it came.
+            for step in reversed(u.get("undos", [])):
+                try:
+                    await self._apply_undo(msg, member_id, step)
+                except Exception:
+                    log.exception("undoing one step of a routine failed")
+        elif u.get("kind") == "delete_calendar_event":
+            build = (self.agent.services if self.agent else {}).get("calendar")
+            cal = build(member_id) if build else None
+            if cal is not None and hasattr(cal, "delete_event"):
+                await asyncio.to_thread(cal.delete_event, u["source_uid"], u["uid"])
+        elif u.get("kind") == "reopen_notes":
             viewer = members_mod.Viewer(member_id)
             for note_id in u.get("ids", []):
                 try:
@@ -735,6 +922,109 @@ class Bot:
             if chosen is not None:
                 turn, ctx = self._turn(msg, member_id)
                 await run_tool(chosen, turn, ctx, u.get("args", {}), confirmed=True)
+
+    def _scheduled_text(self, member_id: int) -> str:
+        """`/agendado`: the Member's scheduled actions and timers, with no model."""
+        now = datetime.now()
+        lines = [t("bot.scheduled_item", id=s.id, what=s.summary, at=f"{s.next_at:%d/%m %H:%M}",
+                   left=scheduled.remaining(s.next_at, now),
+                   repeat=f" · {s.repeat} {s.time_of_day}" if s.time_of_day else "")
+                 for s in scheduled.active(self.conn, member_id)]
+        for n in store.upcoming_reminders(self.conn, member_id):
+            at = datetime.fromisoformat(n.remind_at)
+            lines.append(t("bot.reminder_item", text=n.text, at=f"{at:%d/%m %H:%M}",
+                           left=scheduled.remaining(at, now)))
+        from . import chat_rules, routines
+
+        for rule in chat_rules.visible(self.conn, member_id):
+            lines.append(f"• ⚙️ {rule.name}: {rule.describe()}")
+        for routine in routines.visible(self.conn, member_id):
+            lines.append(f"• 🏠 {routine.name}"
+                         + (f" — “{'”, “'.join(routine.phrases)}”" if routine.phrases else ""))
+        if not lines:
+            return t("bot.nothing_scheduled")
+        return "\n".join([t("bot.scheduled_title"), *lines])
+
+    def menu(self) -> list[tuple[str, str]]:
+        """The `/` menu Telegram shows (D61), in the installation's language."""
+        return [(c, t(f"bot.menu_{c}")) for c in
+                ("help", "board", "agendado", "conectar_agenda", "conectar_email", "satellite",
+                 "satellites")]
+
+    def owner_menu(self) -> list[tuple[str, str]]:
+        """The Owner's own menu: everyone's, plus `/moradores`."""
+        return [*self.menu(), ("moradores", t("bot.menu_moradores"))]
+
+    def owner_chat(self) -> str | None:
+        return _identity_of(self.conn, self.channel.name, OWNER_ID)
+
+    # ── Chat Rules (F10, D45, D46) ──────────────────────────────────────────
+    async def fire_chat_rules(self, kind: str, entity: str | None, new: str,
+                              now: datetime | None = None) -> int:
+        """Run the chat Rules a signal starts, each with its creator's Grant read
+        now, and tell the creator every time, with [Undo] and [Switch it off].
+        Returns how many acted."""
+        from . import chat_rules
+
+        if self.agent is None:
+            return 0
+        now = now or datetime.now()
+        acted = 0
+        for rule in chat_rules.triggered(self.conn, kind, entity, new, now):
+            if not chat_rules.in_window(rule, now) or not await self._rule_condition(rule):
+                continue
+            chat_rules.mark_fired(self.conn, rule.id, now)
+            chat = _identity_of(self.conn, self.channel.name, rule.owner_id)
+            chosen = self.agent.registry().get(rule.action_tool)
+            turn = Turn(member_id=rule.owner_id, conversation_id=chat or "", in_group=False,
+                        permissions=self.agent.permissions(rule.owner_id))
+            ctx = ToolContext(conn=self.conn, turn=turn, channel=self.channel.name,
+                              services=dict(self.agent.services))
+            try:
+                if chosen is None:
+                    raise NotAllowed(f"{rule.action_tool} is gone")
+                result = await run_tool(chosen, turn, ctx, dict(rule.action_args))
+            except NotAllowed:
+                result = None
+            except Exception:
+                log.exception("chat rule %s failed", rule.name)
+                result = None
+            if chat is None:
+                continue
+            off = receipts.record(self.conn, channel=self.channel.name, conversation_id=chat,
+                                  message_id=None, member_id=rule.owner_id, tool="chat_rule",
+                                  args={"id": rule.id}, state="pending",
+                                  summary=f"rule {rule.name} fired")
+            buttons = [Button(t("bot.btn_rule_off"), f"ruleoff:{off}")]
+            if result is None or result.receipt is None:
+                await self._push(self.channel.name, chat,
+                                 t("bot.rule_failed", name=rule.name), buttons, off)
+                continue
+            acted += 1
+            done = result.receipt
+            rid = receipts.record(self.conn, channel=self.channel.name, conversation_id=chat,
+                                  message_id=None, member_id=rule.owner_id,
+                                  tool=rule.action_tool, summary=done.get("summary", rule.name),
+                                  args=rule.action_args, undo=done.get("undo"))
+            what = (self._switched(rule.action_tool, done) if done.get("entities")
+                    else t("bot.done"))
+            if done.get("undo"):
+                buttons.insert(0, self._undo_button(rid, done["undo"]))
+            await self._push(self.channel.name, chat,
+                             t("bot.rule_fired", name=rule.name, what=what), buttons, rid)
+        return acted
+
+    async def _rule_condition(self, rule) -> bool:
+        if not rule.cond_entity:
+            return True
+        services = self.agent.services if self.agent else {}
+        app = services.get("app")
+        home = app.state.home if app is not None else services.get("home")
+        try:
+            state = (await home.state(rule.cond_entity)).get("state", "")
+        except Exception:
+            return False          # cannot tell: do not act on a guess
+        return str(state).lower() == (rule.cond_state or "").lower()
 
     # ── Reminders on the chat (F9) ──────────────────────────────────────────
     async def remind(self, note, late: str = "") -> bool:
@@ -837,10 +1127,8 @@ class Bot:
                                   message_id=None, member_id=s.member_id, tool=s.tool,
                                   summary=done.get("summary", s.summary), args=s.args,
                                   undo=done.get("undo"))
-            switched = done.get("entities")
-            if switched:
-                key = "bot.home_on_done" if s.tool == "home_on" else "bot.home_off_done"
-                line = t(key, what=", ".join(switched))
+            if done.get("entities"):
+                line = self._switched(s.tool, done)
             else:
                 line = t("bot.done") + f" ({s.summary})"
             undo = done.get("undo")

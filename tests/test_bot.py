@@ -16,6 +16,7 @@ from ta import db
 from ta.bot import Bot, role_of
 from ta.channel import Inbound
 from ta.channel.telegram import TelegramChannel
+from ta.i18n import t
 
 OWNER_ID = "1001"
 
@@ -92,8 +93,10 @@ def test_a_stranger_who_takes_the_owners_username_is_ignored(bot):
     run(bot, inbound("sou eu"))
     sent_before = list(bot.channel.sent)
     run(bot, inbound("sou eu, juro", sender_id="6666", username="dono"))
-    assert bot.captured == ["sou eu"]
-    assert bot.channel.sent == sent_before, "a stranger gets silence, not an answer"
+    run(bot, inbound("abre aí", sender_id="6666", username="dono"))
+    assert bot.captured == ["sou eu"], "nothing of the stranger's is kept"
+    # D60 (amending D8): one standard reply a day, which names nobody.
+    assert bot.channel.sent == [*sent_before, t("bot.stranger")]
 
 
 def test_a_stranger_is_answered_with_silence(bot, conn):

@@ -159,3 +159,37 @@ def search(conn: sqlite3.Connection, embedder, query: str, *, member_id: int,
     scored = [Hit(r[0], r[1], _cosine(q, _unpack(r[2])), r[3]) for r in rows]
     scored.sort(key=lambda h: h.score, reverse=True)
     return scored[:limit]
+
+
+# ── Notes by meaning (F10, D52b) ────────────────────────────────────────────
+# Below this, a Note is not "about" the query. MiniLM puts unrelated short texts
+# around 0.1–0.3 and paraphrases above 0.5; 0.4 keeps "aquela coisa do carro" →
+# "trocar o óleo" and drops "comprar pão".
+NOTE_THRESHOLD = 0.4
+
+
+def _sha(text: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def stale_notes(conn: sqlite3.Connection, notes: list) -> list:
+    """The Notes whose embedding is missing or older than their text."""
+    known = dict(conn.execute("SELECT note_id, sha FROM note_vectors").fetchall())
+    return [n for n in notes if known.get(n.id) != _sha(n.text)]
+
+
+def store_note_vectors(conn: sqlite3.Connection, notes: list, vectors: list) -> None:
+    conn.executemany("INSERT OR REPLACE INTO note_vectors (note_id, sha, vector) VALUES (?, ?, ?)",
+                     [(n.id, _sha(n.text), _pack(v)) for n, v in zip(notes, vectors, strict=True)])
+
+
+def closest_notes(conn: sqlite3.Connection, query_vector: list[float], notes: list,
+                  limit: int = 5) -> list:
+    """Among `notes` — already only what the asker may see — the closest by meaning."""
+    wanted = {n.id: n for n in notes}
+    rows = conn.execute("SELECT note_id, vector FROM note_vectors").fetchall()
+    scored = [(_cosine(query_vector, _unpack(v)), wanted[i]) for i, v in rows if i in wanted]
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [n for score, n in scored[:limit] if score >= NOTE_THRESHOLD]

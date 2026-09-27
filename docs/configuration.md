@@ -120,6 +120,16 @@ fallback = "gemini"
 [llm.tasks]
 organize = "gemini"
 
+# Tiers (D53): which model each class of task gets. `pro` covers the chat (agent),
+# organize and priorities; `lite` covers the passes that run on every note or group
+# message (review_capture, classify, detect_event, digest_prose). The fallback
+# applies to both. Unset, every task uses the default provider's model. A line in
+# [llm.tasks] still wins for its task, and may name a Tier ("pro") or a
+# provider:model.
+[llm.tiers]
+lite = "deepseek:deepseek-flash"
+pro  = "deepseek:deepseek-v4-pro"
+
 # The Telegram username allowed to talk to the bot. It is only used once: the first
 # message from it binds that account's numeric id, and from then on the id is what
 # counts, so a changed or stolen username does not change who the bot obeys.
@@ -165,6 +175,14 @@ folders = ["~/notas"]
 # Hidden files and anything named like a secret are refused.
 [files]
 folders = ["~/Documentos", "~/Downloads"]
+
+# On a Satellite: scripts the bot may run on this computer, by name (F10, D56).
+# It never passes them arguments. `safe = true` runs without asking; otherwise the
+# bot asks for your button every time.
+[satellite.scripts.backup]
+run = "~/bin/backup.sh"
+description = "backs up the photos to the external disk"
+safe = false
 
 # The chat's guardrails (D29, D30). `house_rules` goes into every conversation:
 # a SOFT guardrail that shapes answers, and nothing depends on it for safety. The

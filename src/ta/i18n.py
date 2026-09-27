@@ -328,13 +328,34 @@ MESSAGES: dict[str, dict[str, str]] = {
     "priority.low": {"pt": "baixa", "en": "low"},
     # ── Mural ───────────────────────────────────────────────────────────────
     "board.title": {"pt": "Mural", "en": "Board"},
+    "board.title_of": {"pt": "Mural de {name}", "en": "{name}'s board"},
+    "board.view.auto": {"pt": "automações", "en": "automations"},
+    "board.auto.rules": {"pt": "⚙️ Regras", "en": "⚙️ Rules"},
+    "board.auto.rules_none": {"pt": "Nenhuma. Peça ao bot: “quando a porta abrir depois das "
+                                    "22h, acende o corredor”.",
+                              "en": "None. Ask the bot: “when the door opens after 10pm, turn "
+                                    "on the hall light”."},
+    "board.auto.routines": {"pt": "🏠 Rotinas", "en": "🏠 Routines"},
+    "board.auto.routines_none": {"pt": "Nenhuma. Peça ao bot: “cria uma rotina chegada que "
+                                       "liga a luz da sala quando eu disser cheguei”.",
+                                 "en": "None. Ask the bot: “make an arrival routine that turns "
+                                       "on the living room light when I say I'm home”."},
+    "board.auto.scheduled": {"pt": "⏰ Agendadas", "en": "⏰ Scheduled"},
+    "board.auto.scheduled_none": {"pt": "Nada agendado. “Liga a luz daqui 10 min”, “todo dia "
+                                        "às 7h acende o quarto”.",
+                                  "en": "Nothing scheduled. “Light on in 10 minutes”, “every day "
+                                        "at 7 turn on the bedroom”."},
+    "board.auto.off": {"pt": "desligada", "en": "off"},
+    "board.auto.steps": {"pt": "{n} passo(s)", "en": "{n} step(s)"},
     "board.loading": {"pt": "carregando…", "en": "loading…"},
     # `{cmd}` recebe marcação (`<code>ta note</code>`) montada pelo mural. É o
     # único texto do catálogo com um buraco para HTML, e os dois lados são
     # nossos — nada de entrada do usuário passa por aqui.
     "board.empty": {
-        "pt": "nada aqui. Escreva algo acima, ou use {cmd}.",
-        "en": "nothing here. Write something above, or use {cmd}.",
+        "pt": "Nada aqui ainda. Mande qualquer coisa pro bot no Telegram, escreva acima, ou use "
+              "{cmd}.",
+        "en": "Nothing here yet. Send anything to the bot on Telegram, write above, or use "
+              "{cmd}.",
     },
     "board.load_failed": {"pt": "não deu para carregar", "en": "could not load"},
     "board.out_of_queue": {"pt": "fora da fila", "en": "out of the queue"},
@@ -479,8 +500,109 @@ MESSAGES: dict[str, dict[str, str]] = {
     "bot.done": {"pt": "Feito.", "en": "Done."},
     "bot.home_on_done": {"pt": "Feito · ligado: {what}", "en": "Done · on: {what}"},
     "bot.home_off_done": {"pt": "Feito · desligado: {what}", "en": "Done · off: {what}"},
+    "bot.home_unconfirmed": {
+        "pt": "⚠️ Mandei, mas ainda não confirmou: {what}. Pode estar offline ou lento — "
+              "confira em instantes.",
+        "en": "⚠️ Sent, but not confirmed yet: {what}. It may be offline or slow — check in "
+              "a moment.",
+    },
     "bot.event_created": {"pt": "📅 Criei na agenda: {title} · {at}",
                           "en": "📅 Added to your calendar: {title} · {at}"},
+    # /help, /agendado and the / menu (F10, D61).
+    "bot.help": {
+        "pt": "Fala comigo como falaria com uma pessoa. O que não for pergunta vira nota.\n\n"
+              "📝 Notas: “comprar presente sexta”, “o que tá vencido?”, “terminei o relatório”\n"
+              "🛒 Listas: “põe leite na lista”, “comprei o leite”\n"
+              "⏰ Lembretes: “me lembra às 15h de ligar pro dentista”, “timer de 10 min”\n"
+              "💡 Casa: “apaga a luz”, “luz do quarto azul em 10%”, “liga a luz daqui 10 min”\n"
+              "📅 Agenda: “o que tenho amanhã?”, “marca janta sexta 20h”\n"
+              "📬 E-mail: “tem e-mail do banco?”, “responde que pago amanhã”\n"
+              "💻 Computador: “me manda o PDF do contrato”\n"
+              "🔎 Web: “vai chover amanhã?”\n\n"
+              "Pra configurar algo, pergunte: “como conecto meu e-mail?”, “como libero a Ana?”",
+        "en": "Talk to me as you would to a person. What is not a question becomes a note.\n\n"
+              "📝 Notes: “buy a present on Friday”, “what is overdue?”, “finished the report”\n"
+              "🛒 Lists: “add milk to the list”, “bought the milk”\n"
+              "⏰ Reminders: “remind me at 3pm to call the dentist”, “10 minute timer”\n"
+              "💡 House: “lights off”, “bedroom light blue at 10%”, “light on in 10 minutes”\n"
+              "📅 Calendar: “what do I have tomorrow?”, “dinner Friday 8pm”\n"
+              "📬 Email: “any email from the bank?”, “reply that I pay tomorrow”\n"
+              "💻 Computer: “send me the contract PDF”\n"
+              "🔎 Web: “will it rain tomorrow?”\n\n"
+              "To set something up, ask: “how do I connect my email?”",
+    },
+    "bot.scheduled_title": {"pt": "⏰ Agendado:", "en": "⏰ Scheduled:"},
+    "bot.scheduled_item": {"pt": "• #{id} {what} — {at} (em {left}){repeat}",
+                           "en": "• #{id} {what} — {at} (in {left}){repeat}"},
+    "bot.reminder_item": {"pt": "• ⏰ {text} — {at} (em {left})",
+                          "en": "• ⏰ {text} — {at} (in {left})"},
+    "bot.nothing_scheduled": {"pt": "Nada agendado.", "en": "Nothing scheduled."},
+    "bot.menu_help": {"pt": "o que eu sei fazer", "en": "what I can do"},
+    "bot.menu_board": {"pt": "link do seu quadro", "en": "a link to your board"},
+    "bot.menu_agendado": {"pt": "agendamentos e timers", "en": "scheduled actions and timers"},
+    "bot.menu_conectar_agenda": {"pt": "conectar o Google Agenda",
+                                 "en": "connect Google Calendar"},
+    "bot.menu_conectar_email": {"pt": "conectar o Gmail", "en": "connect Gmail"},
+    "bot.menu_satellite": {"pt": "parear um computador", "en": "pair a computer"},
+    "bot.menu_moradores": {"pt": "quem usa o bot", "en": "who uses the bot"},
+    "bot.members_title": {"pt": "👥 Quem pode usar o bot:", "en": "👥 Who may use the bot:"},
+    "bot.members_none": {"pt": "Só você, por enquanto. Pra liberar alguém: “libera o bot pra "
+                               "@fulano”.",
+                         "en": "Only you, for now. To allow someone: “allow @someone”."},
+    "bot.no_grant": {"pt": "só notas", "en": "notes only"},
+    "bot.last_talked": {"pt": "falou {at}", "en": "last talked {at}"},
+    "bot.never_talked": {"pt": "ainda não falou", "en": "has not talked yet"},
+    "bot.menu_satellites": {"pt": "computadores conectados", "en": "connected computers"},
+    "bot.satellites_title": {"pt": "💻 Computadores:", "en": "💻 Computers:"},
+    "bot.satellites_none": {
+        "pt": "Nenhum computador conectado desde que o servidor ligou. Pra parear um: /satellite",
+        "en": "No computer connected since the server started. To pair one: /satellite",
+    },
+    "bot.satellite_on": {"pt": "🟢 ligado", "en": "🟢 on"},
+    "bot.satellite_off": {"pt": "⚪ desligado (visto {at})", "en": "⚪ off (seen {at})"},
+    # Strangers (D60).
+    "bot.stranger": {
+        "pt": "Oi! Este é um assistente particular e você ainda não tem acesso. Peça para "
+              "quem cuida dele te liberar.",
+        "en": "Hi! This is a private assistant and you do not have access yet. Ask whoever "
+              "runs it to let you in.",
+    },
+    "bot.stranger_owner": {"pt": "🚪 {who} tentou usar o bot: “{text}”",
+                           "en": "🚪 {who} tried to use the bot: “{text}”"},
+    "bot.btn_allow": {"pt": "Liberar", "en": "Allow"},
+    "bot.btn_ignore": {"pt": "Ignorar", "en": "Ignore"},
+    "bot.stranger_no_username": {
+        "pt": "Essa pessoa não tem @username no Telegram, e é por ele que o bot libera. Peça "
+              "para ela criar um (Configurações → Nome de usuário) e falar com o bot de novo.",
+        "en": "This person has no Telegram @username, which is how the bot allows people. Ask "
+              "them to set one (Settings → Username) and message the bot again.",
+    },
+    "bot.pick_grant": {"pt": "Liberar {who} com qual permissão?",
+                       "en": "Allow {who} with which permission?"},
+    # Said before a Tool that takes seconds (F10). Written here, not by the model.
+    "progress.generic": {"pt": "⏳ Um instante, já volto…", "en": "⏳ One moment…"},
+    "progress.web_search": {"pt": "🔎 Pesquisando na internet…", "en": "🔎 Searching the web…"},
+    "progress.docs_search": {"pt": "🔎 Procurando nos seus documentos…",
+                             "en": "🔎 Looking through your documents…"},
+    "progress.mail_search": {"pt": "📬 Procurando nos seus e-mails…",
+                             "en": "📬 Looking through your email…"},
+    "progress.mail_read": {"pt": "📬 Abrindo o e-mail…", "en": "📬 Opening the email…"},
+    "progress.mail_draft": {"pt": "✍️ Escrevendo o rascunho…", "en": "✍️ Writing the draft…"},
+    "progress.files_list": {"pt": "💻 Olhando no seu computador…",
+                            "en": "💻 Checking your computer…"},
+    "progress.files_read": {"pt": "💻 Abrindo o arquivo no seu computador…",
+                            "en": "💻 Opening the file on your computer…"},
+    "progress.files_send": {"pt": "📎 Buscando o arquivo no seu computador…",
+                            "en": "📎 Fetching the file from your computer…"},
+    "progress.computer_actions": {"pt": "💻 Perguntando ao seu computador…",
+                                  "en": "💻 Asking your computer…"},
+    "progress.computer_act": {"pt": "💻 Mandando pro seu computador…",
+                              "en": "💻 Sending it to your computer…"},
+    "progress.computer_confirmed": {"pt": "💻 Mandando pro seu computador…",
+                                    "en": "💻 Sending it to your computer…"},
+    "progress.calendar_day": {"pt": "📅 Olhando sua agenda…", "en": "📅 Checking your calendar…"},
+    "progress.calendar_create": {"pt": "📅 Marcando na agenda…",
+                                 "en": "📅 Adding it to your calendar…"},
     # Reminders on the chat (F9).
     "bot.reminder": {"pt": "⏰ Lembrete: {text}{late}", "en": "⏰ Reminder: {text}{late}"},
     "bot.btn_reminder_done": {"pt": "Concluir", "en": "Done"},
@@ -488,6 +610,26 @@ MESSAGES: dict[str, dict[str, str]] = {
     "bot.reminder_done": {"pt": "Concluída ✓", "en": "Done ✓"},
     "bot.reminder_snoozed": {"pt": "Te lembro de novo às {at}.",
                              "en": "I'll remind you again at {at}."},
+    # Chat Rules (F10, D45, D46).
+    "rule.when_state": {"pt": "quando {entity} ficar {state}",
+                        "en": "when {entity} becomes {state}"},
+    "rule.any_state": {"pt": "qualquer estado", "en": "anything"},
+    "rule.when_mic": {"pt": "quando o microfone ficar {state}",
+                      "en": "when the microphone turns {state}"},
+    "rule.between": {"pt": "entre {after} e {before}", "en": "between {after} and {before}"},
+    "rule.if_state": {"pt": "se {entity} estiver {state}", "en": "if {entity} is {state}"},
+    "rule.off": {"pt": "desligada", "en": "off"},
+    "bot.rule_fired": {"pt": "⚙️ Regra {name}: {what}", "en": "⚙️ Rule {name}: {what}"},
+    "bot.rule_failed": {"pt": "⚙️ A regra {name} disparou, mas não consegui agir (permissão "
+                              "ou aparelho fora do ar).",
+                        "en": "⚙️ Rule {name} fired, but I could not act (permission, or the "
+                              "device is unreachable)."},
+    "bot.btn_rule_off": {"pt": "Desligar esta regra", "en": "Switch this rule off"},
+    "bot.rule_switched_off": {"pt": "Regra desligada.", "en": "Rule switched off."},
+    # Routines (F10, D57).
+    "bot.btn_undo_all": {"pt": "Desfazer tudo", "en": "Undo all"},
+    "bot.routine_ran": {"pt": "🏠 Rotina {name}:", "en": "🏠 Routine {name}:"},
+    "bot.routine_skipped": {"pt": "⏭️ pulei {what}", "en": "⏭️ skipped {what}"},
     # Scheduled actions (F9, D39).
     "bot.btn_cancel_scheduled": {"pt": "Cancelar agendamento", "en": "Cancel schedule"},
     "bot.scheduled_cancelled": {"pt": "Agendamento cancelado.", "en": "Schedule cancelled."},
@@ -558,11 +700,11 @@ MESSAGES: dict[str, dict[str, str]] = {
     "digest.adguard_top": {"pt": "mais bloqueados: {domains}\nclientes mais ativos: {clients}",
                            "en": "most blocked: {domains}\nmost active clients: {clients}"},
     "bot.satellite_code": {
-        "pt": "No seu computador, rode:\nta satellite login {code}\n"
+        "pt": "No seu computador, rode:\n```\nta satellite login {code}\n```\n"
               "O código vale 5 minutos e funciona uma vez só.\n"
               "Se você indexar pastas ([rag] no config), quem administra a casa também "
               "pode buscar nelas.",
-        "en": "On your computer, run:\nta satellite login {code}\n"
+        "en": "On your computer, run:\n```\nta satellite login {code}\n```\n"
               "The code works once, for 5 minutes.\n"
               "If you index folders ([rag] in the config), whoever runs the house can "
               "search them too.",

@@ -110,7 +110,8 @@ FIELDS: tuple[Field, ...] = (
 # Tables: edited as TOML text, one each. `restart` for those read only at boot.
 TABLES: dict[str, bool] = {
     "aliases": False, "groups": False, "sensors": False, "lists": True,
-    "members": False, "grants": False, "llm.tasks": True, "llm.prices": True,
+    "members": False, "grants": False, "llm.tasks": True, "llm.tiers": True,
+    "llm.prices": True,
 }
 
 
@@ -186,7 +187,7 @@ def _field_value(f: Field, raw):
 def _check_table(name: str, table: dict) -> None:
     """The same rules the daemon applies on read — but here they refuse, where the
     daemon would log and ignore: the page is where a mistake is cheapest to fix."""
-    from .config import SENSOR_ROLES
+    from .config import SENSOR_ROLES, TIERS, route_ok
     from .llm import TASKS
     from .providers import PROVIDER_NAMES
 
@@ -217,9 +218,11 @@ def _check_table(name: str, table: dict) -> None:
                     strings(value[k], f"{where}.{k}")
             if "admin" in value and not isinstance(value["admin"], bool):
                 raise Invalid(f"{where}.admin: true or false")
-        if name == "llm.tasks" and (key not in TASKS or value not in PROVIDER_NAMES):
-            raise Invalid(f"{where}: tasks are {', '.join(TASKS)}; providers "
-                          f"{', '.join(PROVIDER_NAMES)}")
+        if name == "llm.tasks" and (key not in TASKS or not route_ok(value, tier_allowed=True)):
+            raise Invalid(f"{where}: tasks are {', '.join(TASKS)}; a route is one of the providers "
+                          f"({', '.join(PROVIDER_NAMES)}), provider:model, lite or pro")
+        if name == "llm.tiers" and (key not in TIERS or not route_ok(value, tier_allowed=False)):
+            raise Invalid(f"{where}: tiers are {', '.join(TIERS)}; each is provider[:model]")
         numeric = isinstance(value, dict) and all(
             isinstance(value.get(k), int | float) for k in ("input", "output"))
         if name == "llm.prices" and not numeric:
@@ -257,6 +260,40 @@ def write(path: Path, changes: dict, *, now: datetime | None = None) -> Path | N
 
     for dotted, value in staged:
         _set(doc, dotted, value)
+    backup = _backup(path, now)
+    _atomic_write(path, tomlkit.dumps(doc), mode=0o644)
+    return backup
+
+
+def set_member(path: Path, handle: str, grants: list[str] | None, *,
+               now: datetime | None = None) -> Path | None:
+    """Add a Member with existing Grants, or remove one (`grants=None`) — the one
+    config change the Owner may make from the chat (D59). Same guarantees as the
+    page: validated, backed up, comments kept. A Grant that does not exist is
+    refused: creating what a Grant allows stays behind the page's two factors.
+    """
+    doc = tomlkit.parse(path.read_text()) if path.exists() else tomlkit.document()
+    handle = handle.strip().lstrip("@").lower()
+    if not handle or not all(c.isalnum() or c == "_" for c in handle):
+        raise Invalid(f"{handle!r} is not a Telegram username")
+    members = doc.get("members")
+    if grants is None:
+        if members is None or handle not in members:
+            raise Invalid(f"@{handle} is not a member")
+        del members[handle]
+    else:
+        known = set((doc.get("grants") or {}).keys())
+        unknown = [g for g in grants if g not in known]
+        if unknown:
+            raise Invalid(f"no such Grant: {', '.join(unknown)}; they are "
+                          f"{', '.join(sorted(known)) or 'none yet'}")
+        if members is None:
+            members = tomlkit.table(is_super_table=True)
+            doc["members"] = members
+        entry = tomlkit.table()
+        entry["grants"] = list(grants)
+        members[handle] = entry
+    _check_table("members", doc.get("members", {}).unwrap() if doc.get("members") else {})
     backup = _backup(path, now)
     _atomic_write(path, tomlkit.dumps(doc), mode=0o644)
     return backup

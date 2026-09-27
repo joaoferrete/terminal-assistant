@@ -6,6 +6,7 @@ invariant 9): the context it gets is already what the asker may see.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from dataclasses import dataclass
 from typing import Any
@@ -13,6 +14,8 @@ from typing import Any
 from . import memory, store
 from .members import Viewer
 from .tools import Source, ToolResult, Turn, tool
+
+log = logging.getLogger("ta.agent")
 
 
 @dataclass
@@ -35,12 +38,13 @@ def _quote(text: str) -> str:
 
 
 @tool(
-    description="Search the asker's notes (and the household's) for words. Use it "
-    "for questions about their own data: tasks, what they wrote down, deadlines.",
+    description="Search the asker's notes (and the household's) by words and by meaning. "
+    "Use it for questions about their own data: tasks, what they wrote down, deadlines.",
     args={"query": "the words to look for"},
 )
 async def notes_search(ctx: ToolContext, query: str) -> ToolResult:
     found = store.search_notes(ctx.conn, query, viewer=ctx.viewer)
+    found += [n for n in await _by_meaning(ctx, query) if n.id not in {f.id for f in found}]
     if not found:
         return ToolResult(text="no note matches")
     lines = [
@@ -56,6 +60,34 @@ async def notes_search(ctx: ToolContext, query: str) -> ToolResult:
         # asker did not write: it taints the turn (D27).
         tainted=any(n.owner_id != ctx.turn.member_id for n in found),
     )
+
+
+async def _by_meaning(ctx: ToolContext, query: str) -> list:
+    """Notes close in meaning (D52b): "aquela coisa do carro" finds "trocar o óleo",
+    which no shared word would. Only among the Notes the asker may see, with the
+    local model; without the `[rag]` extra this is simply empty."""
+    import asyncio
+
+    from . import rag
+
+    app = ctx.services.get("app")
+    embedder = ctx.services.get("embedder") or (getattr(app.state, "embedder", None)
+                                                if app else None)
+    if embedder is None or (not ctx.services.get("embedder") and not rag.available()):
+        return []
+    notes = store.list_notes(ctx.conn, viewer=ctx.viewer, include_done=True)
+    try:
+        stale = rag.stale_notes(ctx.conn, notes)
+        # Embedding is slow and runs in a thread; the writes stay on the loop's
+        # thread, which owns the connection (the lesson of T7.1).
+        if stale:
+            vectors = await asyncio.to_thread(embedder.embed, [n.text for n in stale])
+            rag.store_note_vectors(ctx.conn, stale, vectors)
+        [q] = await asyncio.to_thread(embedder.embed, [query])
+    except Exception:
+        log.exception("search by meaning failed; words only")
+        return []
+    return rag.closest_notes(ctx.conn, q, notes)
 
 
 @tool(
@@ -121,6 +153,36 @@ async def list_show(ctx: ToolContext, list: str = "") -> ToolResult:  # noqa: A0
 # Each one checks the asker's Grant per argument, because only it knows which
 # Entity or List an argument names, and each returns the Receipt with its undo.
 
+async def _names(ctx: ToolContext, entities: list[str]) -> dict[str, str]:
+    """entity_id → the name people know it by (Home Assistant's friendly_name)."""
+    try:
+        inventory = await _home(ctx).entities("light.", "switch.")
+    except Exception:
+        return {}
+    return {e["entity_id"]: e.get("attributes", {}).get("friendly_name") or e["entity_id"]
+            for e in inventory if e["entity_id"] in entities}
+
+
+async def _unconfirmed(ctx: ToolContext, entities: list[str], expected: str) -> list[str]:
+    """The Entities that did not reach `expected` within ~3 s.
+
+    Home Assistant answers 200 as soon as it accepted the command, and a Tuya lamp
+    then goes through the vendor's cloud. The first real "apaga a luz em 1min"
+    said "⏰ Feito · desligado" while the lamp was still on (it went off later).
+    The board's routes always confirmed; the agent's Tools now do too, and say
+    which ones did not answer rather than claiming they did.
+    """
+    import asyncio
+
+    home = _home(ctx)
+    if not hasattr(home, "confirm"):
+        return []
+    results = await asyncio.gather(*(home.confirm(e, expected) for e in entities),
+                                   return_exceptions=True)
+    return [e for e, r in zip(entities, results, strict=True)
+            if isinstance(r, BaseException) or not r[1]]
+
+
 def _home(ctx: ToolContext):
     app = ctx.services.get("app")
     return app.state.home if app is not None else ctx.services.get("home")
@@ -157,9 +219,13 @@ async def home_on(ctx: ToolContext, target: str, brightness: str = "",
             await _home(ctx).set_color(e, color, level if digits else None)
         else:
             await _home(ctx).switch_on(e, level)
+    slow = await _unconfirmed(ctx, entities, "on")
     return ToolResult(
-        text="turned on: " + ", ".join(entities),
+        text="turned on: " + ", ".join(entities)
+             + (f"; but after 3 s these still did not report on: {', '.join(slow)} (the "
+                "device may be offline or slow; say so)" if slow else ""),
         receipt={"summary": "turned on " + ", ".join(entities), "entities": entities,
+                 "unconfirmed": slow, "names": await _names(ctx, entities),
                  "undo": {"tool": "home_off", "args": {"target": ",".join(entities)}}},
     )
 
@@ -180,9 +246,13 @@ async def home_off(ctx: ToolContext, target: str) -> ToolResult:
         return ToolResult(text=f"nothing you may switch matches {target!r}")
     for e in entities:
         await _home(ctx).turn_off(e)
+    slow = await _unconfirmed(ctx, entities, "off")
     return ToolResult(
-        text="turned off: " + ", ".join(entities),
+        text="turned off: " + ", ".join(entities)
+             + (f"; but after 3 s these still did not report off: {', '.join(slow)} (the "
+                "device may be offline or slow; say so)" if slow else ""),
         receipt={"summary": "turned off " + ", ".join(entities), "entities": entities,
+                 "unconfirmed": slow, "names": await _names(ctx, entities),
                  "undo": {"tool": "home_on", "args": {"target": ",".join(entities)}}
                  if len(entities) == 1 else None},
     )
@@ -286,6 +356,7 @@ def persona_line(conn, member_id: int) -> str:
 
 
 @tool(
+    slow=True,
     description="Search the web for current or factual information the notes do not "
     "have: news, weather, opening hours, prices, anything recent",
     args={"question": "what to find out, as a full question"},
@@ -350,6 +421,7 @@ async def digest_now(ctx: ToolContext) -> ToolResult:
 
 
 @tool(
+    slow=True,
     description="Search the member's own documents and code — the folders their "
     "computer indexes — by meaning. Use it for 'how did I solve X', 'where did I "
     "write about Y', or anything that sounds like their files rather than their notes.",
@@ -517,6 +589,7 @@ async def _ask_computer(ctx: ToolContext, op: str, path: str) -> dict | str:
 
 
 @tool(
+    slow=True,
     description="List a folder on the asker's own computer, among the folders it shares. "
     "Empty path lists the shared folders themselves.",
     args={"path": "a folder as a previous listing showed it, or empty"},
@@ -534,6 +607,7 @@ async def files_list(ctx: ToolContext, path: str = "") -> ToolResult:
 
 
 @tool(
+    slow=True,
     description="Read a text file on the asker's own computer (notes, code, markdown, "
     "config). For a PDF, an image or anything to keep, use files_send.",
     args={"path": "the file, as files_list showed it"},
@@ -549,6 +623,7 @@ async def files_read(ctx: ToolContext, path: str) -> ToolResult:
 
 
 @tool(
+    slow=True,
     description="Send a file from the asker's own computer to them, here in this chat",
     args={"path": "the file, as files_list showed it"},
 )
@@ -581,6 +656,7 @@ def _mailbox(ctx: ToolContext):
 
 
 @tool(
+    slow=True,
     description="Search the asker's own Gmail, only when they ask about their email. "
     "Takes Gmail search syntax: words, from:, subject:, newer_than:7d, is:unread.",
     args={"query": "a Gmail search, e.g. 'from:banco newer_than:7d'"},
@@ -608,6 +684,7 @@ async def mail_search(ctx: ToolContext, query: str) -> ToolResult:
 
 
 @tool(
+    slow=True,
     description="Read one of the asker's emails in full, by the id mail_search gave",
     args={"id": "the message id, exactly as mail_search showed it"},
     third_party=True,
@@ -630,6 +707,7 @@ async def mail_read(ctx: ToolContext, id: str) -> ToolResult:  # noqa: A002
 
 
 @tool(
+    slow=True,
     description="Write an email DRAFT in the asker's Gmail, for them to review and send "
     "themselves. You cannot send email. For a reply, give reply_to (an id from "
     "mail_search); to and subject may then be empty.",
@@ -661,3 +739,8 @@ async def mail_draft(ctx: ToolContext, body: str, to: str = "", subject: str = "
     return ToolResult(text=f"draft saved in {account}; it was NOT sent — the member opens "
                            "Gmail's Drafts to review and send it",
                       receipt={"summary": f"email draft saved in {account}"})
+
+
+# The parity and Routine Tools (F10) live in their own modules; importing them here
+# is what registers them wherever the built-ins are registered.
+from . import agent_parity, agent_routines, agent_rules  # noqa: E402, F401

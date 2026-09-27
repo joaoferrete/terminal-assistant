@@ -289,6 +289,8 @@ def _note_json(n: store.Note, *, today: date | None = None) -> dict:
         "tags": n.tags,
         "deleted_at": n.deleted_at,
         "list_id": n.list_id,
+        # Whose it is: the board badges the items that are not the viewer's (D50).
+        "owner_id": n.owner_id,
         # Derived roles, made explicit so the client does not recompute the rule.
         "roles": {"task": n.is_task, "reminder": n.is_reminder},
     }
@@ -437,6 +439,8 @@ def _agent_deps(app: Starlette) -> AgentDeps:
                 app, raw, owner_id=owner_id, list_id=list_id),
             "digest": lambda member_id: _build_digest(app, member_id),
             "delete_event": lambda member_id, note_id: _delete_event(app, member_id, note_id),
+            "calendar": lambda member_id: _calendar_for(app, member_id),
+            "file_rules": lambda: app.state.rules,
             "mail": lambda member_id: gmail_mod.Gmail(
                 member_id, app.state.google_mail, app.state.mail_tokens),
         },
@@ -516,15 +520,42 @@ async def _digest_loop(app: Starlette, *, every: float = 60.0) -> None:
         await asyncio.sleep(every)
 
 
+async def _publish_menu(app: Starlette) -> None:
+    """Register the `/` menu once at boot (D61). A failure only costs the menu."""
+    set_commands = getattr(app.state.channel, "set_commands", None)
+    if set_commands is None:
+        return
+    try:
+        await set_commands(app.state.bot.menu())
+        # The Owner's chat gets its own menu, with /moradores (Telegram scopes a
+        # menu per chat, so housemates never see an entry they cannot use).
+        if (owner := app.state.bot.owner_chat()) is not None:
+            await set_commands(app.state.bot.owner_menu(), chat_id=owner)
+    except Exception as e:
+        log.warning("could not publish the command menu: %s", e)
+
+
 async def _scheduled_loop(app: Starlette, *, every: float = 20.0) -> None:
-    """Run the scheduled actions that are due (F9, D39). Every 20 s: "in 10
-    minutes" should not mean eleven."""
+    """Run the scheduled actions that are due (F9, D39).
+
+    It sleeps until the next one is due, at most `every`: with a flat 20 s tick,
+    "apaga a luz em 1min" fired up to 20 s late, and on top of the lamp's cloud it
+    read as "it did not work" (F10).
+    """
     while True:
         try:
             await app.state.bot.run_scheduled()
         except Exception:
             log.exception("scheduled round failed")
-        await asyncio.sleep(every)
+        await asyncio.sleep(_until_next(app.state.conn, every))
+
+
+def _until_next(conn, every: float, now: datetime | None = None) -> float:
+    row = conn.execute("SELECT MIN(next_at) FROM scheduled WHERE state = 'active'").fetchone()
+    if not row or not row[0]:
+        return every
+    wait = (datetime.fromisoformat(row[0]) - (now or datetime.now())).total_seconds()
+    return max(0.5, min(every, wait + 0.1))
 
 
 async def _send_due_digests(app: Starlette, now: datetime | None = None) -> int:
@@ -982,7 +1013,10 @@ async def satellite_signal(request: Request) -> JSONResponse:
 async def satellite_actions(request: Request) -> JSONResponse:
     """Long poll: the actions waiting for this Member's Satellite (T6.3)."""
     wait = min(float(request.query_params.get("wait", 25)), 50)
-    actions = await request.app.state.hub.next(_viewer(request).member_id, wait)
+    # The laptop names itself (hostname) so `/satellites` can tell two apart. An
+    # older Satellite sends nothing and is simply not listed by name.
+    machine = (request.headers.get("x-satellite-name") or "").strip()[:64] or None
+    actions = await request.app.state.hub.next(_viewer(request).member_id, wait, machine)
     return JSONResponse({"actions": actions})
 
 
@@ -1150,6 +1184,38 @@ async def satellite_redeem(request: Request) -> JSONResponse:
     if member is None or not token:
         return JSONResponse({"error": i18n.t("auth.code_used")}, status_code=401)
     return JSONResponse({"token": board_access.session_cookie(token, member)})
+
+
+async def me_route(request: Request) -> JSONResponse:
+    """Whose board this is, and the names of the household, for the header and
+    the author badges (F10, D50). Only names: nothing a housemate wrote."""
+    conn = request.app.state.conn
+    viewer = _viewer(request)
+    names = {m.id: members_mod.display_name(conn, m) for m in members_mod.all_members(conn)}
+    me = members_mod.get(conn, viewer.member_id)
+    return JSONResponse({"member_id": viewer.member_id, "name": names.get(viewer.member_id, ""),
+                         "handle": me.handle if me else None,
+                         "names": {str(k): v for k, v in names.items()}})
+
+
+async def automations_route(request: Request) -> JSONResponse:
+    """The viewer's chat Rules, Routines and scheduled actions, for the board
+    (T10.9): automations nobody can see are the invisible autonomy D45 forbids."""
+    from . import chat_rules, routines
+    from . import scheduled as scheduled_mod
+
+    conn, member = request.app.state.conn, _viewer(request).member_id
+    return JSONResponse({
+        "rules": [{"name": r.name, "describe": r.describe(), "enabled": r.enabled,
+                   "household": r.scope == "household", "mine": r.owner_id == member}
+                  for r in chat_rules.visible(conn, member)],
+        "routines": [{"name": r.name, "phrases": r.phrases, "steps": len(r.steps),
+                      "household": r.scope == "household", "mine": r.owner_id == member}
+                     for r in routines.visible(conn, member)],
+        "scheduled": [{"summary": s.summary, "next_at": s.next_at.isoformat(timespec="minutes"),
+                       "repeat": s.repeat, "time_of_day": s.time_of_day}
+                      for s in scheduled_mod.active(conn, member)],
+    })
 
 
 async def lists_route(request: Request) -> JSONResponse:
@@ -1716,11 +1782,21 @@ async def _fire_reminders(app: Starlette, now: datetime) -> None:
 
 
 def _wire_engine(app: Starlette) -> None:
+    async def chat_rules(kind: str, entity: str | None, new: str) -> None:
+        # The chat Rules (D46) hear the same signals as the file Rules.
+        bot = getattr(app.state, "bot", None)
+        if bot is not None:
+            try:
+                await bot.fire_chat_rules(kind, entity, new)
+            except Exception:
+                log.exception("chat rules failed on %s %s", kind, entity)
+
     async def on_mic(ativo: bool, apps: list[str]) -> None:
         await engine.dispatch(
             app.state.rules,
             _make_context(app, engine.Trigger("mic", ativo), extra={"apps": apps}),
         )
+        await chat_rules("mic", None, "on" if ativo else "off")
 
     async def on_time(minuto: str, now: datetime) -> None:
         await engine.dispatch(app.state.rules, _make_context(app, engine.Trigger("time", minuto)))
@@ -1732,6 +1808,7 @@ def _wire_engine(app: Starlette) -> None:
                 app, engine.Trigger("state", entity_id), extra={"from": old, "to": new}
             ),
         )
+        await chat_rules("state", entity_id, new)
 
     app.state.mic = MicWatcher(on_mic)
     # The same callback serves a Satellite's report (F6): the meeting Rule does
@@ -1894,6 +1971,7 @@ def create_app(
                 tasks.append(asyncio.create_task(
                     app.state.channel.run(app.state.bot.handle), name="channel"
                 ))
+                tasks.append(asyncio.create_task(_publish_menu(app), name="menu"))
                 tasks.append(asyncio.create_task(_digest_loop(app), name="digest"))
                 tasks.append(asyncio.create_task(_scheduled_loop(app), name="scheduled"))
         log.info(
@@ -1923,6 +2001,8 @@ def create_app(
             Route("/notes", notes_create, methods=["POST"]),
             Route("/notes", notes_list, methods=["GET"]),
             Route("/lists", lists_route),
+            Route("/me", me_route),
+            Route("/automations", automations_route),
             Route("/satellite/signal", satellite_signal, methods=["POST"]),
             Route("/satellite/actions", satellite_actions),
             Route("/satellite/answer", satellite_answer, methods=["POST"]),

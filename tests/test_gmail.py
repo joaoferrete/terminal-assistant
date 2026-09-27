@@ -7,6 +7,7 @@ only their own mailboxes; mail taints the turn; and nothing works from a group.
 import asyncio
 import base64
 import json
+from datetime import UTC
 from email import message_from_bytes, policy
 from urllib.parse import parse_qs, urlparse
 
@@ -215,3 +216,12 @@ def test_a_new_draft_needs_an_address_and_is_never_sent(ctx):
     assert "recipient" in run(c, "mail_draft", body="oi", to="ninguém").text
     out = run(c, "mail_draft", body="oi", to="ana@example.com", subject="Janta")
     assert "NOT sent" in out.text
+
+
+def test_email_dates_are_told_in_the_houses_time():
+    from datetime import datetime
+
+    utc = "Sat, 26 Sep 2026 01:12:00 +0000"
+    local = datetime(2026, 9, 26, 1, 12, tzinfo=UTC).astimezone()
+    assert gmail.local_date(utc) == local.strftime("%Y-%m-%d %H:%M")
+    assert gmail.local_date("não é data") == "não é data"

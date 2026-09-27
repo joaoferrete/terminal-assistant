@@ -343,6 +343,43 @@ def resolve_targets(term: str, entities: list[dict]) -> list[str]:
 DEFAULT_LLM_ROUTING = ("deepseek", "gemini")
 
 
+TIERS = ("lite", "pro")
+
+
+def route_ok(value, *, tier_allowed: bool) -> bool:
+    """A route: a provider (`deepseek`), a provider and model
+    (`deepseek:deepseek-v4-pro`), or — for a task — a Tier (D53)."""
+    from .providers import PROVIDER_NAMES
+
+    if not isinstance(value, str):
+        return False
+    if tier_allowed and value in TIERS:
+        return True
+    provider, _, model = value.partition(":")
+    return provider in PROVIDER_NAMES and (":" not in value or bool(model.strip()))
+
+
+def llm_tiers() -> dict[str, str]:
+    """`[llm.tiers]`: the model behind each Tier (D53).
+
+        [llm.tiers]
+        lite = "deepseek:deepseek-flash"
+        pro  = "deepseek:deepseek-v4-pro"
+
+    Unset, a Tier is simply the default provider, and nothing changes.
+    """
+    raw = _user_config().get("llm", {})
+    raw = raw.get("tiers", {}) if isinstance(raw, dict) else {}
+    out = {}
+    for tier, value in (raw.items() if isinstance(raw, dict) else ()):
+        if tier in TIERS and route_ok(value, tier_allowed=False):
+            out[tier] = value
+        else:
+            log.warning("config.toml: llm.tiers.%s = %r is not provider[:model]; ignored",
+                        tier, value)
+    return out
+
+
 def llm_routing() -> tuple[str, str | None, dict[str, str]]:
     """(default, fallback, per-task routes), with unknown names dropped loudly.
 
@@ -372,8 +409,11 @@ def llm_routing() -> tuple[str, str | None, dict[str, str]]:
     tasks = raw.get("tasks", {})
     routes = {}
     for task, value in (tasks.items() if isinstance(tasks, dict) else ()):
-        if (name := known(value, f"llm.tasks.{task}")) is not None:
-            routes[str(task)] = name
+        # A task may also name a Tier or a provider:model (D53).
+        if route_ok(value, tier_allowed=True):
+            routes[str(task)] = value
+        else:
+            known(value, f"llm.tasks.{task}")      # logs why it is ignored
     return default, fallback, routes
 
 
@@ -553,3 +593,18 @@ def files_folders() -> list[str]:
     raw = _user_config().get("files", {})
     folders = raw.get("folders", []) if isinstance(raw, dict) else []
     return [str(f) for f in folders if isinstance(f, str)] if isinstance(folders, list) else []
+
+
+def satellite_scripts() -> dict[str, dict]:
+    """`[satellite.scripts.<name>]` — on a Satellite, the scripts the agent may run
+    here, by name (F10, D56). `safe = true` skips the confirmation.
+
+        [satellite.scripts.backup]
+        run = "~/bin/backup.sh"
+        description = "backs up the photos to the external disk"
+        safe = false
+    """
+    raw = _user_config().get("satellite", {})
+    scripts = raw.get("scripts", {}) if isinstance(raw, dict) else {}
+    return {str(k): v for k, v in (scripts.items() if isinstance(scripts, dict) else ())
+            if isinstance(v, dict) and isinstance(v.get("run"), str)}

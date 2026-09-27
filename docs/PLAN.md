@@ -79,13 +79,20 @@ in its tasks and in Discoveries; this section is only where things stand.*
 
 ### The agent's next actions
 
-- **F9 is built on `feat/agent-extras`** (D39–D41): colour, scheduled actions,
-  Satellite files, Gmail with drafts and reminders on the chat, all tested, but
-  **not deployed**. Next is **T9.5**:
-  deploy to the server (migration 14, with the user's yes) and try each feature for
-  real. The laptop's Satellite must be updated too (restart `ta-satellite`, the
-  user's call), or file requests time out. Files also need `[files] folders` in the
-  laptop's config, and mail needs item 2 below.
+- **F9 is deployed** (server at `401d4a6`, schema 14), and the whole stack is in
+  **PR #5** to `main`, with CI green. It waits for the **user** to merge, because
+  `main` requires an approval nobody else can give. The user merges it with
+  their admin bypass. The agent was refused that bypass. Still to try for real
+  (T9.5): the Satellite files (the laptop needs `[files] folders` and a restart of
+  `ta-satellite`), `/conectar_agenda`, `/conectar_email`, a timer, and a
+  scheduled light.
+- **F10 is built and deployed** (server at `feat/agent-catalogue`, schema 17). What
+  is left is using it for real and fixing what that turns up. The user restarts
+  the laptop's Satellite. PR #5 (the stack up to F9) still waits for the user's
+  merge. F10 can follow as its own PR from `feat/agent-catalogue` once #5 is in.
+- Try with the user: a chat Rule on a real sensor, a Routine by phrase, the laptop
+  catalogue (volume, lock), `/conectar_agenda` and `/conectar_email`, and search by
+  meaning.
 - Open the PRs for the stack, in order, if the user asks. Each targets the branch
   below it, or everything goes to `main` one after another, whichever the user
   prefers.
@@ -111,6 +118,7 @@ in its tasks and in Discoveries; this section is only where things stand.*
 12. `feat/rag` — F7 and the Rotombot personality
 13. `feat/config-page` — F8
 14. `feat/agent-extras` — F9
+15. `feat/agent-catalogue` — F10 (branch from `feat/agent-extras`)
 
 A new task branches from the top of this list and is appended to it.
 
@@ -174,7 +182,8 @@ templates; the unofficial libraries risk a ban on a personal number.
 invites Members by `@username` in config. On first contact the bot binds that
 username to the numeric Telegram user id and stores it; from then on only the id
 counts. Groups are allowlisted by chat id. The Owner gets a private message on every
-new pairing. Everything else is ignored without a reply. *Why:* usernames are
+new pairing. Everything else is ignored without a reply *(amended by D60: a
+stranger in a private chat gets one standard reply a day, and the Owner is told)*. *Why:* usernames are
 optional and mutable — a released username can be claimed by a stranger, who would
 inherit the Member's Grants. Asking people for their numeric id was rejected as
 friction.
@@ -696,6 +705,149 @@ the asker's button (D27). This amends D40's "read-only".
 - [ ] **T9.5** Deploy F9 to the server (with the user's yes), and try each
       feature for real.
 
+### F10 — The agent acts: Satellites, longer tasks, initiative, rules by chat (D43–D46)
+
+Asked by the user on 2026-09-26 ("the chatbot should be fully agentic… control
+things and do things from the server on the Satellites too"), and decided in an
+interview the same day. [ADR 0020](adr/0020-an-agent-that-acts-through-a-catalogue.md)
+records the principle: more reach through more Tools, never a shell.
+
+**D43 — Satellites act through a catalogue.** The agent can lock the screen, set
+volume and media, open an app or a URL, notify, take a screenshot (sent to the
+asker's chat), and run scripts listed in the laptop's own `[satellite.scripts]`,
+by name, with no free arguments. *Why:* the user's call. Commands with
+confirmation and a free shell were rejected, because injected text could act on
+the machine. Only the asker's own Satellite, as in D41.
+
+**D44 — Longer tasks.** More steps per turn (4 → 8), still inside the cost
+ceilings (D30). The last step still forces an answer. *Why:* "find the bill in my
+email, add it to the calendar and remind me the day before" is one request.
+
+**D45 — Initiative, from triggers the Member set.** The agent may act unasked only
+when a trigger fires (a time, a Home Assistant state, the microphone, a Reminder).
+It acts with that Member's Grant, and every action is told in their chat with
+[Undo]. *Why:* the user's call. Nothing acts invisibly.
+
+**D46 — Rules by chat are data.** "When I leave, turn everything off" becomes a
+stored rule: a trigger, an optional condition, and one Tool call. The agent never
+writes Python rule files. These rules can be listed, switched off and deleted from
+the chat and the board. D45's initiative is these rules. *Why:* ADR 0020. A model
+writing code the daemon imports is code execution.
+
+**The interview continued the same day** (D47–D61), widening F10 into a general
+pass with the agent as its principle:
+
+**D47 — Parity.** The agent can do everything a Member can do on the board, in the
+CLI or through a command, with their Grant, including their own settings stored in
+the database (Persona, Digest, connections). It does not change `config.toml` or
+`.env`, but it explains how, with the path on the config page or the TOML to paste.
+Nothing is permanent: deleting moves to the trash with [Undo]. Emptying the trash
+and purging stay on the board. *Why:* the user's call.
+
+**D48 — A curated guide, and doing beats explaining.** A `help(topic)` Tool returns
+the real steps from a guide we write, so the model adapts the tone and invents no
+menu names or keys. When the agent can do the thing, it does it: "connect my
+email" sends the consent link, and "send me the board link" sends it. The commands
+remain as shortcuts. **Rule:** every user-visible capability enters the guide in
+the same commit, stated in `AGENTS.md` and enforced by a test. The test fails if a
+Tool or a command is missing from the guide, or if the guide names a config key the
+code does not know.
+
+**D49 — The guide is one file, `docs/guide.md`, in English.** The model answers in
+the installation's language from it. *Why:* one source (CONTRIBUTING makes tracked
+docs English), and it doubles as the manual on GitHub.
+
+**D50 — The board says whose it is and who added what.** The header reads "<name>'s
+board", from the Persona's name, else the `@username`. A small badge with the
+author's name marks every item that is **not** the viewer's, on household Lists and
+household Notes.
+
+**D51 — Polish the board, do not redo it.** The four views and the post-its stay.
+The pass brings consistent colour and spacing tokens, a web font, light and dark
+reviewed, the new header, badge-style cards, guiding empty states, and phone
+first. Seen on screen at desktop width and 375 px (AGENTS §5).
+
+**D52 — Improve what exists.** (a) Honest Tool errors: the model gets a readable
+reason, and a call that failed is not repeated blindly. (b) Note search by meaning,
+with F7's local embeddings. (c) The house with state: "is the living room light
+on?". (e) The agent introduces itself from the guide. A stronger chat model is D53.
+
+**D53 — Model Tiers.** `[llm.tiers] lite = "provider:model"`, `pro = ...`. The code
+maps each task to a Tier: *pro* for `agent`, `organize` and `priorities`, *lite* for
+`review_capture`, `classify`, `detect_event` and `digest_prose`. Gemini is every
+Tier's fallback and always does `web_search`. `[llm.tasks]` still works as a
+per-task override (AGENTS §3) and now also accepts a Tier or `provider:model`. With
+no `[llm.tiers]`, nothing changes.
+
+**D54 — A Rule from the chat is a Rule.** A *file Rule* is written as code; a *chat
+Rule* is asked for in conversation and stored as data. Both are listed together.
+The Scheduled action (D39) stays as the time-only case. Chat Rules add triggers on
+an Entity's state and on the microphone, with an optional condition.
+
+**D55 — Presence is out for now.** *Intended later:* the Home Assistant Companion
+app's `person.*` Entities, as ordinary state triggers. Until then, a Routine
+("cheguei em casa") is how a Member tells the house.
+
+**D56 — The Satellite catalogue.** Lock the screen, volume, media, notify, and open a
+URL or app run without a button (a tainted turn still confirms). A screenshot, sent
+only to the asker's private chat, and suspend **always** confirm. So do the
+Member's `[satellite.scripts]`, unless the laptop marks one `safe = true`. There is
+no power-off, no reboot, and no clipboard.
+
+**D57 — Routine.** A named sequence of Tool calls, made in the chat. It is started
+by one of its phrases (the pre-router, with no model), by the agent from a
+paraphrase, or as the action of a Rule or Scheduled action. It runs with the
+starter's Grant and answers once, with [Undo all]. It has no conditions and no
+waits inside.
+
+**D58 — Routines and chat Rules are private by default.** They become the
+household's when the creator says so. Anyone can then start one, each with their
+own Grant, and a step outside that Grant is skipped and said. Only the creator
+or the Owner edits or deletes it. A chat Rule fires with its creator's Grant, read
+at fire time.
+
+**D59 — The Owner invites from the chat (an exception to D47).** "Libera o bot pra
+@ana" works only for the Owner, only in private, and only changes `[members]`: it
+adds or removes a Member and assigns an **existing** Grant. It always confirms by
+button. It writes through the config page's own path (tomlkit, backup, validation)
+and applies with no restart. Grants themselves, and `admin`, stay on the two-factor
+config page. *Why:* the chat is one factor, the Owner's Telegram account.
+
+**D60 — Strangers get one standard reply a day, and the Owner is told (amends D8).**
+The reply reveals no household or Owner name. The Owner's message carries
+[Allow] (into D59) and [Ignore]. Both go out once per person per day. In an
+allowlisted group, strangers are still ignored.
+
+**D61 — The `/` menu and `/help`.** `setMyCommands` at boot: `/help`, `/board`,
+`/agendado`, `/conectar_agenda`, `/conectar_email`, `/satellite`, plus
+`/moradores` in the Owner's own menu. `/help`, and "what can you do?", answer from
+the guide with one example per area.
+
+Build order, one stage at a time:
+
+- [x] **T10.1** Agent base: `MAX_STEPS` 8 (D44), honest Tool errors (D52a), Tiers
+      (D53).
+- [x] **T10.2** Parity Tools (D47): edit/status/delete/restore a note, calendar
+      read and create, lists create and remove, board link, Satellite code,
+      connect calendar/email, rules/priorities/trash reads, media and ring light.
+- [x] **T10.3** `docs/guide.md`, the `help` Tool, `/help`, the `/` menu (D48, D49,
+      D61, D52e), the AGENTS rule, and the test that keeps the guide complete.
+- [x] **T10.4** Strangers (D60) and invitations from the chat (D59), `/moradores`
+      (with each Member's last conversation), and `/satellites` (each computer by name,
+      on or off now), asked by the user during the build.
+- [x] **T10.5** Routines (D57, D58).
+- [x] **T10.6** Chat Rules (D46, D54, D45): the store, triggers, conditions,
+      firing with [Undo] and [Switch this rule off], plus `/agendado` listing
+      everything.
+- [x] **T10.7** The Satellite catalogue (D43, D56).
+- [x] **T10.8** Note search by meaning (D52b). The house's state (D52c, `home_status`)
+      came with T10.6, because a Rule needs real entity ids.
+- [x] **T10.9** The board: the header, author badges and the polish (D50, D51),
+      showing chat Rules and Routines. Seen on screen.
+- [x] **T10.10** Deployed on 2026-09-27 (schema 17, `7665379`). The laptop's Satellite
+      still needs a restart by the user (`systemctl --user restart ta-satellite`), for the
+      catalogue and its name in `/satellites`.
+
 ## Discoveries
 
 What contradicted the plan, as it happened. Decide per row whether it becomes an
@@ -767,3 +919,10 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-26 | T9.7 | **A privacy leak, in production since F3.** `_fire_reminders` sent every Member's Reminder to the Owner's desktop (the Satellite's notifier), read it aloud on the house speakers, and passed it to the Owner's Rules. A housemate's "ligar pro médico" would have popped up on the Owner's laptop. Nobody else used the bot yet, so nothing leaked | The desktop, the speakers and the Rules get only the Owner's Reminders. Every Reminder also goes to its writer's private chat. Tested with two Members |
 | 2026-09-26 | T9.7 | The parser had no relative times, so "daqui 10 min" was captured with no reminder at all, silently | `_nl_delay` in both languages, only after a lead-in ("daqui", "em", "timer de", "in"), so "leva 10 min" stays a duration. The capture reply now says when it will ring, so a misread shows at once |
 | 2026-09-26 | T5.2 | The review's "#12 reviewed: event created: Dentista" went to the Owner's desktop for every Member's Note, the same leak T9.7 found in the Reminders | Only the Owner's Notes are announced on the desktop. A created event is announced in its writer's private chat, with [Undo], which deletes it through `calendar.events` |
+| 2026-09-27 | T10.4 | The Hub knew a Satellite only by its Member, so two computers of the same person were one, and `/satellites` could not name them. The catalogue (T10.7) will need to say which computer to act on | The Satellite sends its hostname in `X-Satellite-Name`, and the Hub keeps each computer's last poll. An older Satellite sends nothing and is not listed by name until it is restarted |
+| 2026-09-27 | T10.4 | Tests pinned D8's silence towards strangers | Updated to D60: one standard reply a day, nothing captured. Before an Owner is paired, a stranger still gets silence, because there is nobody to tell |
+| 2026-09-27 | F9 | The first real "apaga a luz em 1min" answered "⏰ Feito · desligado" while the lamp stayed on, and it went off later. Home Assistant answers 200 once it accepts a command, and a Tuya lamp then goes through the vendor's cloud. The board's routes always confirmed the state, but the agent's Tools did not. The scheduler's flat 20 s tick added up to 20 s more | The home Tools confirm the state (~3 s) and say which Entities did not answer. The loop sleeps until the next action is due. Replies use the friendly name ("Sala"), not the entity_id, as the user asked |
+| 2026-09-27 | T10.6 | The guide test only looked at two modules, so the Routine Tools could have shipped undocumented. Also, the user expected `/satellites` to show their phone | The test covers every `agent_*` module, and it caught four new Tools. The guide now says a phone is not a Satellite (it talks through Telegram), and that a computer is listed by name only after its Satellite is restarted on a version that sends it |
+| 2026-09-27 | T10.7 | The owner's laptop has neither `playerctl` nor `pactl` nor `gnome-screenshot`, the usual tools for media, volume and screenshots. It is Ubuntu GNOME on Wayland, with `wpctl` and `gdbus` | Volume through `wpctl`, and media through MPRIS over `gdbus`, which Spotify, browsers and most players expose. A screenshot is offered only where `gnome-screenshot` or `grim` exists. `offer()` lists only what the machine can do |
+| 2026-09-27 | T10.7 | All of a Member's computers polled one queue, so "lock my desktop" could be taken by the laptop | The Hub keeps a queue per computer, and a request can name its machine. With two computers on and none named, the agent asks which |
+| 2026-09-27 | T10.9 | Seen on screen (demo daemon, a housemate seeded). Desktop screenshots of the Lists and Automations views were fine. At 375 px, checked in a same-origin iframe because resizing the window did not change the viewport, the sticky header wrapped into five rows, 214 px, a quarter of the screen for good. The chat Rules' descriptions reached the board in English | On a phone the header scrolls away. `ChatRule.describe()` comes from the catalogue, so the board and `/agendado` read Portuguese. Screenshots froze after the first one per tab, as in T3.5 and T8.5 |

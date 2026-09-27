@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 
 import httpx
 
@@ -44,7 +45,9 @@ class Satellite:
         token = cfg.credential()
         self.http = httpx.AsyncClient(
             base_url=cfg.server, timeout=POLL_WAIT + 10, transport=transport,
-            headers={"Authorization": f"Bearer {token}"} if token else {})
+            headers={**({"Authorization": f"Bearer {token}"} if token else {}),
+                     # Which computer this is, for `/satellites` (F10).
+                     "X-Satellite-Name": socket.gethostname()[:64]})
 
     async def on_mic(self, active: bool, apps: list[str]) -> None:
         try:
@@ -58,6 +61,9 @@ class Satellite:
     async def act(self, action: dict) -> None:
         if action.get("kind") == "files":
             await self.answer_files(action)
+            return
+        if action.get("kind") == "act":
+            await self.answer_act(action)
             return
         if action.get("kind") == "notify":
             await self.notifier.send(action.get("title", ""), action.get("body", ""),
@@ -91,6 +97,20 @@ class Satellite:
         except httpx.HTTPError as e:
             # The server gave up waiting, or went away: the agent already said so.
             log.warning("could not answer a file request: %s", type(e).__name__)
+
+    async def answer_act(self, request: dict) -> None:
+        """An action from the catalogue (F10, D43). What exists, and what needs a
+        confirmation, is decided here, by this computer."""
+        from .config import satellite_scripts
+        from .satellite_actions import handle
+
+        answer = await asyncio.to_thread(handle, request, satellite_scripts())
+        try:
+            r = await self.http.post("/satellite/answer",
+                                     json={"id": request.get("id"), "answer": answer})
+            r.raise_for_status()
+        except httpx.HTTPError as e:
+            log.warning("could not answer an action: %s", type(e).__name__)
 
     async def poll_once(self) -> int:
         r = await self.http.get("/satellite/actions", params={"wait": POLL_WAIT})
