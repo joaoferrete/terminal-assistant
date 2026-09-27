@@ -86,10 +86,13 @@ in its tasks and in Discoveries; this section is only where things stand.*
   (T9.5): the Satellite files (the laptop needs `[files] folders` and a restart of
   `ta-satellite`), `/conectar_agenda`, `/conectar_email`, a timer, and a
   scheduled light.
-- **F10 in progress on `feat/agent-catalogue`; deployed up to T10.5 on 2026-09-27**
-  (schema 15). Next deploy brings migration 16.
-- **Next: F10** (D43–D61, ADR 0020), continuing
-  with T10.10, the deploy (T10.1–T10.9 done, T10.8's house state too; also Telegram formatting and progress messages).
+- **F10 is built and deployed** (server at `feat/agent-catalogue`, schema 17). What
+  is left is using it for real and fixing what that turns up. The user restarts
+  the laptop's Satellite. PR #5 (the stack up to F9) still waits for the user's
+  merge. F10 can follow as its own PR from `feat/agent-catalogue` once #5 is in.
+- Try with the user: a chat Rule on a real sensor, a Routine by phrase, the laptop
+  catalogue (volume, lock), `/conectar_agenda` and `/conectar_email`, and search by
+  meaning.
 - Open the PRs for the stack, in order, if the user asks. Each targets the branch
   below it, or everything goes to `main` one after another, whichever the user
   prefers.
@@ -841,7 +844,9 @@ Build order, one stage at a time:
       came with T10.6, because a Rule needs real entity ids.
 - [x] **T10.9** The board: the header, author badges and the polish (D50, D51),
       showing chat Rules and Routines. Seen on screen.
-- [ ] **T10.10** Deploy (with the user's yes), and the laptop's Satellite updated.
+- [x] **T10.10** Deployed on 2026-09-27 (schema 17, `7665379`). The laptop's Satellite
+      still needs a restart by the user (`systemctl --user restart ta-satellite`), for the
+      catalogue and its name in `/satellites`.
 
 ## Discoveries
 
