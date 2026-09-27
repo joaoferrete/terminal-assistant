@@ -79,13 +79,14 @@ in its tasks and in Discoveries; this section is only where things stand.*
 
 ### The agent's next actions
 
-- **F9 is built on `feat/agent-extras`** (D39–D41): colour, scheduled actions,
-  Satellite files, Gmail with drafts and reminders on the chat, all tested, but
-  **not deployed**. Next is **T9.5**:
-  deploy to the server (migration 14, with the user's yes) and try each feature for
-  real. The laptop's Satellite must be updated too (restart `ta-satellite`, the
-  user's call), or file requests time out. Files also need `[files] folders` in the
-  laptop's config, and mail needs item 2 below.
+- **F9 is deployed** (server at `401d4a6`, schema 14), and the whole stack is in
+  **PR #5** to `main`, with CI green. It waits for the **user** to merge, because
+  `main` requires an approval nobody else can give. The user merges it with
+  their admin bypass. The agent was refused that bypass. Still to try for real
+  (T9.5): the Satellite files (the laptop needs `[files] folders` and a restart of
+  `ta-satellite`), `/conectar_agenda`, `/conectar_email`, a timer, and a
+  scheduled light.
+- **Next: F10** (D43–D46, ADR 0020), starting with T10.1.
 - Open the PRs for the stack, in order, if the user asks. Each targets the branch
   below it, or everything goes to `main` one after another, whichever the user
   prefers.
@@ -111,6 +112,7 @@ in its tasks and in Discoveries; this section is only where things stand.*
 12. `feat/rag` — F7 and the Rotombot personality
 13. `feat/config-page` — F8
 14. `feat/agent-extras` — F9
+15. `feat/agent-catalogue` — F10 (branch from `feat/agent-extras`)
 
 A new task branches from the top of this list and is appended to it.
 
@@ -695,6 +697,51 @@ the asker's button (D27). This amends D40's "read-only".
       `mail_search` / `mail_read` Tools, tested against a fake Google as T5.1 was.
 - [ ] **T9.5** Deploy F9 to the server (with the user's yes), and try each
       feature for real.
+
+### F10 — The agent acts: Satellites, longer tasks, initiative, rules by chat (D43–D46)
+
+Asked by the user on 2026-09-26 ("the chatbot should be fully agentic… control
+things and do things from the server on the Satellites too"), and decided in an
+interview the same day. [ADR 0020](adr/0020-an-agent-that-acts-through-a-catalogue.md)
+records the principle: more reach through more Tools, never a shell.
+
+**D43 — Satellites act through a catalogue.** The agent can lock the screen, set
+volume and media, open an app or a URL, notify, take a screenshot (sent to the
+asker's chat), and run scripts listed in the laptop's own `[satellite.scripts]`,
+by name, with no free arguments. *Why:* the user's call. Commands with
+confirmation and a free shell were rejected, because injected text could act on
+the machine. Only the asker's own Satellite, as in D41.
+
+**D44 — Longer tasks.** More steps per turn (4 → 8), still inside the cost
+ceilings (D30). The last step still forces an answer. *Why:* "find the bill in my
+email, add it to the calendar and remind me the day before" is one request.
+
+**D45 — Initiative, from triggers the Member set.** The agent may act unasked only
+when a trigger fires (a time, a Home Assistant state, the microphone, a Reminder).
+It acts with that Member's Grant, and every action is told in their chat with
+[Undo]. *Why:* the user's call. Nothing acts invisibly.
+
+**D46 — Rules by chat are data.** "When I leave, turn everything off" becomes a
+stored rule: a trigger, an optional condition, and one Tool call. The agent never
+writes Python rule files. These rules can be listed, switched off and deleted from
+the chat and the board. D45's initiative is these rules. *Why:* ADR 0020. A model
+writing code the daemon imports is code execution.
+
+- [ ] **T10.1** D44: `MAX_STEPS` 8, with a test that the step budget and the cost
+      ceiling both stop a runaway turn.
+- [ ] **T10.2** D43, the Satellite catalogue: `satellite_act` requests over the Hub
+      (as T9.3), with the laptop-side handlers `lock`, `volume`, `media`, `open`,
+      `notify` and `screenshot`, and `[satellite.scripts]`. Tools for each, and the
+      `satellite_actions` list the laptop offers.
+- [ ] **T10.3** D46, the rule store: migration, a trigger (time / HA state /
+      microphone / Reminder), a condition (HA state equals, time window), and an
+      action (a Tool and its arguments). The engine fires them next to the Python
+      Rules. `rule_create`, `rule_list` and `rule_delete` Tools. Creating a rule
+      is a state change, so a tainted turn confirms it.
+- [ ] **T10.4** D45: every fired chat rule is told in its Member's chat with [Undo]
+      and [Switch this rule off], and runs with the Grant read at fire time.
+- [ ] **T10.5** The board shows the chat rules (look at it, AGENTS §5).
+- [ ] **T10.6** Deploy (with the user's yes), and the laptop's Satellite updated.
 
 ## Discoveries
 
