@@ -70,7 +70,7 @@ def test_a_member_reads_only_what_their_grant_covers(ctx):
 def test_a_rule_is_stored_as_data_and_described(ctx):
     c = ctx()
     out = run(c, "rule_create", **door_rule())
-    assert "binary_sensor.porta becomes on between 22:00" in out.text
+    assert "quando binary_sensor.porta ficar on entre 22:00" in out.text
     [rule] = chat_rules.visible(c.conn, 1)
     assert (rule.action_tool, rule.action_args) == ("home_on", {"target": "corredor"})
 

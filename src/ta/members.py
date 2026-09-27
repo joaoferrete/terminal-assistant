@@ -84,3 +84,13 @@ def sync(conn: sqlite3.Connection, *, owner: str | None, invited: list[str],
             "INSERT OR IGNORE INTO members (handle, is_owner, created_at) VALUES (?, 0, ?)",
             (h, stamp),
         )
+
+
+def display_name(conn: sqlite3.Connection, member: Member) -> str:
+    """What to call a Member on screen (F10, D50): the name they asked to be
+    called (their Persona), else their @username."""
+    import json
+
+    row = conn.execute("SELECT persona FROM members WHERE id = ?", (member.id,)).fetchone()
+    persona = json.loads(row[0]) if row and row[0] else {}
+    return persona.get("name") or (f"@{member.handle}" if member.handle else "?")

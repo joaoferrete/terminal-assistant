@@ -289,6 +289,8 @@ def _note_json(n: store.Note, *, today: date | None = None) -> dict:
         "tags": n.tags,
         "deleted_at": n.deleted_at,
         "list_id": n.list_id,
+        # Whose it is: the board badges the items that are not the viewer's (D50).
+        "owner_id": n.owner_id,
         # Derived roles, made explicit so the client does not recompute the rule.
         "roles": {"task": n.is_task, "reminder": n.is_reminder},
     }
@@ -1184,6 +1186,38 @@ async def satellite_redeem(request: Request) -> JSONResponse:
     return JSONResponse({"token": board_access.session_cookie(token, member)})
 
 
+async def me_route(request: Request) -> JSONResponse:
+    """Whose board this is, and the names of the household, for the header and
+    the author badges (F10, D50). Only names: nothing a housemate wrote."""
+    conn = request.app.state.conn
+    viewer = _viewer(request)
+    names = {m.id: members_mod.display_name(conn, m) for m in members_mod.all_members(conn)}
+    me = members_mod.get(conn, viewer.member_id)
+    return JSONResponse({"member_id": viewer.member_id, "name": names.get(viewer.member_id, ""),
+                         "handle": me.handle if me else None,
+                         "names": {str(k): v for k, v in names.items()}})
+
+
+async def automations_route(request: Request) -> JSONResponse:
+    """The viewer's chat Rules, Routines and scheduled actions, for the board
+    (T10.9): automations nobody can see are the invisible autonomy D45 forbids."""
+    from . import chat_rules, routines
+    from . import scheduled as scheduled_mod
+
+    conn, member = request.app.state.conn, _viewer(request).member_id
+    return JSONResponse({
+        "rules": [{"name": r.name, "describe": r.describe(), "enabled": r.enabled,
+                   "household": r.scope == "household", "mine": r.owner_id == member}
+                  for r in chat_rules.visible(conn, member)],
+        "routines": [{"name": r.name, "phrases": r.phrases, "steps": len(r.steps),
+                      "household": r.scope == "household", "mine": r.owner_id == member}
+                     for r in routines.visible(conn, member)],
+        "scheduled": [{"summary": s.summary, "next_at": s.next_at.isoformat(timespec="minutes"),
+                       "repeat": s.repeat, "time_of_day": s.time_of_day}
+                      for s in scheduled_mod.active(conn, member)],
+    })
+
+
 async def lists_route(request: Request) -> JSONResponse:
     """The Lists the viewer sees, with their open items (T3.5)."""
     perms = _permissions(request)
@@ -1967,6 +2001,8 @@ def create_app(
             Route("/notes", notes_create, methods=["POST"]),
             Route("/notes", notes_list, methods=["GET"]),
             Route("/lists", lists_route),
+            Route("/me", me_route),
+            Route("/automations", automations_route),
             Route("/satellite/signal", satellite_signal, methods=["POST"]),
             Route("/satellite/actions", satellite_actions),
             Route("/satellite/answer", satellite_answer, methods=["POST"]),

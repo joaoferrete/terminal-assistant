@@ -89,7 +89,7 @@ in its tasks and in Discoveries; this section is only where things stand.*
 - **F10 in progress on `feat/agent-catalogue`; deployed up to T10.5 on 2026-09-27**
   (schema 15). Next deploy brings migration 16.
 - **Next: F10** (D43–D61, ADR 0020), continuing
-  with T10.9 (T10.1–T10.8 done, T10.8's house state too; also Telegram formatting and progress messages).
+  with T10.10, the deploy (T10.1–T10.9 done, T10.8's house state too; also Telegram formatting and progress messages).
 - Open the PRs for the stack, in order, if the user asks. Each targets the branch
   below it, or everything goes to `main` one after another, whichever the user
   prefers.
@@ -839,7 +839,7 @@ Build order, one stage at a time:
 - [x] **T10.7** The Satellite catalogue (D43, D56).
 - [x] **T10.8** Note search by meaning (D52b). The house's state (D52c, `home_status`)
       came with T10.6, because a Rule needs real entity ids.
-- [ ] **T10.9** The board: the header, author badges and the polish (D50, D51),
+- [x] **T10.9** The board: the header, author badges and the polish (D50, D51),
       showing chat Rules and Routines. Seen on screen.
 - [ ] **T10.10** Deploy (with the user's yes), and the laptop's Satellite updated.
 
@@ -920,3 +920,4 @@ ADR amendment, a new decision (ask the user), or just a note.
 | 2026-09-27 | T10.6 | The guide test only looked at two modules, so the Routine Tools could have shipped undocumented. Also, the user expected `/satellites` to show their phone | The test covers every `agent_*` module, and it caught four new Tools. The guide now says a phone is not a Satellite (it talks through Telegram), and that a computer is listed by name only after its Satellite is restarted on a version that sends it |
 | 2026-09-27 | T10.7 | The owner's laptop has neither `playerctl` nor `pactl` nor `gnome-screenshot`, the usual tools for media, volume and screenshots. It is Ubuntu GNOME on Wayland, with `wpctl` and `gdbus` | Volume through `wpctl`, and media through MPRIS over `gdbus`, which Spotify, browsers and most players expose. A screenshot is offered only where `gnome-screenshot` or `grim` exists. `offer()` lists only what the machine can do |
 | 2026-09-27 | T10.7 | All of a Member's computers polled one queue, so "lock my desktop" could be taken by the laptop | The Hub keeps a queue per computer, and a request can name its machine. With two computers on and none named, the agent asks which |
+| 2026-09-27 | T10.9 | Seen on screen (demo daemon, a housemate seeded). Desktop screenshots of the Lists and Automations views were fine. At 375 px, checked in a same-origin iframe because resizing the window did not change the viewport, the sticky header wrapped into five rows, 214 px, a quarter of the screen for good. The chat Rules' descriptions reached the board in English | On a phone the header scrolls away. `ChatRule.describe()` comes from the catalogue, so the board and `/agendado` read Portuguese. Screenshots froze after the first one per tab, as in T3.5 and T8.5 |

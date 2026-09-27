@@ -243,8 +243,9 @@ place = "São Paulo"
 
 ## The board
 
-The board is a page with your notes as post-its, a kanban, a list and your
-Lists. "Me manda o link do board" or `/board` (`board_link`) sends a one-time
+The board is a page with your notes as post-its, a kanban, a list, your Lists,
+and your automations (Rules, Routines and scheduled actions). The top says whose
+board it is. On shared Lists, each item someone else added shows their name. "Me manda o link do board" or `/board` (`board_link`) sends a one-time
 link that logs your browser in. From outside the house network, the owner sets
 `TA_PUBLIC_URL`.
 

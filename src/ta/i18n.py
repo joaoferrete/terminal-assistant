@@ -328,13 +328,34 @@ MESSAGES: dict[str, dict[str, str]] = {
     "priority.low": {"pt": "baixa", "en": "low"},
     # ── Mural ───────────────────────────────────────────────────────────────
     "board.title": {"pt": "Mural", "en": "Board"},
+    "board.title_of": {"pt": "Mural de {name}", "en": "{name}'s board"},
+    "board.view.auto": {"pt": "automações", "en": "automations"},
+    "board.auto.rules": {"pt": "⚙️ Regras", "en": "⚙️ Rules"},
+    "board.auto.rules_none": {"pt": "Nenhuma. Peça ao bot: “quando a porta abrir depois das "
+                                    "22h, acende o corredor”.",
+                              "en": "None. Ask the bot: “when the door opens after 10pm, turn "
+                                    "on the hall light”."},
+    "board.auto.routines": {"pt": "🏠 Rotinas", "en": "🏠 Routines"},
+    "board.auto.routines_none": {"pt": "Nenhuma. Peça ao bot: “cria uma rotina chegada que "
+                                       "liga a luz da sala quando eu disser cheguei”.",
+                                 "en": "None. Ask the bot: “make an arrival routine that turns "
+                                       "on the living room light when I say I'm home”."},
+    "board.auto.scheduled": {"pt": "⏰ Agendadas", "en": "⏰ Scheduled"},
+    "board.auto.scheduled_none": {"pt": "Nada agendado. “Liga a luz daqui 10 min”, “todo dia "
+                                        "às 7h acende o quarto”.",
+                                  "en": "Nothing scheduled. “Light on in 10 minutes”, “every day "
+                                        "at 7 turn on the bedroom”."},
+    "board.auto.off": {"pt": "desligada", "en": "off"},
+    "board.auto.steps": {"pt": "{n} passo(s)", "en": "{n} step(s)"},
     "board.loading": {"pt": "carregando…", "en": "loading…"},
     # `{cmd}` recebe marcação (`<code>ta note</code>`) montada pelo mural. É o
     # único texto do catálogo com um buraco para HTML, e os dois lados são
     # nossos — nada de entrada do usuário passa por aqui.
     "board.empty": {
-        "pt": "nada aqui. Escreva algo acima, ou use {cmd}.",
-        "en": "nothing here. Write something above, or use {cmd}.",
+        "pt": "Nada aqui ainda. Mande qualquer coisa pro bot no Telegram, escreva acima, ou use "
+              "{cmd}.",
+        "en": "Nothing here yet. Send anything to the bot on Telegram, write above, or use "
+              "{cmd}.",
     },
     "board.load_failed": {"pt": "não deu para carregar", "en": "could not load"},
     "board.out_of_queue": {"pt": "fora da fila", "en": "out of the queue"},
@@ -590,6 +611,14 @@ MESSAGES: dict[str, dict[str, str]] = {
     "bot.reminder_snoozed": {"pt": "Te lembro de novo às {at}.",
                              "en": "I'll remind you again at {at}."},
     # Chat Rules (F10, D45, D46).
+    "rule.when_state": {"pt": "quando {entity} ficar {state}",
+                        "en": "when {entity} becomes {state}"},
+    "rule.any_state": {"pt": "qualquer estado", "en": "anything"},
+    "rule.when_mic": {"pt": "quando o microfone ficar {state}",
+                      "en": "when the microphone turns {state}"},
+    "rule.between": {"pt": "entre {after} e {before}", "en": "between {after} and {before}"},
+    "rule.if_state": {"pt": "se {entity} estiver {state}", "en": "if {entity} is {state}"},
+    "rule.off": {"pt": "desligada", "en": "off"},
     "bot.rule_fired": {"pt": "⚙️ Regra {name}: {what}", "en": "⚙️ Rule {name}: {what}"},
     "bot.rule_failed": {"pt": "⚙️ A regra {name} disparou, mas não consegui agir (permissão "
                               "ou aparelho fora do ar).",

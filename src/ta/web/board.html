@@ -4,23 +4,34 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Terminal Assistant</title>
+<!-- One web font for the whole board (D51). The system stack stays behind it, so
+     a phone with no internet still draws the page, only in its own font. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet">
 <style>
   :root {
     --bg: #f2f0eb; --grid: #e3e0d8; --fg: #2a2723; --muted: #6f6a61;
     --line: #d6d2c8; --panel: #fbfaf7; --accent: #b4531f; --shadow: rgba(0,0,0,.16);
     --col: #eae7e0; --ink: #2a2723;
+    --radius: 10px; --pill: 999px; --badge-bg: #f3dccf; --badge-fg: #7a3510;
+    --shadow-soft: 0 1px 2px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.08);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #16181b; --grid: #1d2024; --fg: #e8e4dc; --muted: #9a948a;
       --line: #2c3035; --panel: #1d2024; --shadow: rgba(0,0,0,.5); --col: #1b1e22;
+      --badge-bg: #4a2d1f; --badge-fg: #ffcdb2;
+      --shadow-soft: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.35);
     }
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; min-height: 100%; }
   body {
     background: var(--bg); color: var(--fg);
-    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font: 15px/1.5 "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
   body.view-board {
     background-image:
@@ -33,9 +44,19 @@
   header {
     position: sticky; top: 0; z-index: 30;
     display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
-    padding: .6rem 1rem; background: var(--panel); border-bottom: 1px solid var(--line);
+    padding: .65rem 1rem; background: var(--panel); border-bottom: 1px solid var(--line);
+    box-shadow: 0 1px 0 rgba(0,0,0,.02), 0 6px 18px -12px var(--shadow);
   }
-  header h1 { font-size: 1rem; margin: 0; font-weight: 650; flex: 0 0 auto; }
+  header h1 { font-size: 1rem; margin: 0; font-weight: 650; flex: 0 0 auto; letter-spacing: -.01em; }
+  /* Whose board this is (D50): the avatar's initial, the name, the @username. */
+  .who { display: flex; align-items: center; gap: .55rem; flex: 0 0 auto; min-width: 0; }
+  .avatar {
+    width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto;
+    display: grid; place-items: center; background: var(--accent); color: #fff;
+    font-weight: 700; font-size: .85rem; text-transform: uppercase;
+  }
+  .avatar:empty { display: none; }
+  .who .handle { color: var(--muted); font-size: .8rem; white-space: nowrap; }
   /* flex:0 0 auto + nowrap: without it the input grows and clips what follows. */
   header .count, header .hint { flex: 0 0 auto; white-space: nowrap; color: var(--muted); font-size: .85rem; }
   header .count { font-variant-numeric: tabular-nums; }
@@ -83,14 +104,22 @@
   /* ── Post-it (shared by all three views) ─────────────────────────────── */
   .note {
     background: var(--note-bg, #ffe9a8); color: var(--ink);
-    border-radius: 3px; box-shadow: 0 3px 10px var(--shadow);
+    border-radius: 6px; box-shadow: var(--shadow-soft);
     /* The bottom padding reserves room for the bar, which is absolute and can
        now take two lines. Without it, it would sit on top of the text. */
     padding: .7rem .8rem 3.1rem; position: relative;
   }
   .note .text { white-space: pre-wrap; overflow-wrap: anywhere; }
   .note .meta { margin-top: .4rem; font-size: .74rem; color: #6b5f3e; display: flex; flex-wrap: wrap; gap: .3rem; }
-  .note .meta span { background: rgba(0,0,0,.07); padding: .05rem .35rem; border-radius: 3px; }
+  .note .meta span { background: rgba(0,0,0,.07); padding: .05rem .45rem; border-radius: var(--pill); }
+  /* Who wrote it, on what is not yours (D50). Dark on light in both themes: the
+     post-it keeps its paper colour whatever the page does. */
+  .note .meta .author { background: rgba(122,53,16,.14); color: #7a3510; font-weight: 600; }
+  .list-card .author {
+    margin-left: auto; flex: 0 0 auto; font-size: .7rem; font-weight: 600;
+    background: var(--badge-bg); color: var(--badge-fg); padding: .05rem .45rem;
+    border-radius: var(--pill); white-space: nowrap;
+  }
   .note .meta .overdue { background: #c0392b; color: #fff; }
   .note.terminal { opacity: .55; }
   .note.st-done .text { text-decoration: line-through; }
@@ -182,7 +211,9 @@
   .col .note { cursor: grab; touch-action: none; }  /* touch-action: the browser must not scroll mid-drag */
   .col .note.dragging { cursor: grabbing; box-shadow: 0 10px 26px var(--shadow); transform: scale(1.02); }
 
-  .empty { color: var(--muted); padding: 2rem 1rem; }
+  .empty { color: var(--muted); padding: 3rem 1rem; text-align: center; max-width: 34rem;
+           margin: 0 auto; line-height: 1.6; }
+  .empty code, .auto-card code { background: var(--col); padding: .05rem .35rem; border-radius: 5px; }
   .erro {
     margin: .6rem 1rem; padding: .6rem .8rem; border-radius: 7px;
     background: #ffe1dc; color: #7a2018; border: 1px solid #c0392b;
@@ -197,8 +228,9 @@
   body.view-lists #review { display: none !important; }
   #board.lists { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
                  gap: 1rem; padding: 1rem; align-items: start; }
-  .list-card { background: var(--panel); border-radius: 10px; padding: .8rem .9rem;
-               box-shadow: 0 2px 8px var(--shadow); min-width: 0; }
+  .list-card, .auto-card { background: var(--panel); border-radius: var(--radius);
+               padding: .85rem .95rem; box-shadow: var(--shadow-soft); min-width: 0;
+               border: 1px solid var(--line); }
   .list-card h2 { font-size: .95rem; margin: 0 0 .5rem; display: flex; gap: .5rem;
                   align-items: baseline; justify-content: space-between; }
   .list-card h2 .scope { font-size: .7rem; font-weight: 500; color: var(--muted); }
@@ -207,23 +239,49 @@
                   overflow-wrap: anywhere; }
   .list-card li input { margin-top: .2rem; flex: 0 0 auto; }
   .list-card .none { color: var(--muted); font-size: .85rem; padding: .25rem 0; }
-  .list-card .add { width: 100%; box-sizing: border-box; margin-top: .5rem; }
+  .list-card .add { width: 100%; box-sizing: border-box; margin-top: .5rem; font: inherit;
+                    padding: .35rem .55rem; border: 1px solid var(--line); border-radius: 7px;
+                    background: var(--bg); color: var(--fg); }
+
+  /* Automations (T10.9): chat Rules, Routines and scheduled actions, so none of
+     them acts out of sight (D45). */
+  body.view-auto .filters, body.view-auto #review { display: none !important; }
+  #board.auto { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+                gap: 1rem; padding: 1rem; align-items: start; }
+  .auto-card h2 { font-size: .95rem; margin: 0 0 .6rem; }
+  .auto-card ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .55rem; }
+  .auto-card li { overflow-wrap: anywhere; font-size: .88rem; }
+  .auto-card li .name { font-weight: 600; display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+  .auto-card li .what { color: var(--muted); font-size: .8rem; }
+  .auto-card .tag { font-size: .68rem; font-weight: 600; padding: .02rem .4rem; border-radius: var(--pill);
+                    background: var(--col); color: var(--muted); }
+  .auto-card .tag.off { background: #f4d6d2; color: #8a2a1f; }
+  .auto-card .none { color: var(--muted); font-size: .85rem; }
 
   @media (max-width: 720px) {
     /* Free positioning is hostile on a phone: the free-form view falls to flow. */
     #board.board { display: flex; flex-direction: column; gap: .8rem; }
     #board.board .note { position: static !important; width: auto; cursor: default; transform: none; }
+    /* Measured at 375px (T10.9): the header wraps into five rows, 214px, and a
+       sticky one kept a quarter of the screen for good. On a phone it scrolls
+       away with the page. */
+    header { position: static; }
   }
 </style>
 </head>
 <body class="view-board">
 <header>
-  <h1 id="boardTitle"></h1>
+  <div class="who">
+    <span class="avatar" id="avatar" aria-hidden="true"></span>
+    <h1 id="boardTitle"></h1>
+    <span class="handle" id="handle"></span>
+  </div>
   <div class="views" id="views">
     <button data-view="board"></button>
     <button data-view="list"></button>
     <button data-view="kanban"></button>
     <button data-view="lists"></button>
+    <button data-view="auto"></button>
   </div>
   <div class="filters">
     <select id="fArea" data-i18n-title="board.title_filter_area">
@@ -408,7 +466,7 @@ const btnEmptyTrash = document.getElementById("emptyTrash");
 // not catch it, because an old string is truthy. The result would be
 // `renderers["geral"]` undefined: a blank board with no visible error, for
 // exactly the people who already used it.
-const VIEWS = ["board", "list", "kanban", "lists"];
+const VIEWS = ["board", "list", "kanban", "lists", "auto"];
 let view = VIEWS.includes(localStorage.getItem("ta.view"))
   ? localStorage.getItem("ta.view")
   : "board";
@@ -423,6 +481,11 @@ window.addEventListener("hashchange", () => {
 });
 let allNotes = [];   // what came from the API
 let allLists = [];   // the Lists view's data, from `/lists`
+let allAuto = null;  // the Automations view's data, from `/automations`
+// Whose board this is, and the household's names for the author badges (D50).
+// Null until `/me` answers — or for good against an older daemon, in which case
+// the board simply says "Board" and shows no badges.
+let me = null;
 let notes = [];      // what the renderers draw: `allNotes`, filtered
 let staleDaemon = false;   // Python routes older than this HTML (see `load`)
 // The `localStorage` KEYS keep their Portuguese names: they are stored state, and
@@ -503,6 +566,11 @@ const api = async (method, path, body) => {
 const wantsAll = () => view !== "board" || showDone.checked;
 
 const load = async () => {
+  if (view === "auto" && !trash) {
+    allAuto = await api("GET", "/automations");
+    render();
+    return;
+  }
   if (view === "lists" && !trash) {
     allLists = (await api("GET", "/lists")).lists;
     render();
@@ -523,6 +591,13 @@ const load = async () => {
   render();
 };
 
+/** Somebody else's name on their item (D50); nothing on the viewer's own. */
+const authorOf = (n) =>
+  me && n.owner_id != null && n.owner_id !== me.member_id ? (me.names[n.owner_id] || "?") : "";
+
+const escapeHTML = (s) => s.replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
 const metaHTML = (n) => {
   const bits = [];
   if (n.roles.task) {
@@ -536,6 +611,8 @@ const metaHTML = (n) => {
   if (n.priority) bits.push(`<span>${n.priority}</span>`);
   if (view !== "kanban" && n.status !== "todo") bits.push(`<span>${LABEL[n.status]}</span>`);
   n.tags.forEach(t => bits.push(`<span>#${t}</span>`));
+  const who = authorOf(n);
+  if (who) bits.unshift(`<span class="author">${escapeHTML(who)}</span>`);
   return bits.length ? `<div class="meta">${bits.join("")}</div>` : "";
 };
 
@@ -748,6 +825,13 @@ const renderLists = () => {
       const text = document.createElement("span");
       text.textContent = n.text;
       li.append(box, text);
+      const who = authorOf(n);
+      if (who) {
+        const badge = document.createElement("span");
+        badge.className = "author";
+        badge.textContent = who;
+        li.appendChild(badge);
+      }
       ul.appendChild(li);
     });
     if (!l.items.length) {
@@ -775,6 +859,58 @@ const renderLists = () => {
     }
     boardEl.appendChild(card);
   });
+};
+
+// ── Automations view (T10.9) ───────────────────────────────────────────────
+const autoCard = (title, items, none, line) => {
+  const card = document.createElement("section");
+  card.className = "auto-card";
+  const h = document.createElement("h2");
+  h.textContent = title;
+  const ul = document.createElement("ul");
+  if (!items.length) {
+    const li = document.createElement("li");
+    li.className = "none";
+    li.textContent = none;
+    ul.appendChild(li);
+  }
+  items.forEach(it => ul.appendChild(line(it)));
+  card.append(h, ul);
+  boardEl.appendChild(card);
+};
+
+const autoLine = (name, what, tags) => {
+  const li = document.createElement("li");
+  const n = document.createElement("div");
+  n.className = "name";
+  const label = document.createElement("span");
+  label.textContent = name;
+  n.appendChild(label);
+  tags.filter(Boolean).forEach(([text, cls]) => {
+    const t = document.createElement("span");
+    t.className = "tag" + (cls ? ` ${cls}` : "");
+    t.textContent = text;
+    n.appendChild(t);
+  });
+  const w = document.createElement("div");
+  w.className = "what";
+  w.textContent = what;
+  li.append(n, w);
+  return li;
+};
+
+const renderAuto = () => {
+  const a = allAuto || { rules: [], routines: [], scheduled: [] };
+  const house = (x) => x.household ? [tr("board.scope.household"), ""] : null;
+  autoCard(tr("board.auto.rules"), a.rules, tr("board.auto.rules_none"),
+    r => autoLine(r.name, r.describe, [house(r), !r.enabled && [tr("board.auto.off"), "off"]]));
+  autoCard(tr("board.auto.routines"), a.routines, tr("board.auto.routines_none"),
+    r => autoLine(r.name, r.phrases.length ? r.phrases.map(p => `“${p}”`).join(" · ")
+                                           : trf("board.auto.steps", { n: r.steps }),
+                  [house(r)]));
+  autoCard(tr("board.auto.scheduled"), a.scheduled, tr("board.auto.scheduled_none"),
+    s => autoLine(s.summary, s.next_at.replace("T", " ")
+                             + (s.time_of_day ? ` · ${s.repeat} ${s.time_of_day}` : ""), []));
 };
 
 // ── Kanban view ────────────────────────────────────────────────────────────
@@ -1023,7 +1159,8 @@ setInterval(() => {
 const draw = () => {
   boardEl.className = view;
   document.body.className = "view-" + view + (trash ? " trash" : "");
-  boardTitleEl.textContent = tr("board.title");
+  boardTitleEl.textContent = me && me.name ? trf("board.title_of", { name: me.name })
+                                           : tr("board.title");
   if (trash) boardTitleEl.insertAdjacentHTML("beforeend",
     `<span class="suffix"> \u00b7 ${tr("board.trash")}</span>`);
   boardEl.innerHTML = "";
@@ -1046,6 +1183,11 @@ const draw = () => {
     : "";
   [...viewsEl.children].forEach(b => b.setAttribute("aria-pressed", b.dataset.view === view));
 
+  if (view === "auto" && !trash) {
+    countEl.textContent = "";
+    renderAuto();
+    return;
+  }
   if (view === "lists" && !trash) {
     const items = allLists.reduce((sum, l) => sum + l.items.length, 0);
     countEl.textContent = items ? `${items} ${tr("board.counter")}` : "";
@@ -1106,6 +1248,13 @@ capture.addEventListener("keydown", async (e) => {
 });
 
 showDone.addEventListener("change", load);
+api("GET", "/me").then(m => {
+  me = m;
+  document.getElementById("avatar").textContent = (m.name || "?").replace(/^@/, "").slice(0, 1);
+  document.getElementById("handle").textContent = m.handle && m.name !== `@${m.handle}`
+    ? `@${m.handle}` : "";
+  render();
+}).catch(() => { /* an older daemon: no header name, no badges */ });
 load().catch(e => {
   // Through `#notice`, not through `innerHTML` on the board: the message can come
   // from the server (and `textContent` is what stops injection), and the

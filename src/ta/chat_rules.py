@@ -43,17 +43,22 @@ class ChatRule:
     last_fired_at: str | None
 
     def describe(self) -> str:
-        """One line, for lists: when, if, then."""
-        when = (f"when {self.trigger_entity} becomes {self.trigger_to or 'anything'}"
-                if self.trigger_kind == "state" else f"when the microphone turns {self.trigger_to}")
+        """One line, for lists: when, if, then — in the installation's language,
+        because the board and `/agendado` show it (AGENTS §1)."""
+        from .i18n import t
+
+        when = (t("rule.when_state", entity=self.trigger_entity,
+                  state=self.trigger_to or t("rule.any_state"))
+                if self.trigger_kind == "state" else t("rule.when_mic", state=self.trigger_to))
         cond = []
         if self.cond_after or self.cond_before:
-            cond.append(f"between {self.cond_after or '00:00'} and {self.cond_before or '24:00'}")
+            cond.append(t("rule.between", after=self.cond_after or "00:00",
+                          before=self.cond_before or "24:00"))
         if self.cond_entity:
-            cond.append(f"if {self.cond_entity} is {self.cond_state}")
+            cond.append(t("rule.if_state", entity=self.cond_entity, state=self.cond_state))
         args = ", ".join(f"{k}={v}" for k, v in self.action_args.items())
-        return (f"{when}{' ' + ' and '.join(cond) if cond else ''}: {self.action_tool} {args}"
-                + ("" if self.enabled else " [off]"))
+        return (f"{when}{' ' + ' · '.join(cond) if cond else ''} → {self.action_tool} {args}"
+                + ("" if self.enabled else f" [{t('rule.off')}]"))
 
 
 def _row(r) -> ChatRule:
