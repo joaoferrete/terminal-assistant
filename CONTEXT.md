@@ -33,8 +33,17 @@ _Avoid_: event, hook, fire
 
 **Rule**:
 A Trigger, its conditions and its actions, taken as one unit. It is the shape an
-automation takes once written down.
+automation takes once written down. A **file Rule** is written by hand as code; a
+**chat Rule** is asked for in conversation and stored as data. Both are Rules and
+are listed together. A Scheduled action is the simple, time-only case.
 _Avoid_: automation, recipe, scene
+
+**Routine**:
+A named sequence of actions a Member made in conversation — "arrival": the living
+room light and the fan. It runs with the Grant of whoever starts it, by saying one
+of its phrases ("cheguei em casa"), by asking for it in other words, or as the
+action of a Rule or a Scheduled action. No conditions and no waits inside it.
+_Avoid_: scene, script, macro (a Routine is what runs; a Rule is when)
 
 ### Notes
 
@@ -166,6 +175,13 @@ _Avoid_: agent (that is the LLM agent), client (that is the CLI), node
 Something the LLM agent may invoke: a Python function that names the Grant it needs
 and whether it is destructive.
 _Avoid_: command, skill, action; and do not confuse with Capability
+
+**Tier**:
+The class of model a task deserves: *lite* for the passes that run on every note or
+group message, *pro* for the conversation and the rare tasks where quality shows.
+Each Tier names one model; every task belongs to one Tier, and every Tier falls
+back to the same provider.
+_Avoid_: level, plan, model (a Tier points at a model; it is not one)
 
 **Capability**:
 A subsystem that may be alive or dead on this particular machine — notes,

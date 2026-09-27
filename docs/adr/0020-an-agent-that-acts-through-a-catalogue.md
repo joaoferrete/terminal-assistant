@@ -27,6 +27,14 @@ asks, a Receipt with an undo.
   arguments. The agent never writes a Python rule file. Rule files are code, and a
   model writing code that the daemon imports is a shell with extra steps.
 
+- **Parity, with one config exception.** The agent can do whatever a Member can do
+  on the board, in the CLI or by command. It never edits the configuration, and
+  explains how instead, except that the Owner may add or remove a Member with an
+  existing Grant from the chat, always by button. Grants and `admin` stay behind
+  the config page's two factors.
+- **What it says is what we wrote.** Explanations come from a curated guide that a
+  test keeps in step with the code, not from the model's memory.
+
 ## Considered Options
 
 - **Commands with confirmation.** The agent proposes a shell command, and it runs

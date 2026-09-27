@@ -86,7 +86,8 @@ in its tasks and in Discoveries; this section is only where things stand.*
   (T9.5): the Satellite files (the laptop needs `[files] folders` and a restart of
   `ta-satellite`), `/conectar_agenda`, `/conectar_email`, a timer, and a
   scheduled light.
-- **Next: F10** (D43–D46, ADR 0020), starting with T10.1.
+- **Next: F10** (D43–D61, ADR 0020), built on `feat/agent-catalogue`, starting
+  with T10.1.
 - Open the PRs for the stack, in order, if the user asks. Each targets the branch
   below it, or everything goes to `main` one after another, whichever the user
   prefers.
@@ -176,7 +177,8 @@ templates; the unofficial libraries risk a ban on a personal number.
 invites Members by `@username` in config. On first contact the bot binds that
 username to the numeric Telegram user id and stores it; from then on only the id
 counts. Groups are allowlisted by chat id. The Owner gets a private message on every
-new pairing. Everything else is ignored without a reply. *Why:* usernames are
+new pairing. Everything else is ignored without a reply *(amended by D60: a
+stranger in a private chat gets one standard reply a day, and the Owner is told)*. *Why:* usernames are
 optional and mutable — a released username can be claimed by a stranger, who would
 inherit the Member's Grants. Asking people for their numeric id was rejected as
 friction.
@@ -727,21 +729,114 @@ writes Python rule files. These rules can be listed, switched off and deleted fr
 the chat and the board. D45's initiative is these rules. *Why:* ADR 0020. A model
 writing code the daemon imports is code execution.
 
-- [ ] **T10.1** D44: `MAX_STEPS` 8, with a test that the step budget and the cost
-      ceiling both stop a runaway turn.
-- [ ] **T10.2** D43, the Satellite catalogue: `satellite_act` requests over the Hub
-      (as T9.3), with the laptop-side handlers `lock`, `volume`, `media`, `open`,
-      `notify` and `screenshot`, and `[satellite.scripts]`. Tools for each, and the
-      `satellite_actions` list the laptop offers.
-- [ ] **T10.3** D46, the rule store: migration, a trigger (time / HA state /
-      microphone / Reminder), a condition (HA state equals, time window), and an
-      action (a Tool and its arguments). The engine fires them next to the Python
-      Rules. `rule_create`, `rule_list` and `rule_delete` Tools. Creating a rule
-      is a state change, so a tainted turn confirms it.
-- [ ] **T10.4** D45: every fired chat rule is told in its Member's chat with [Undo]
-      and [Switch this rule off], and runs with the Grant read at fire time.
-- [ ] **T10.5** The board shows the chat rules (look at it, AGENTS §5).
-- [ ] **T10.6** Deploy (with the user's yes), and the laptop's Satellite updated.
+**The interview continued the same day** (D47–D61), widening F10 into a general
+pass with the agent as its principle:
+
+**D47 — Parity.** The agent can do everything a Member can do on the board, in the
+CLI or through a command, with their Grant, including their own settings stored in
+the database (Persona, Digest, connections). It does not change `config.toml` or
+`.env`, but it explains how, with the path on the config page or the TOML to paste.
+Nothing is permanent: deleting moves to the trash with [Undo]. Emptying the trash
+and purging stay on the board. *Why:* the user's call.
+
+**D48 — A curated guide, and doing beats explaining.** A `help(topic)` Tool returns
+the real steps from a guide we write, so the model adapts the tone and invents no
+menu names or keys. When the agent can do the thing, it does it: "connect my
+email" sends the consent link, and "send me the board link" sends it. The commands
+remain as shortcuts. **Rule:** every user-visible capability enters the guide in
+the same commit, stated in `AGENTS.md` and enforced by a test. The test fails if a
+Tool or a command is missing from the guide, or if the guide names a config key the
+code does not know.
+
+**D49 — The guide is one file, `docs/guide.md`, in English.** The model answers in
+the installation's language from it. *Why:* one source (CONTRIBUTING makes tracked
+docs English), and it doubles as the manual on GitHub.
+
+**D50 — The board says whose it is and who added what.** The header reads "<name>'s
+board", from the Persona's name, else the `@username`. A small badge with the
+author's name marks every item that is **not** the viewer's, on household Lists and
+household Notes.
+
+**D51 — Polish the board, do not redo it.** The four views and the post-its stay.
+The pass brings consistent colour and spacing tokens, a web font, light and dark
+reviewed, the new header, badge-style cards, guiding empty states, and phone
+first. Seen on screen at desktop width and 375 px (AGENTS §5).
+
+**D52 — Improve what exists.** (a) Honest Tool errors: the model gets a readable
+reason, and a call that failed is not repeated blindly. (b) Note search by meaning,
+with F7's local embeddings. (c) The house with state: "is the living room light
+on?". (e) The agent introduces itself from the guide. A stronger chat model is D53.
+
+**D53 — Model Tiers.** `[llm.tiers] lite = "provider:model"`, `pro = ...`. The code
+maps each task to a Tier: *pro* for `agent`, `organize` and `priorities`, *lite* for
+`review_capture`, `classify`, `detect_event` and `digest_prose`. Gemini is every
+Tier's fallback and always does `web_search`. `[llm.tasks]` still works as a
+per-task override (AGENTS §3) and now also accepts a Tier or `provider:model`. With
+no `[llm.tiers]`, nothing changes.
+
+**D54 — A Rule from the chat is a Rule.** A *file Rule* is written as code; a *chat
+Rule* is asked for in conversation and stored as data. Both are listed together.
+The Scheduled action (D39) stays as the time-only case. Chat Rules add triggers on
+an Entity's state and on the microphone, with an optional condition.
+
+**D55 — Presence is out for now.** *Intended later:* the Home Assistant Companion
+app's `person.*` Entities, as ordinary state triggers. Until then, a Routine
+("cheguei em casa") is how a Member tells the house.
+
+**D56 — The Satellite catalogue.** Lock the screen, volume, media, notify, and open a
+URL or app run without a button (a tainted turn still confirms). A screenshot, sent
+only to the asker's private chat, and suspend **always** confirm. So do the
+Member's `[satellite.scripts]`, unless the laptop marks one `safe = true`. There is
+no power-off, no reboot, and no clipboard.
+
+**D57 — Routine.** A named sequence of Tool calls, made in the chat. It is started
+by one of its phrases (the pre-router, with no model), by the agent from a
+paraphrase, or as the action of a Rule or Scheduled action. It runs with the
+starter's Grant and answers once, with [Undo all]. It has no conditions and no
+waits inside.
+
+**D58 — Routines and chat Rules are private by default.** They become the
+household's when the creator says so. Anyone can then start one, each with their
+own Grant, and a step outside that Grant is skipped and said. Only the creator
+or the Owner edits or deletes it. A chat Rule fires with its creator's Grant, read
+at fire time.
+
+**D59 — The Owner invites from the chat (an exception to D47).** "Libera o bot pra
+@ana" works only for the Owner, only in private, and only changes `[members]`: it
+adds or removes a Member and assigns an **existing** Grant. It always confirms by
+button. It writes through the config page's own path (tomlkit, backup, validation)
+and applies with no restart. Grants themselves, and `admin`, stay on the two-factor
+config page. *Why:* the chat is one factor, the Owner's Telegram account.
+
+**D60 — Strangers get one standard reply a day, and the Owner is told (amends D8).**
+The reply reveals no household or Owner name. The Owner's message carries
+[Allow] (into D59) and [Ignore]. Both go out once per person per day. In an
+allowlisted group, strangers are still ignored.
+
+**D61 — The `/` menu and `/help`.** `setMyCommands` at boot: `/help`, `/board`,
+`/agendado`, `/conectar_agenda`, `/conectar_email`, `/satellite`, plus
+`/moradores` in the Owner's own menu. `/help`, and "what can you do?", answer from
+the guide with one example per area.
+
+Build order, one stage at a time:
+
+- [ ] **T10.1** Agent base: `MAX_STEPS` 8 (D44), honest Tool errors (D52a), Tiers
+      (D53).
+- [ ] **T10.2** Parity Tools (D47): edit/status/delete/restore a note, calendar
+      read and create, lists create and remove, board link, Satellite code,
+      connect calendar/email, rules/priorities/trash reads, media and ring light.
+- [ ] **T10.3** `docs/guide.md`, the `help` Tool, `/help`, the `/` menu (D48, D49,
+      D61, D52e), the AGENTS rule, and the test that keeps the guide complete.
+- [ ] **T10.4** Strangers (D60) and invitations from the chat (D59), `/moradores`.
+- [ ] **T10.5** Routines (D57, D58).
+- [ ] **T10.6** Chat Rules (D46, D54, D45): the store, triggers, conditions,
+      firing with [Undo] and [Switch this rule off], plus `/agendado` listing
+      everything.
+- [ ] **T10.7** The Satellite catalogue (D43, D56).
+- [ ] **T10.8** Note search by meaning (D52b) and the house's state (D52c).
+- [ ] **T10.9** The board: the header, author badges and the polish (D50, D51),
+      showing chat Rules and Routines. Seen on screen.
+- [ ] **T10.10** Deploy (with the user's yes), and the laptop's Satellite updated.
 
 ## Discoveries
 
