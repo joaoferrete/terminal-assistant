@@ -20,7 +20,7 @@ from pathlib import Path
 
 log = logging.getLogger("ta")
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 14
 
 # The states of a Note. Stored in English because the rest of the vocabulary is
 # (see CONTEXT.md); the translated labels live in the interface.
@@ -188,6 +188,227 @@ MIGRATIONS: list[tuple[int, str]] = [
         UPDATE notes SET priority = 'high'   WHERE priority = 'alta';
         UPDATE notes SET priority = 'medium' WHERE priority = 'media';
         UPDATE notes SET priority = 'low'    WHERE priority = 'baixa';
+        """,
+    ),
+    (
+        7,
+        """
+        -- What each answered model call cost (ADR 0018). The Digest's admin
+        -- section reports it (D15), and it is the only way to see whether
+        -- routing to the cheaper provider is actually paying off.
+        --
+        -- `model` is stored, not just `provider`, because a price belongs to a
+        -- model and the same provider can serve two at different prices.
+        -- `cost_usd` NULL means "no price known for this model" — unknown, which
+        -- is not the same as free, and a sum must not treat it as zero.
+        CREATE TABLE llm_usage (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            at          TEXT    NOT NULL,
+            provider    TEXT    NOT NULL,
+            model       TEXT    NOT NULL,
+            task        TEXT    NOT NULL,
+            tokens_in   INTEGER NOT NULL,
+            tokens_out  INTEGER NOT NULL,
+            cost_usd    REAL
+        );
+
+        CREATE INDEX idx_llm_usage_at ON llm_usage(at);
+        """,
+    ),
+    (
+        8,
+        """
+        -- Who the bot recognises on a Channel (D21). Identity is the Channel's
+        -- numeric id; the username is only how the Owner named them in the
+        -- config, and it is kept to notice when it is taken over.
+        --
+        -- A username can be released and claimed by a stranger. Binding it to
+        -- the id on first contact, and never consulting it again, is what stops
+        -- that stranger inheriting the Member's access.
+        --
+        -- This is the seed of `members` (F3), which will absorb it.
+        CREATE TABLE channel_identities (
+            channel      TEXT NOT NULL,
+            external_id  TEXT NOT NULL,
+            username     TEXT,
+            role         TEXT NOT NULL,     -- 'owner' for now; Grants arrive in F3
+            paired_at    TEXT NOT NULL,
+            PRIMARY KEY (channel, external_id)
+        );
+
+        CREATE UNIQUE INDEX idx_one_owner_per_channel
+            ON channel_identities(channel) WHERE role = 'owner';
+        """,
+    ),
+    (
+        9,
+        """
+        -- The people of the household (D6, D12). A Member exists whether or
+        -- not they have paired on a Channel: the Owner is born here, with id 1,
+        -- so every Note already written has somebody to belong to.
+        --
+        -- `handle` is how the Owner named them in config.toml — the invite, not
+        -- the identity. The identity per Channel stays in `channel_identities`,
+        -- which gains the link to the Member it proves.
+        CREATE TABLE members (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            handle      TEXT    NOT NULL UNIQUE,
+            is_owner    INTEGER NOT NULL DEFAULT 0,
+            persona     TEXT,             -- JSON: name to use, tone (D13)
+            created_at  TEXT    NOT NULL
+        );
+        CREATE UNIQUE INDEX idx_one_owner ON members(is_owner) WHERE is_owner = 1;
+
+        INSERT INTO members (id, handle, is_owner, created_at)
+        VALUES (1, 'owner', 1, strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'));
+
+        ALTER TABLE channel_identities ADD COLUMN member_id INTEGER REFERENCES members(id);
+        UPDATE channel_identities SET member_id = 1 WHERE role = 'owner';
+
+        -- A Note belongs to whoever wrote it. The column cannot be NOT NULL:
+        -- SQLite refuses a REFERENCES column with a non-NULL default in ALTER
+        -- TABLE while foreign keys are on. So the backfill is here and the
+        -- store always writes it; NULL never appears after this migration.
+        ALTER TABLE notes ADD COLUMN owner_id INTEGER REFERENCES members(id);
+        UPDATE notes SET owner_id = 1;
+        CREATE INDEX idx_notes_owner ON notes(owner_id);
+
+        -- A named collection with a scope (D7). The List, not the Note, decides
+        -- who sees its items: a household List is seen by every Member.
+        CREATE TABLE lists (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT    NOT NULL,
+            scope       TEXT    NOT NULL CHECK (scope IN ('household', 'personal')),
+            owner_id    INTEGER NOT NULL REFERENCES members(id),
+            created_at  TEXT    NOT NULL,
+            UNIQUE (name, owner_id)
+        );
+        ALTER TABLE notes ADD COLUMN list_id INTEGER REFERENCES lists(id) ON DELETE SET NULL;
+        -- Who put it in that List: typed/dragged locks it, a model's choice is
+        -- revisable — the same rule as `tags_by_user`.
+        ALTER TABLE notes ADD COLUMN list_by_user INTEGER NOT NULL DEFAULT 0;
+        CREATE INDEX idx_notes_list ON notes(list_id);
+
+        -- Priorities are one person's description of what matters to them.
+        ALTER TABLE priorities ADD COLUMN member_id INTEGER REFERENCES members(id);
+        UPDATE priorities SET member_id = 1;
+        """,
+    ),
+    (
+        10,
+        """
+        -- Conversation Memory (D13): what was said, per conversation, searchable
+        -- only from inside that conversation. It holds both sides — what a
+        -- Member wrote and what the bot answered — because "what did you tell me
+        -- about X" is a question about the bot's side.
+        CREATE TABLE messages (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel          TEXT    NOT NULL,
+            conversation_id  TEXT    NOT NULL,
+            message_id       TEXT,
+            member_id        INTEGER REFERENCES members(id),   -- NULL = the bot
+            text             TEXT    NOT NULL,
+            at               TEXT    NOT NULL
+        );
+        CREATE INDEX idx_messages_conversation ON messages(channel, conversation_id, at);
+
+        -- What the bot did because of a message (Receipt): the undo, and the
+        -- answer to "what did you do here?" (D11, T4.4). `pending` holds an action
+        -- waiting for the asker's button (D27); it runs only when pressed.
+        CREATE TABLE receipts (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel          TEXT    NOT NULL,
+            conversation_id  TEXT    NOT NULL,
+            message_id       TEXT,             -- the Member's message that caused it
+            bot_message_id   TEXT,             -- the bot's answer, which a reply may quote
+            member_id        INTEGER NOT NULL REFERENCES members(id),
+            tool             TEXT    NOT NULL,
+            args             TEXT,             -- JSON: what a pending action will run with
+            summary          TEXT    NOT NULL,
+            undo             TEXT,             -- JSON: how to undo, NULL = cannot
+            state            TEXT    NOT NULL DEFAULT 'done'
+                             CHECK (state IN ('done', 'pending', 'undone', 'refused')),
+            at               TEXT    NOT NULL
+        );
+        CREATE INDEX idx_receipts_message ON receipts(channel, conversation_id, message_id);
+        """,
+    ),
+    (
+        11,
+        """
+        -- Whose request a model call served, for the per-Member daily ceiling
+        -- (D30). NULL for calls made for nobody in particular (organize from the
+        -- CLI, the Digest prose). Calls before this migration were all the Owner's.
+        ALTER TABLE llm_usage ADD COLUMN member_id INTEGER REFERENCES members(id);
+        UPDATE llm_usage SET member_id = 1;
+        """,
+    ),
+    (
+        12,
+        """
+        -- Each Member's pushed Digest (D15): whether, when, and the last day it
+        -- went out. JSON, like `persona`, because the Member sets it from the chat.
+        --
+        -- Only the Owner is on by default (decided 2026-09-26): a daily message
+        -- nobody asked for is how a bot gets muted. The others ask for it.
+        ALTER TABLE members ADD COLUMN digest TEXT;
+        UPDATE members SET digest = '{"enabled": true, "time": "07:00"}' WHERE is_owner = 1;
+        """,
+    ),
+    (
+        13,
+        """
+        -- Files from a Member's Satellite folders, indexed for search by meaning
+        -- (F7). Private to that Member, and never searched from a group
+        -- (decided 2026-09-26). `sha` is what the Satellite compares, so an
+        -- unchanged file is never sent twice.
+        CREATE TABLE rag_files (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id   INTEGER NOT NULL REFERENCES members(id),
+            path        TEXT    NOT NULL,
+            sha         TEXT    NOT NULL,
+            updated_at  TEXT    NOT NULL,
+            UNIQUE (member_id, path)
+        );
+        -- One row per chunk, with its embedding as float32 bytes. Brute-force
+        -- cosine over a household's documents is fast enough; a vector index
+        -- would be a dependency for a scale this will not reach.
+        CREATE TABLE rag_chunks (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id     INTEGER NOT NULL REFERENCES rag_files(id) ON DELETE CASCADE,
+            ordinal     INTEGER NOT NULL,
+            text        TEXT    NOT NULL,
+            vector      BLOB    NOT NULL
+        );
+        CREATE INDEX idx_rag_chunks_file ON rag_chunks(file_id);
+        """,
+    ),
+    (
+        14,
+        """
+        -- Actions the agent was asked to run later (F9, D39): "turn the light on
+        -- in 10 minutes", "every day at 7". Stored, so a restart does not lose
+        -- them. `tool` and `args` are what runs, with the author's Grant read
+        -- again at fire time; `repeat` is once | daily | weekdays | weekends, and
+        -- a recurring row keeps `time_of_day` so the next occurrence is computed
+        -- from the clock, not by adding 24 hours to a late run.
+        CREATE TABLE scheduled (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id       INTEGER NOT NULL REFERENCES members(id),
+            channel         TEXT    NOT NULL,
+            conversation_id TEXT    NOT NULL,
+            in_group        INTEGER NOT NULL DEFAULT 0,
+            tool            TEXT    NOT NULL,
+            args            TEXT    NOT NULL,
+            summary         TEXT    NOT NULL,
+            repeat          TEXT    NOT NULL DEFAULT 'once',
+            time_of_day     TEXT,
+            next_at         TEXT    NOT NULL,
+            state           TEXT    NOT NULL DEFAULT 'active',
+            created_at      TEXT    NOT NULL,
+            last_run_at     TEXT
+        );
+        CREATE INDEX idx_scheduled_due ON scheduled(state, next_at);
         """,
     ),
 ]

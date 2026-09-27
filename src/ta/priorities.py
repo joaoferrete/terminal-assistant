@@ -21,6 +21,7 @@ import sqlite3
 from datetime import datetime
 
 from .db import transaction
+from .members import OWNER_ID
 
 # The questions for the first run. Few on purpose: a long questionnaire does not
 # get answered.
@@ -47,29 +48,37 @@ TEMPLATE = """# Prioridades
 """
 
 
-def current(conn: sqlite3.Connection) -> str | None:
+def current(conn: sqlite3.Connection, member_id: int = OWNER_ID) -> str | None:
     row = conn.execute(
-        "SELECT content FROM priorities ORDER BY id DESC LIMIT 1"
+        "SELECT content FROM priorities WHERE member_id = ? ORDER BY id DESC LIMIT 1",
+        (member_id,),
     ).fetchone()
     return row["content"] if row else None
 
 
-def history(conn: sqlite3.Connection, limit: int = 10) -> list[tuple[str, str]]:
+def history(
+    conn: sqlite3.Connection, limit: int = 10, member_id: int = OWNER_ID
+) -> list[tuple[str, str]]:
     return [
         (r["created_at"], r["content"])
         for r in conn.execute(
-            "SELECT created_at, content FROM priorities ORDER BY id DESC LIMIT ?", (limit,)
+            "SELECT created_at, content FROM priorities WHERE member_id = ?"
+            " ORDER BY id DESC LIMIT ?",
+            (member_id, limit),
         )
     ]
 
 
-def save(conn: sqlite3.Connection, content: str, *, now: datetime | None = None) -> None:
+def save(
+    conn: sqlite3.Connection, content: str, *, now: datetime | None = None,
+    member_id: int = OWNER_ID,
+) -> None:
     """Store a new version. Never overwrites: the history is the audit trail."""
     now = now or datetime.now()
     with transaction(conn):
         conn.execute(
-            "INSERT INTO priorities (content, created_at) VALUES (?, ?)",
-            (content.strip(), now.isoformat(timespec="seconds")),
+            "INSERT INTO priorities (content, created_at, member_id) VALUES (?, ?, ?)",
+            (content.strip(), now.isoformat(timespec="seconds"), member_id),
         )
 
 
@@ -79,27 +88,30 @@ def from_answers(answers: dict[str, str]) -> str:
     )
 
 
-async def rewrite(conn: sqlite3.Connection, llm, instruction: str) -> str:
+async def rewrite(
+    conn: sqlite3.Connection, llm, instruction: str, member_id: int = OWNER_ID
+) -> str:
     """Rewrite the markdown from a plain-language instruction.
 
     A new version is stored; the previous one stays in the history. It is the
     "editable by prompt" that was asked for, without becoming destructive.
     """
-    from .llm import Prose
+    from .llm import Prose, for_task
 
-    existing = current(conn) or "# Prioridades\n\n(vazio)\n"
-    updated = await llm._structured(
-        prompt=(
-            f"Documento atual de prioridades:\n\n{existing}\n\n"
-            f"Instrução da pessoa: {instruction}\n\n"
-            "Devolva o documento inteiro reescrito em markdown, aplicando a "
-            "instrução e preservando tudo que ela não pediu para mudar."
-        ),
-        schema=Prose,
-        system=(
-            "Você mantém o documento de prioridades de alguém. Edite com "
-            "parcimônia: aplique o que foi pedido e não reescreva o resto."
-        ),
-    )
-    save(conn, updated.text)
+    existing = current(conn, member_id) or "# Prioridades\n\n(vazio)\n"
+    with for_task("priorities"):
+        updated = await llm._structured(
+            prompt=(
+                f"Documento atual de prioridades:\n\n{existing}\n\n"
+                f"Instrução da pessoa: {instruction}\n\n"
+                "Devolva o documento inteiro reescrito em markdown, aplicando a "
+                "instrução e preservando tudo que ela não pediu para mudar."
+            ),
+            schema=Prose,
+            system=(
+                "Você mantém o documento de prioridades de alguém. Edite com "
+                "parcimônia: aplique o que foi pedido e não reescreva o resto."
+            ),
+        )
+    save(conn, updated.text, member_id=member_id)
     return updated.text

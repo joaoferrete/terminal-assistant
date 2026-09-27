@@ -39,6 +39,12 @@ If you open the board on your phone, the token travels once in the URL, is store
 in `localStorage`, and is stripped from the address bar immediately so it does not
 end up in your browser history or in any link you paste.
 
+The Telegram bot's `/board` link never carries the token: a chat is stored on
+Telegram's servers. It carries a **one-time code** that expires in five minutes,
+and redeeming it sets a session cookie: `HttpOnly`, `SameSite=Lax`, valid for 90
+days, and **signed with** `TA_TOKEN` rather than containing it. Rotating
+`TA_TOKEN` revokes every such session at once.
+
 ### If you open it to your network, know this
 
 - Traffic is **plain HTTP**. Someone who can already watch your local network can

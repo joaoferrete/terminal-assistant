@@ -184,8 +184,9 @@ it, and nothing calls a model unless you ask. See [ai.md](ai.md) for what each
 feature costs in model calls.
 
 ```bash
-# get a key at https://aistudio.google.com/apikey
-echo "GEMINI_API_KEY=your-key" >> .env
+# either one is enough; with both, DeepSeek answers and Gemini is the fallback
+echo "DEEPSEEK_API_KEY=your-key" >> .env    # https://platform.deepseek.com/api_keys
+echo "GEMINI_API_KEY=your-key" >> .env      # https://aistudio.google.com/apikey
 systemctl --user restart ta
 ```
 
@@ -195,9 +196,103 @@ To keep the key but stop the automatic second pass over every capture:
 ### Did it work?
 
 ```bash
-ta doctor          # AI (Gemini): ok
+ta doctor          # AI: ok
 ta init            # the priorities interview
 ```
+
+---
+
+## Layer 4b — The Telegram bot
+
+**Take this if** you want to capture from your phone: send the bot a message and
+it becomes a Note, the same as `ta note`. It is the front door of the V2 plan
+([PLAN.md](PLAN.md)); for now it serves only you, in a private chat.
+
+1. In Telegram, talk to **@BotFather**, send `/newbot`, and follow the prompts. It
+   answers with a token.
+2. Put the token in `.env`, and your own Telegram username in `config.toml`:
+
+   ```bash
+   echo "TELEGRAM_BOT_TOKEN=the-token" >> .env
+   ```
+
+   ```toml
+   [channel.telegram]
+   owner = "your_username"
+   ```
+
+3. Restart the daemon and send the bot anything. The first message pairs your
+   account and is captured too.
+
+The bot polls Telegram from inside your network, so no port opens on your router
+and nothing needs a public address. It answers nobody but you: anyone else gets
+silence. Your username is only used for that first pairing. After it, the bot
+recognises your account by its numeric id, so someone who later takes your old
+username is still a stranger.
+
+### Talking to it, and groups
+
+With a model configured (Layer 4), the bot is also a chat. Ask it anything, about
+your notes or about the world: it answers, searches the web when it needs to, and
+still captures what is a thought rather than a question. "Apaga a luz da sala"
+needs no model at all.
+
+It can also act later. "Liga a luz do quarto daqui 10 min" or "acende a luz todo
+dia às 7h" becomes a **scheduled action**, stored on the server, so a restart does
+not lose it. The confirmation has a button to cancel it, and "o que está
+agendado?" answers with how long is left. It runs with your permissions as they
+are when it fires. If the server was down and it is more than 15 minutes late, it
+is skipped, and the bot tells you.
+
+Reminders ring in the chat too. "Me avisa daqui 10 min pra tirar o bolo", "timer
+de 15 min" or "me lembra às 15h de ligar pro dentista" becomes a note with a
+reminder, and when it is due the bot messages **the person who wrote it**, in
+private, with [Done] and [+10 min]. The owner's reminders also go to their desktop
+and the house speakers. Nobody else's do. "Quanto falta?" lists timers and
+scheduled actions together.
+
+It can also close things. "Comprei o leite" or "terminei o relatório" marks them
+done, with an [Undo] button.
+
+To use it in a household group:
+
+1. At @BotFather, `/setprivacy`, pick the bot, **Disable**. Otherwise Telegram only
+   shows it messages that mention it, and "acabou o detergente" never reaches it.
+2. Add the bot to the group, and put the group's chat id in `config.toml`:
+   ```toml
+   [channel.telegram]
+   groups = [-1001234567890]
+   ```
+   The id shows in the daemon's log the first time the group writes, or in
+   @RawDataBot.
+
+In the group it answers when **mentioned** (or when someone replies to it), with
+the household's data only — nobody's private notes, the asker's included. It turns
+"ran out of X" into an item on a household List, quietly, with an undo button.
+It acts only for Members, pairs nobody there (pairing is private), and keeps nothing
+from people in the group who are not Members.
+
+### Voice notes
+
+Send the bot a voice note and it is transcribed **on your machine** — the audio
+never leaves the house — and captured like text. It needs the optional extra:
+
+```bash
+.venv/bin/pip install -e ".[voice]"
+```
+
+The first voice note downloads the model (a few hundred MB, into the Hugging Face
+cache) and takes a while; the next ones take a fraction of their length. If
+transcription fails, or the extra is missing, the audio is kept next to the
+database and a Note says where, so nothing you said is lost.
+
+### Did it work?
+
+```bash
+ta doctor          # Telegram (bot): ok · Voice (transcription): ok
+```
+
+Then send the bot a message, and look for it on the board.
 
 ---
 
@@ -237,6 +332,200 @@ http://<your-machine-ip>:7777/board?token=<the-token>
 The token is stored in the browser and stripped from the address bar, so it does
 not end up in your history. Read [`SECURITY.md`](../SECURITY.md) before doing
 this on a network you do not control.
+
+**With the Telegram bot** ([Layer 4b](#layer-4b--the-telegram-bot)) there is nothing to
+type: send it `/board`. It answers with a link that works once, for five minutes,
+and opening it leaves a session cookie in that browser. The cookie is what keeps
+a reload working. A page load cannot send the token the board keeps in
+`localStorage`, which is why, with the token alone, every refresh on a phone asked
+for it again.
+
+---
+
+## Alternative: on a home server
+
+**Take this if** you have an always-on box at home — an old PC, a mini PC — and
+you want `ta` to keep running with your laptop closed. It is optional. The
+single-machine install above is still the default and still complete.
+
+On a server you get the notes, the board, the rules, the scheduler, Home Assistant
+and the AI. The desktop-shaped parts come back from your laptop once it is a
+**Satellite** ([below](#your-computers-as-satellites)): meeting detection (its
+microphone), the ringlight and desktop notifications. The calendar comes from
+Google's API instead of your GNOME session ([calendar.md](calendar.md#on-a-server-google-calendar)).
+
+This was written from a real migration onto DietPi (Debian 12). Other Debian-like
+systems behave the same.
+
+### Python 3.12 without upgrading the system
+
+Debian 12 ships Python 3.11, and the project needs 3.12+. A server does not need
+the system Python — that rule exists for the calendar's PyGObject
+([ADR 0005](adr/0005-the-system-python-because-of-pygobject.md)), and the calendar
+does not run there. So take a standalone Python from `uv`, which installs into
+your home and touches no system package:
+
+```bash
+sudo apt install git make curl
+curl -LsSf https://astral.sh/uv/install.sh | sh
+~/.local/bin/uv python install 3.12
+
+git clone https://github.com/joaoferrete/terminal-assistant
+cd terminal-assistant
+make install SYS_PYTHON="$(~/.local/bin/uv python find 3.12)"
+```
+
+On a system whose own Python is already 3.12+, plain `make install` is fine.
+
+### A system service, not a user one
+
+```bash
+make install-server-service
+journalctl -u ta -f
+```
+
+The desktop install uses a systemd **user** unit because the daemon needs your
+session. A server has no session to need, and DietPi ships without
+`systemd-logind` and without a system D-Bus, so `systemctl --user` and
+`loginctl enable-linger` fail with *Failed to connect to bus*. This target
+generates a system unit from the same file, running as whoever runs `make`.
+
+### Open it to the network
+
+A server is reached from other machines, so it needs both `TA_HOST` and
+`TA_TOKEN` in `.env` — see [the board on your phone](#optional-the-board-on-your-phone).
+Then restart with `sudo systemctl restart ta`.
+
+### Home Assistant next to it
+
+If Home Assistant runs on the same box (a container with `--network host` is the
+simplest), point `HA_URL` at it locally:
+
+```bash
+HA_URL=http://localhost:8123
+```
+
+Moving an existing Home Assistant container is a matter of stopping the old one,
+copying its whole config directory (`.storage/` belongs to root, so use `sudo`),
+and starting the **same image version** on the new box. The long-lived token
+travels inside the config, so `HA_TOKEN` keeps working. Do not keep both running:
+two instances will fight over the same devices. Update the version afterwards,
+separately.
+
+### Moving an existing installation
+
+Stop the old daemon first, then copy the database with SQLite's backup API rather
+than as a raw file. A raw copy of a database in WAL mode can leave the last writes
+behind:
+
+```bash
+systemctl --user disable --now ta                    # on the old machine
+python3 -c "import sqlite3; s=sqlite3.connect('$HOME/.local/share/ta/ta.db'); \
+d=sqlite3.connect('/tmp/ta.db'); s.backup(d); d.close()"
+```
+
+Then move `/tmp/ta.db` to `~/.local/share/ta/ta.db` on the server, and
+`~/.config/ta/` and `.env` alongside. On a DietPi box, **`scp` fails** with
+*Connection closed*: its SSH server is Dropbear, which has no `sftp-server`, and
+modern `scp` speaks SFTP. Copy through `ssh` instead:
+
+```bash
+ssh you@server 'mkdir -p ~/.local/share/ta && cat > ~/.local/share/ta/ta.db' < /tmp/ta.db
+tar -C ~/.config -cz ta | ssh you@server 'tar -C ~/.config -xz'
+```
+
+### Your computers as Satellites
+
+With `ta` on a server, your laptop becomes a **Satellite**. It reports what only it
+can sense (the microphone, so the meeting Rule works again) and does what only it
+can do: the ring light, desktop notifications. The server runs the Rules. The
+laptop opens the connection, so it needs no open port, and can be off or away.
+
+On the laptop, in the clone's `.env`:
+
+```bash
+TA_SERVER=http://<server-ip>:7777
+```
+
+The **Owner's** laptop authenticates with the same `TA_TOKEN` as the server. Anyone
+else asks the bot for `/satellite`. It answers with a one-time code, valid for
+five minutes, and then:
+
+```bash
+ta satellite login <code>     # trades the code for this machine's own token
+make install-satellite         # a user service: `ta satellite run`
+ta satellite status            # server, credential, and what is queued
+```
+
+`ta note` on a Satellite **never waits for the server**. If it does not answer,
+the note is kept in a local queue and sent later, with the moment you typed it,
+so "tomorrow" still means the right day. Only capture queues: `ta list` and the
+board need the server, and say so.
+
+**Searching your folders by meaning.** A Satellite can also index folders you
+choose — notes, docs, code — so the bot can answer "how did I fix that consumer
+lag?" from your own files. On the laptop, in `config.toml`:
+
+```toml
+[rag]
+folders = ["~/notas", "~/repos/meu-projeto/docs"]
+```
+
+`ta satellite run` syncs them every half hour. `ta satellite sync` does it now. Only
+changed files are sent; hidden files and anything named like a secret (`.env`,
+keys, certificates, "credentials") never leave the laptop. On the server:
+`.venv/bin/pip install -e ".[rag]"` (a ~220 MB multilingual model, downloaded on
+first use, running locally: nothing goes to a cloud). You search your own folders.
+Whoever runs the house can search every Satellite's. Nobody can search from a
+group.
+
+**Opening files on your computer from the chat.** Ask the bot "o que tem na minha
+pasta Downloads?", "lê o arquivo X", or "me manda o PDF do contrato", and your
+Satellite answers live. It lists, reads text, or sends the file to your chat. It
+does this only in the folders your laptop shares:
+
+```toml
+[files]
+folders = ["~/Documentos", "~/Downloads"]
+```
+
+Read-only, and only in a private chat. Secrets and hidden files are refused, and
+so is any path that leads outside those folders, even through a link. Each person
+reaches only their own computer, and it has to be on. Otherwise the bot says so.
+
+To remove a computer, `systemctl --user disable --now ta-satellite` and delete
+`~/.config/ta/satellite.json`. Rotating the server's `TA_TOKEN` revokes every
+Satellite token at once.
+
+### Did it work?
+
+```bash
+ta doctor                    # on the server: notes and home ok; calendar,
+                             # microphone and ringlight unavailable, with reasons
+```
+
+And open `http://<server-ip>:7777/board?token=<the-token>` from any machine on
+your network.
+
+---
+
+## The config page
+
+Everything above can also be edited in the browser, at `/config` on the board's
+address. It is the **Owner's** only, and locked twice: you need your board
+session, and a config password on top, set on the machine the daemon runs on:
+
+```bash
+ta passwd
+```
+
+The page writes `config.toml` **in place, keeping your comments**, and backs the
+file up before every save. A change that the daemon would reject — a Grant with a
+typo, a price that is not a number — is refused on the page, and nothing is
+written. **Secrets are write-only**: the page tells you whether each one is set,
+never what it is, and lets you replace it. Settings that need a restart say so,
+and a [Restart] button restarts the daemon (systemd brings it back). The config
+session lasts thirty minutes.
 
 ---
 

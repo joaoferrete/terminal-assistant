@@ -110,9 +110,9 @@ def reset_cache() -> None:
 MESSAGES: dict[str, dict[str, str]] = {
     # ── Erros de configuração e de disponibilidade ──────────────────────────
     "ai.no_key": {
-        "pt": "A IA não está configurada. Defina GEMINI_API_KEY no .env — "
+        "pt": "A IA não está configurada. Defina DEEPSEEK_API_KEY ou GEMINI_API_KEY no .env — "
               "ou siga sem ela: captura, mural e automações não dependem de IA.",
-        "en": "AI is not configured. Set GEMINI_API_KEY in your .env — "
+        "en": "AI is not configured. Set DEEPSEEK_API_KEY or GEMINI_API_KEY in your .env — "
               "or carry on without it: capture, board and automations never need AI.",
     },
     "ai.no_sdk": {
@@ -122,6 +122,10 @@ MESSAGES: dict[str, dict[str, str]] = {
     "ai.failed": {
         "pt": "O modelo falhou: {erro}",
         "en": "The model failed: {erro}",
+    },
+    "ai.no_search": {
+        "pt": "A busca na web precisa da GEMINI_API_KEY no .env.",
+        "en": "Web search needs GEMINI_API_KEY in your .env.",
     },
     "ai.off_schema": {
         "pt": "O modelo respondeu fora do formato pedido.",
@@ -155,7 +159,8 @@ MESSAGES: dict[str, dict[str, str]] = {
     },
     "api.empty_text": {"pt": "texto vazio", "en": "empty text"},
     "api.ai_not_configured": {
-        "pt": "GEMINI_API_KEY não configurada", "en": "GEMINI_API_KEY is not configured",
+        "pt": "nem DEEPSEEK_API_KEY nem GEMINI_API_KEY configuradas",
+        "en": "neither DEEPSEEK_API_KEY nor GEMINI_API_KEY is configured",
     },
     "api.review_off": {
         "pt": "revisão desligada (TA_AUTO_REVIEW=0)",
@@ -202,6 +207,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     "review.priority_removed": {"pt": "prioridade removida", "en": "priority removed"},
     "review.untitled": {"pt": "(sem título)", "en": "(untitled)"},
     "review.event_created": {"pt": "evento criado", "en": "event created"},
+    "reminder.title": {"pt": "Lembrete", "en": "Reminder"},
     "reminder.late_minutes": {"pt": " (atrasado {n} min)", "en": " ({n} min late)"},
     "reminder.late_hours": {"pt": " (atrasado {n} h)", "en": " ({n} h late)"},
     "reminder.very_late": {"pt": " (muito atrasado)", "en": " (very late)"},
@@ -242,6 +248,56 @@ MESSAGES: dict[str, dict[str, str]] = {
               "    systemctl --user restart ta\n"
               "\n"
               "To go back to local-only access, remove TA_HOST from your .env.",
+    },
+    "api.bad_captured_at": {
+        "pt": "captured_at inválido (no futuro, ou mais de 31 dias atrás)",
+        "en": "invalid captured_at (in the future, or more than 31 days ago)",
+    },
+    "api.rag_missing": {
+        "pt": "O índice de pastas precisa do extra [rag] no servidor.",
+        "en": "The folder index needs the [rag] extra on the server.",
+    },
+    "config.title": {"pt": "Configuração", "en": "Configuration"},
+    "config.back": {"pt": "← mural", "en": "← board"},
+    "config.login": {"pt": "Senha de configuração", "en": "Config password"},
+    "config.password": {"pt": "senha", "en": "password"},
+    "config.enter": {"pt": "Entrar", "en": "Enter"},
+    "config.fields": {"pt": "Ajustes", "en": "Settings"},
+    "config.tables": {"pt": "Tabelas (TOML)", "en": "Tables (TOML)"},
+    "config.env": {"pt": "Ambiente (.env)", "en": "Environment (.env)"},
+    "config.secrets": {"pt": "Segredos", "en": "Secrets"},
+    "config.save": {"pt": "Salvar", "en": "Save"},
+    "config.saved": {"pt": "Salvo. O arquivo anterior ficou num backup ao lado.",
+                     "en": "Saved. The previous file was backed up next to it."},
+    "config.nothing_changed": {"pt": "Nada mudou.", "en": "Nothing changed."},
+    "config.restart": {"pt": "Reiniciar", "en": "Restart"},
+    "config.restart_confirm": {"pt": "reiniciar?", "en": "restart?"},
+    "config.restarting": {"pt": "Reiniciando… a página volta em alguns segundos.",
+                          "en": "Restarting… the page comes back in a few seconds."},
+    "config.restart_needed": {"pt": "vale depois de reiniciar",
+                              "en": "applies after a restart"},
+    "config.set": {"pt": "configurado", "en": "set"},
+    "config.unset": {"pt": "não configurado", "en": "not set"},
+    "config.new_value": {"pt": "novo valor", "en": "new value"},
+    "config.replace": {"pt": "Trocar", "en": "Replace"},
+    "config.replaced": {"pt": "{key} trocado. Vale depois de reiniciar.",
+                        "en": "{key} replaced. It applies after a restart."},
+    "config.one_per_line": {"pt": "um por linha", "en": "one per line"},
+    "config.login_needed": {"pt": "Entre com a senha de configuração.",
+                            "en": "Log in with the config password."},
+    "config.no_password": {
+        "pt": "Nenhuma senha de configuração definida. No servidor, rode: ta passwd",
+        "en": "No config password is set. On the server, run: ta passwd",
+    },
+    "config.wrong_password": {"pt": "Senha incorreta.", "en": "Wrong password."},
+    "api.list_missing": {"pt": "essa lista não existe", "en": "that list does not exist"},
+    "api.forbidden": {
+        "pt": "Você não tem permissão para isso. Quem administra a casa define isso no config.",
+        "en": "You are not allowed to do that. Whoever runs the house sets it in the config.",
+    },
+    "auth.code_used": {
+        "pt": "Esse link já foi usado ou expirou. Peça outro ao bot com /board.",
+        "en": "This link was already used or has expired. Ask the bot for another with /board.",
     },
     "auth.missing_credential": {
         "pt": "credencial ausente ou inválida (TA_TOKEN)",
@@ -301,6 +357,15 @@ MESSAGES: dict[str, dict[str, str]] = {
     "board.view.board": {"pt": "geral", "en": "board"},
     "board.view.list": {"pt": "lista", "en": "list"},
     "board.view.kanban": {"pt": "kanban", "en": "kanban"},
+    "board.view.lists": {"pt": "listas", "en": "lists"},
+    "board.scope.household": {"pt": "da casa", "en": "household"},
+    "board.scope.personal": {"pt": "sua", "en": "yours"},
+    "board.list_add": {"pt": "adicionar…", "en": "add…"},
+    "board.list_empty": {"pt": "nada aqui", "en": "nothing here"},
+    "board.lists_none": {
+        "pt": "Nenhuma lista ainda. Declare em [lists] no config.toml.",
+        "en": "No lists yet. Declare them under [lists] in config.toml.",
+    },
     "board.filter.area": {"pt": "todas as áreas", "en": "all areas"},
     "board.filter.type": {"pt": "todos os tipos", "en": "all types"},
     "board.filter.tag": {"pt": "todas as tags", "en": "all tags"},
@@ -339,6 +404,251 @@ MESSAGES: dict[str, dict[str, str]] = {
     "board.in_trash": {
         "pt": "na lixeira — `↩` restaura, ou volte ao mural para escrever",
         "en": "in the trash — `↩` restores; go back to the board to write",
+    },
+    # ── Bot (Channel) ───────────────────────────────────────────────────────
+    "bot.paired": {
+        "pt": "Pronto, agora eu te reconheço. Tudo o que você mandar aqui vira nota.",
+        "en": "Done, I know you now. Everything you send here becomes a note.",
+    },
+    "bot.captured": {"pt": "Anotado · #{id}", "en": "Noted · #{id}"},
+    "bot.captured_due": {"pt": "Anotado · #{id} · prazo {due}", "en": "Noted · #{id} · due {due}"},
+    "bot.captured_remind": {"pt": "Anotado · #{id} · te lembro às {at} ⏰",
+                            "en": "Noted · #{id} · I'll remind you at {at} ⏰"},
+    "bot.unsupported": {
+        "pt": "Por enquanto eu só leio texto.",
+        "en": "For now I can only read text.",
+    },
+    "bot.unknown_command": {
+        "pt": "Não conheço esse comando. Mande só o texto que eu anoto.",
+        "en": "I don't know that command. Just send the text and I'll note it.",
+    },
+    "bot.board_link": {
+        "pt": "O seu board: {url}\nO link vale por 5 minutos e funciona uma vez só. "
+              "Depois disso o navegador já fica lembrando de você.",
+        "en": "Your board: {url}\nThe link works once, for 5 minutes. "
+              "After that the browser remembers you.",
+    },
+    "bot.board_unreachable": {
+        "pt": "O board só abre nesta máquina: o daemon está em loopback. "
+              "Para abrir no celular, veja TA_HOST e TA_TOKEN.",
+        "en": "The board only opens on this machine: the daemon is on loopback. "
+              "To open it on a phone, see TA_HOST and TA_TOKEN.",
+    },
+    "bot.voice_listening": {"pt": "Ouvindo…", "en": "Listening…"},
+    "bot.voice_placeholder": {
+        "pt": "🎤 áudio sem transcrição ({reason}) · arquivo: {path}",
+        "en": "🎤 untranscribed audio ({reason}) · file: {path}",
+    },
+    "bot.voice_kept": {
+        "pt": "Não consegui transcrever ({reason}). Guardei o áudio e deixei a nota #{id} "
+              "para você não perder.",
+        "en": "I couldn't transcribe it ({reason}). I kept the audio and left note #{id} "
+              "so it isn't lost.",
+    },
+    "bot.voice_download": {"pt": "não consegui baixar o áudio", "en": "could not download it"},
+    "bot.voice_unavailable": {
+        "pt": "transcrição não instalada no servidor", "en": "transcription is not installed",
+    },
+    "bot.voice_too_long": {"pt": "áudio longo demais", "en": "the audio is too long"},
+    "bot.voice_failed": {"pt": "a transcrição falhou", "en": "transcription failed"},
+    "bot.member_paired": {
+        "pt": "{who} acabou de entrar no bot. Pode mandar notas a partir de agora.",
+        "en": "{who} just joined the bot, and can send notes from now on.",
+    },
+    "bot.voice_heard": {"pt": "🎤 “{text}”", "en": "🎤 “{text}”"},
+    "bot.captured_offline": {
+        "pt": "{line}\n(o modelo está fora agora, então só anotei)",
+        "en": "{line}\n(the model is unavailable right now, so I only noted it)",
+    },
+    "bot.captured_unanswered": {
+        "pt": "{line}\n(não consegui responder isso, então anotei)",
+        "en": "{line}\n(I couldn't answer that, so I noted it)",
+    },
+    "bot.confirm_needed": {
+        "pt": "Antes de fazer, preciso da sua confirmação: {action} ({args}).",
+        "en": "Before I do it, I need your confirmation: {action} ({args}).",
+    },
+    "bot.btn_confirm": {"pt": "Confirmar", "en": "Confirm"},
+    "bot.btn_cancel": {"pt": "Cancelar", "en": "Cancel"},
+    "bot.btn_undo": {"pt": "Desfazer", "en": "Undo"},
+    "bot.btn_not_note": {"pt": "Não era nota", "en": "Not a note"},
+    "bot.not_yours": {"pt": "Esse botão não é seu.", "en": "That button isn't yours."},
+    "bot.cancelled": {"pt": "Cancelado.", "en": "Cancelled."},
+    "bot.undone": {"pt": "Desfeito.", "en": "Undone."},
+    "bot.stale": {"pt": "Isso já foi resolvido.", "en": "That was already settled."},
+    "bot.done": {"pt": "Feito.", "en": "Done."},
+    "bot.home_on_done": {"pt": "Feito · ligado: {what}", "en": "Done · on: {what}"},
+    "bot.home_off_done": {"pt": "Feito · desligado: {what}", "en": "Done · off: {what}"},
+    "bot.event_created": {"pt": "📅 Criei na agenda: {title} · {at}",
+                          "en": "📅 Added to your calendar: {title} · {at}"},
+    # Reminders on the chat (F9).
+    "bot.reminder": {"pt": "⏰ Lembrete: {text}{late}", "en": "⏰ Reminder: {text}{late}"},
+    "bot.btn_reminder_done": {"pt": "Concluir", "en": "Done"},
+    "bot.btn_snooze": {"pt": "+10 min", "en": "+10 min"},
+    "bot.reminder_done": {"pt": "Concluída ✓", "en": "Done ✓"},
+    "bot.reminder_snoozed": {"pt": "Te lembro de novo às {at}.",
+                             "en": "I'll remind you again at {at}."},
+    # Scheduled actions (F9, D39).
+    "bot.btn_cancel_scheduled": {"pt": "Cancelar agendamento", "en": "Cancel schedule"},
+    "bot.scheduled_cancelled": {"pt": "Agendamento cancelado.", "en": "Schedule cancelled."},
+    "bot.scheduled_ran": {"pt": "⏰ {done}", "en": "⏰ {done}"},
+    "bot.scheduled_missed": {
+        "pt": "⏰ Não fiz “{what}”, marcado para {at}: passou da hora (o servidor estava fora).",
+        "en": "⏰ I skipped “{what}”, due at {at}: it was too late (the server was down).",
+    },
+    "bot.scheduled_refused": {
+        "pt": "⏰ Não fiz “{what}”: não dá mais (a permissão mudou, ou o alvo sumiu).",
+        "en": "⏰ I did not run “{what}”: it is no longer possible (the permission "
+              "changed, or the target is gone).",
+    },
+    "bot.scheduled_failed": {
+        "pt": "⏰ Tentei “{what}” e falhou. Tente de novo em instantes.",
+        "en": "⏰ I tried “{what}” and it failed. Try again in a moment.",
+    },
+    "bot.budget_spent": {
+        "pt": "{line}\n(o limite de uso do chat por hoje acabou, então só anotei)",
+        "en": "{line}\n(today's chat budget is spent, so I only noted it)",
+    },
+    "bot.budget_owner": {
+        "pt": "O Member #{who} bateu o teto de custo do chat. Ele segue anotando; o limite "
+              "fica em [chat] no config.toml.",
+        "en": "Member #{who} hit the chat's cost ceiling. Notes still work; the limit is "
+              "under [chat] in config.toml.",
+    },
+    "bot.proactive": {"pt": "👌 {item} → {list}", "en": "👌 {item} → {list}"},
+    "bot.split_offer": {
+        "pt": "A nota #{id} parece ter {n} coisas:\n{parts}\nSeparo em notas diferentes?",
+        "en": "Note #{id} looks like {n} things:\n{parts}\nSplit it into separate notes?",
+    },
+    "bot.btn_split": {"pt": "Separar", "en": "Split"},
+    "bot.btn_keep": {"pt": "Manter junto", "en": "Keep together"},
+    "bot.split_done": {"pt": "Separado em {ids}.", "en": "Split into {ids}."},
+    # ── Digest (F5) ─────────────────────────────────────────────────────────
+    "digest.title": {"pt": "☀️ Seu dia · {day}", "en": "☀️ Your day · {day}"},
+    "digest.calendar": {"pt": "📅 Agenda", "en": "📅 Calendar"},
+    "digest.notes": {"pt": "✅ Para hoje ({n})", "en": "✅ For today ({n})"},
+    "digest.notes_none": {"pt": "✅ Nada vencido nem para hoje.",
+                          "en": "✅ Nothing overdue or due today."},
+    "digest.overdue": {"pt": "vencida", "en": "overdue"},
+    "digest.more": {"pt": "…e mais {n}", "en": "…and {n} more"},
+    "digest.lists": {"pt": "🛒 Listas", "en": "🛒 Lists"},
+    "digest.list_line": {"pt": "• {name}: {n} item(ns)", "en": "• {name}: {n} item(s)"},
+    "digest.weather": {
+        "pt": "🌤 {place}: {sky}, {low}–{high}°C, chuva {rain}% (Open-Meteo)",
+        "en": "🌤 {place}: {sky}, {low}–{high}°C, rain {rain}% (Open-Meteo)",
+    },
+    "digest.sky.clear": {"pt": "céu limpo", "en": "clear"},
+    "digest.sky.cloudy": {"pt": "nublado", "en": "cloudy"},
+    "digest.sky.fog": {"pt": "neblina", "en": "fog"},
+    "digest.sky.drizzle": {"pt": "garoa", "en": "drizzle"},
+    "digest.sky.rain": {"pt": "chuva", "en": "rain"},
+    "digest.sky.snow": {"pt": "neve", "en": "snow"},
+    "digest.sky.storm": {"pt": "tempestade", "en": "storm"},
+    "digest.server_title": {"pt": "🖥 Servidor", "en": "🖥 Server"},
+    "digest.server": {
+        "pt": "carga {load} · RAM {mem}% · disco {disk}% · no ar há {days} dia(s)",
+        "en": "load {load} · RAM {mem}% · disk {disk}% · up {days} day(s)",
+    },
+    "digest.server_temp": {"pt": " · {temp}°C", "en": " · {temp}°C"},
+    "digest.ai_cost": {"pt": "💸 IA: US$ {yesterday} ontem · US$ {month} no mês",
+                       "en": "💸 AI: US$ {yesterday} yesterday · US$ {month} this month"},
+    "digest.adguard_title": {"pt": "🛡 AdGuard (24h)", "en": "🛡 AdGuard (24h)"},
+    "digest.adguard": {"pt": "{queries} consultas · {blocked} bloqueadas ({pct}%)",
+                       "en": "{queries} queries · {blocked} blocked ({pct}%)"},
+    "digest.adguard_top": {"pt": "mais bloqueados: {domains}\nclientes mais ativos: {clients}",
+                           "en": "most blocked: {domains}\nmost active clients: {clients}"},
+    "bot.satellite_code": {
+        "pt": "No seu computador, rode:\nta satellite login {code}\n"
+              "O código vale 5 minutos e funciona uma vez só.\n"
+              "Se você indexar pastas ([rag] no config), quem administra a casa também "
+              "pode buscar nelas.",
+        "en": "On your computer, run:\nta satellite login {code}\n"
+              "The code works once, for 5 minutes.\n"
+              "If you index folders ([rag] in the config), whoever runs the house can "
+              "search them too.",
+    },
+    "bot.calendar_unconfigured": {
+        "pt": "A agenda do Google ainda não foi configurada no servidor (GOOGLE_CLIENT_ID).",
+        "en": "Google Calendar is not set up on the server yet (GOOGLE_CLIENT_ID).",
+    },
+    "bot.calendar_link": {
+        "pt": "1. Abra este link e autorize: {url}\n2. No fim, o navegador vai mostrar um "
+              "erro de página — é esperado.\n3. Copie o endereço da barra e cole aqui.",
+        "en": "1. Open this link and allow access: {url}\n2. At the end the browser shows "
+              "a page error — that is expected.\n3. Copy the address bar and paste it here.",
+    },
+    "bot.calendar_connected": {"pt": "Agenda conectada: {account} ✓",
+                               "en": "Calendar connected: {account} ✓"},
+    "bot.calendar_failed": {
+        "pt": "Não consegui conectar a agenda. O link vale 10 minutos e uma vez só — "
+              "mande /conectar_agenda de novo.",
+        "en": "I couldn't connect the calendar. The link works once, for 10 minutes — "
+              "send /connect_calendar again.",
+    },
+    # Gmail, read-only (F9, D40).
+    "bot.mail_link": {
+        "pt": "Vou ler seus e-mails e escrever rascunhos, só quando você pedir. Enviar, só você "
+              "envia. Nada fica guardado.\n"
+              "1. Abra este link e autorize: {url}\n2. O Google pode avisar que o app não "
+              "foi verificado: é o seu próprio servidor, pode seguir em “Avançado”.\n"
+              "3. No fim, o navegador mostra um erro de página — é esperado. Copie o "
+              "endereço da barra e cole aqui.",
+        "en": "I will read your email and write drafts, only when you ask. Only you send. "
+              "Nothing is kept.\n"
+              "1. Open this link and allow access: {url}\n2. Google may warn the app is "
+              "unverified: it is your own server, go on through “Advanced”.\n"
+              "3. At the end the browser shows a page error — that is expected. Copy the "
+              "address bar and paste it here.",
+    },
+    "bot.mail_connected": {"pt": "E-mail conectado (leitura e rascunhos): {account} ✓",
+                           "en": "Email connected (reading and drafts): {account} ✓"},
+    "bot.mail_failed": {
+        "pt": "Não consegui conectar o e-mail. O link vale 10 minutos e uma vez só — "
+              "mande /conectar_email de novo. Numa conta de trabalho, o administrador "
+              "pode ter bloqueado apps não verificados.",
+        "en": "I couldn't connect the email. The link works once, for 10 minutes — "
+              "send /connect_email again. On a work account, the admin may have blocked "
+              "unverified apps.",
+    },
+    "agent.sources": {"pt": "Fontes: {list}", "en": "Sources: {list}"},
+    "cli.queued": {
+        "pt": "Sem servidor agora — anotada aqui e enviada quando ele voltar ({n} na fila).",
+        "en": "No server right now — kept here and sent when it is back ({n} queued).",
+    },
+    "cli.flushed": {"pt": "{n} nota(s) da fila enviada(s).", "en": "{n} queued note(s) sent."},
+    "cli.satellite_no_server": {
+        "pt": "Defina TA_SERVER (ex.: http://192.168.0.10:7777) para usar esta máquina como "
+              "Satellite.",
+        "en": "Set TA_SERVER (e.g. http://192.168.0.10:7777) to use this machine as a Satellite.",
+    },
+    "cli.satellite_need_code": {
+        "pt": "Falta o código: peça ao bot com /satellite.",
+        "en": "The code is missing: ask the bot with /satellite.",
+    },
+    "cli.satellite_logged_in": {"pt": "Pronto. Token guardado em {path}.",
+                                "en": "Done. Token kept in {path}."},
+    "cli.satellite_status": {
+        "pt": "servidor: {server}\ncredencial: {token}\nna fila: {queued}",
+        "en": "server: {server}\ncredential: {token}\nqueued: {queued}",
+    },
+    "cli.satellite_synced": {
+        "pt": "Pastas: {sent} arquivo(s) enviado(s), {forgotten} esquecido(s).",
+        "en": "Folders: {sent} file(s) sent, {forgotten} forgotten.",
+    },
+    "cli.passwd_new": {"pt": "Nova senha de configuração: ", "en": "New config password: "},
+    "cli.passwd_again": {"pt": "De novo: ", "en": "Again: "},
+    "cli.passwd_short": {"pt": "Use pelo menos {n} caracteres.",
+                         "en": "Use at least {n} characters."},
+    "cli.passwd_mismatch": {"pt": "As duas não conferem.", "en": "They do not match."},
+    "cli.passwd_done": {
+        "pt": "Senha definida. Abra /config no board (vale na hora, sem reiniciar).",
+        "en": "Password set. Open /config on the board (it works now, no restart).",
+    },
+    "cli.yes": {"pt": "sim", "en": "yes"},
+    "cli.no": {"pt": "não", "en": "no"},
+    "bot.hello": {
+        "pt": "Oi! Tudo o que você mandar aqui vira nota.",
+        "en": "Hi! Everything you send here becomes a note.",
     },
     # ── CLI ─────────────────────────────────────────────────────────────────
     # A linha de uma nota no `ta note` e no `ta list`. Estava fixa em português —
@@ -389,7 +699,11 @@ MESSAGES: dict[str, dict[str, str]] = {
     "cap.mic": {"pt": "Microfone", "en": "Microphone"},
     "cap.home": {"pt": "Home Assistant", "en": "Home Assistant"},
     "cap.lighter": {"pt": "Lighter (ringlight)", "en": "Lighter (ringlight)"},
-    "cap.ai": {"pt": "IA (Gemini)", "en": "AI (Gemini)"},
+    "cap.ai": {"pt": "IA", "en": "AI"},
+    "cap.telegram": {"pt": "Telegram (bot)", "en": "Telegram (bot)"},
+    "cap.rag": {"pt": "Busca nas pastas", "en": "Folder search"},
+    "cap.gcal": {"pt": "Agenda do Google", "en": "Google Calendar"},
+    "cap.voice": {"pt": "Voz (transcrição)", "en": "Voice (transcription)"},
     "cli.doctor_summary": {
         "pt": "{live}/{total} disponíveis. O que está marcado com — é opcional.",
         "en": "{live}/{total} available. Anything marked with — is optional.",

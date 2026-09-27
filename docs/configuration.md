@@ -24,7 +24,10 @@ Every one of these is optional.
 |---|---|---|
 | `TA_HOST` | `127.0.0.1` | Address to listen on. Anything else **requires** `TA_TOKEN` or the daemon refuses to start |
 | `TA_PORT` | `7777` | Port |
+| `TA_ADMIN_PASSWORD_HASH` | *(none)* | The config page's password, as a scrypt hash. Set it with `ta passwd`, never by hand |
 | `TA_TOKEN` | *(none)* | Shared secret required from any client that is not on this machine. See [`SECURITY.md`](../SECURITY.md) |
+| `TA_SERVER` | *(none)* | On a Satellite (a laptop of a server install): the server's address. The CLI talks to it, and `ta note` queues locally when it does not answer |
+| `TA_PUBLIC_URL` | *(guessed)* | The address a phone uses to reach the board, for the link the Telegram bot sends with `/board`. Unset, it is this machine's LAN address and `TA_PORT`, which is right for a home server and wrong behind a reverse proxy |
 | `TA_DB` | `~/.local/share/ta/ta.db` | Where the SQLite file lives. `make demo` uses this to stay away from your real notes |
 | `TA_LANG` | your locale | `pt` or `en`. Governs the capture parser, the interface and the model's output language ([ADR 0013](adr/0013-one-language-at-a-time.md)) |
 
@@ -48,11 +51,39 @@ load it. That cost an afternoon once.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `GEMINI_API_KEY` | *(none)* | Enables the AI features. Without it they fail with a message saying so, and everything else is unaffected |
+| `DEEPSEEK_API_KEY` | *(none)* | Enables DeepSeek, the default provider for every AI task |
+| `TA_DEEPSEEK_MODEL` | `deepseek-flash` | Pins a DeepSeek model |
+| `GEMINI_API_KEY` | *(none)* | Enables Gemini, the fallback provider. Either key alone is enough to turn the AI features on; without both they fail with a message saying so, and everything else is unaffected |
 | `TA_GEMINI_MODEL` | `gemini-flash-latest` | Pins a specific model. The default is a moving alias — it never goes stale, at the cost of being able to change behaviour on its own |
 | `TA_AUTO_REVIEW` | `1` | `0` keeps the key but stops the automatic second pass over each capture |
 
 See [ai.md](ai.md) for what each feature costs in model calls.
+
+### Google Calendar
+
+| Variable | Default | What it does |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | *(none)* | Your own OAuth client, for the calendar on a server. Each Member then connects their accounts from the chat with `/conectar_agenda`, and their Gmail (read-only) with `/conectar_email`. See [calendar.md](calendar.md#on-a-server-google-calendar) |
+
+### Digest
+
+| Variable | Default | What it does |
+|---|---|---|
+| `ADGUARD_URL` | *(none)* | AdGuard Home's address, for the Digest's admin-only DNS section (e.g. `http://localhost:8083`). Unset, the section is skipped |
+| `ADGUARD_USER` / `ADGUARD_PASSWORD` | *(none)* | Its web login, if it has one |
+
+### Telegram bot
+
+| Variable | Default | What it does |
+|---|---|---|
+| `TA_WHISPER_MODEL` | `small` | The faster-whisper model for voice notes. `base` is faster and worse; `medium` needs more RAM than a small server has to spare |
+| `TA_WHISPER_COMPUTE` | `int8` | Its precision on the CPU. `int8` is what keeps `small` near a gigabyte |
+| `TA_WHISPER_MAX_SECONDS` | `600` | Longer audio is kept and captured as a placeholder instead of transcribed, so one long recording cannot hold the only transcription slot |
+| `TELEGRAM_BOT_TOKEN` | *(none)* | The token @BotFather gives you. The bot also needs an owner in `config.toml` (below); with only one of the two it does not poll at all |
+
+Which provider answers which task is set in `config.toml` (below). A provider
+with no key is skipped, not failed, so a Gemini-only installation keeps working
+exactly as before ([ADR 0018](adr/0018-llm-providers-routed-per-task.md)).
 
 ## `~/.config/ta/config.toml`
 
@@ -75,7 +106,90 @@ office = ["light.", "switch."]
 
 # Overridden by TA_LANG if that is set. `ta lang en` writes this line for you.
 lang = "en"
+
+# Which AI provider answers. These are the defaults; you only need the section
+# to change them. `fallback = ""` turns the fallback off.
+[llm]
+default = "deepseek"
+fallback = "gemini"
+
+# Per task, overriding the default. The tasks: review_capture (the second pass
+# over each capture), organize, detect_event, digest_prose, priorities, agent (the
+# chat), web_search (always Gemini: it is the one with Google Search grounding),
+# classify (the cheap pass over group messages that finds List items).
+[llm.tasks]
+organize = "gemini"
+
+# The Telegram username allowed to talk to the bot. It is only used once: the first
+# message from it binds that account's numeric id, and from then on the id is what
+# counts, so a changed or stolen username does not change who the bot obeys.
+[channel.telegram]
+owner = "your_username"
+# Groups the bot listens to, by chat id (never by title, which any member of the
+# group can edit). What it does there arrives with the agent, in F4.
+groups = [-1001234567890]
+
+# The people you share the bot with, by Telegram username. Like the owner, the
+# username only pairs once; after that the bot knows them by their numeric id, so
+# a changed or stolen username does not change who is who. Removing someone here
+# revokes them on their next message; what they wrote stays theirs.
+[members.ana]
+grants = ["morador"]
+
+# What a Grant allows. Deny by default: someone with no Grant can capture and
+# read their own notes, and nothing else. The owner holds every Grant.
+[grants.morador]
+entities = ["light.sala", "tomada"]   # entity_ids, domains ("switch.") or groups
+lists = ["compras"]
+admin = false                          # media, the ringlight, server health
+
+# Household Lists, seen by every member. `compras` exists by default; declaring
+# [lists] replaces the default.
+[lists]
+compras = "household"
+
+# Where the house is, for the Digest's weather (Open-Meteo, free for personal home
+# automation, credited in the message). Unset, the Digest has no weather.
+[digest]
+latitude = -23.55
+longitude = -46.63
+place = "São Paulo"
+
+# On a Satellite: folders to index for search by meaning (F7). Secrets and hidden
+# files are skipped. The server needs the [rag] extra.
+[rag]
+folders = ["~/notas"]
+
+# On a Satellite: folders the bot may list, read and send from when you ask
+# (F9, D41). Read-only. Decided here, on the laptop: the server cannot widen it.
+# Hidden files and anything named like a secret are refused.
+[files]
+folders = ["~/Documentos", "~/Downloads"]
+
+# The chat's guardrails (D29, D30). `house_rules` goes into every conversation:
+# a SOFT guardrail that shapes answers, and nothing depends on it for safety. The
+# ceilings are hard: when one is spent, chat and web search stop for the day (or
+# month) and every message is still captured as a note. The owner is told once.
+[chat]
+# Who the bot is, for everyone: a name and a personality, in how it phrases
+# things. Style only — the guardrails do not bend to it.
+bot_name = "Rotombot"
+bot_personality = "Animado e prestativo como um Rotom Phone; solta um 'Bzzzt!' de vez em quando."
+house_rules = "Não dê diagnóstico médico; sugira procurar um profissional."
+daily_usd_per_member = 0.50
+monthly_usd_household = 10.0
+
+# USD per million tokens, for the cost the Digest reports and the ceilings above.
+# DeepSeek ships with its peak price and Gemini with its paid tier: upper bounds,
+# since off-peak and the free tier cost less. A model with no price counts at the
+# most expensive known one, so it cannot slip under a ceiling.
+[llm.prices.gemini-flash-latest]
+input = 0.30
+output = 2.50
 ```
+
+A provider name that does not exist is ignored with a warning in the log, rather
+than quietly sending that task to the fallback forever.
 
 **No secrets here.** This file is not committed, but it is not treated as
 sensitive either — it exists to be readable and edited by hand.

@@ -224,6 +224,10 @@ def _compile(lang: str) -> dict[str, re.Pattern]:
         # Without that, "runs 8h on battery" would become a reminder — the most
         # likely false positive of all.
         time_prep = r"(?<!\S)[àa]s?\s+(\d{1,2})(?::(\d{2})|h(\d{2})?)?\s*(am|pm)?(?!\S)"
+        # "daqui 10 min", "em meia hora", "timer de 15 min" (F9). Only with the
+        # lead-in: a bare "10 min" is a duration ("leva 10 min"), not a moment.
+        delay = (r"(?<!\S)(?:daqui\s+(?:a\s+)?|em\s+|dentro\s+de\s+|timer\s+de\s+)"
+                 r"(\d{1,3}|meia)\s*(min(?:utos?)?|h(?:oras?)?)(?!\w)")
     else:
         # English accepts both orders because both are current: "October 17" and
         # "17 October". `17th` too, which Portuguese does not have.
@@ -238,12 +242,15 @@ def _compile(lang: str) -> dict[str, re.Pattern]:
         # and English cannot live without — and without it `8pm` matched NOTHING,
         # silently, because the `(?!\S)` lookahead failed on the `p`.
         time_prep = r"(?<!\S)at\s+(\d{1,2})(?::(\d{2}))?()\s*(am|pm)?(?!\S)"
+        delay = (r"(?<!\S)(?:in\s+|within\s+|timer\s+for\s+)"
+                 r"(\d{1,3}|half\s+an)\s*(min(?:utes?)?|mins|h(?:ours?)?|hrs?)(?!\w)")
 
     return {
         "day_month": re.compile(day_month, re.IGNORECASE),
         "relative": re.compile(relative, re.IGNORECASE),
         "weekday": re.compile(weekday, re.IGNORECASE),
         "time_prep": re.compile(time_prep, re.IGNORECASE),
+        "delay": re.compile(delay, re.IGNORECASE),
         "retrospective": re.compile(
             r"\s+" + subject + r"(" + retro + r")(?!\w)", re.IGNORECASE
         ),
@@ -408,6 +415,18 @@ def _nl_date(raw: str, today: date) -> date | None:
     return None
 
 
+def _nl_delay(raw: str) -> timedelta | None:
+    """A moment given as a delay from now: "daqui 10 min", "in half an hour"."""
+    m = _re("delay").search(raw)
+    if m is None:
+        return None
+    amount = 0.5 if not m[1].isdigit() else int(m[1])   # "meia", "half an"
+    hours = m[2].lower().startswith("h")
+    if amount <= 0 or (not hours and not m[1].isdigit()):
+        return None      # "meia min" is nothing
+    return timedelta(hours=amount) if hours else timedelta(minutes=amount)
+
+
 def _nl_time(raw: str, *, requires_preposition: bool) -> time | None:
     """A time written in the current language.
 
@@ -488,6 +507,9 @@ def parse(raw: str, *, now: datetime | None = None) -> ParsedNote:
     # The text is NOT altered: the expression is part of the sentence.
     if due is None:
         due = _nl_date(raw, today)
+
+    if remind_at is None and due is None and (delay := _nl_delay(raw)) is not None:
+        remind_at = (now + delay).replace(second=0, microsecond=0)
 
     if remind_at is None:
         clock = _nl_time(raw, requires_preposition=due is None)

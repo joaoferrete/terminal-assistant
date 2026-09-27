@@ -40,3 +40,16 @@ What survives intact, and is the part that mattered:
   only changes when you drag or ask for `organize` — which is exactly why the
   band is derived rather than stored.
 - Dragging still beats the model, through the same `pinned_by_user`.
+
+## Amendment, 2026-09-25: a conversation has a model in it; capture still does not
+
+V2 adds a bot you talk to, and understanding "turn off the light" versus "I should
+cache the fleet endpoint" takes a model. So the model now sits on the path of a
+*conversation*. What this ADR protects is kept by a stronger invariant instead of the
+old sentence: **every message addressed to the bot is either handled or becomes a
+Note.** When the model is unavailable, the message is captured deterministically,
+exactly as `ta note` would have done. See [ADR 0017](0017-the-bot-handles-or-captures.md).
+
+Capture from a Satellite still never waits: with the server away, it queues locally
+([ADR 0015](0015-a-server-and-its-satellites.md)). And opening the board still never
+calls a model.

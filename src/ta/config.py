@@ -10,6 +10,7 @@ project, and it cost an afternoon.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tomllib
@@ -80,6 +81,18 @@ class Config:
     ha_url: str = "http://localhost:8123"
     ha_token: str | None = None
     gemini_api_key: str | None = None
+    deepseek_api_key: str | None = None
+    telegram_token: str | None = None
+    # Our own OAuth client for Google Calendar (D14), from Google Cloud Console.
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    # The address a phone uses to reach the board, for the link the bot sends.
+    # Unset, it is guessed from this machine's LAN address, which is right for a
+    # home server and wrong behind a reverse proxy.
+    public_url: str | None = None
+    # A Satellite's server (F6): set on the laptop, the CLI talks to it instead of
+    # to a daemon on this machine, e.g. http://192.168.68.189:7777.
+    server: str | None = None
     # The daemon's OWN credential, not a third party's. Only required when the
     # bind leaves loopback; on loopback it stays None and local use is unchanged.
     token: str | None = None
@@ -100,6 +113,12 @@ class Config:
             ha_url=os.environ.get("HA_URL", "http://localhost:8123").rstrip("/"),
             ha_token=os.environ.get("HA_TOKEN") or None,
             gemini_api_key=os.environ.get("GEMINI_API_KEY") or None,
+            deepseek_api_key=os.environ.get("DEEPSEEK_API_KEY") or None,
+            telegram_token=os.environ.get("TELEGRAM_BOT_TOKEN") or None,
+            google_client_id=os.environ.get("GOOGLE_CLIENT_ID") or None,
+            google_client_secret=os.environ.get("GOOGLE_CLIENT_SECRET") or None,
+            public_url=os.environ.get("TA_PUBLIC_URL") or None,
+            server=(os.environ.get("TA_SERVER") or "").rstrip("/") or None,
             token=os.environ.get("TA_TOKEN") or None,
             auto_review=os.environ.get("TA_AUTO_REVIEW", "1") not in ("0", "false", "no"),
             echo_entities=tuple(
@@ -109,9 +128,19 @@ class Config:
 
     @property
     def base_url(self) -> str:
-        """The address the CLI uses to reach the daemon."""
+        """The address the CLI uses to reach the daemon — the server's, on a Satellite."""
+        if self.server:
+            return self.server
         host = "127.0.0.1" if self.host in ("0.0.0.0", "::") else self.host  # noqa: S104
         return f"http://{host}:{self.port}"
+
+    def credential(self) -> str | None:
+        """What the CLI presents to a remote server: this Member's Satellite token
+        if `ta satellite login` ran, else `TA_TOKEN` (which only the Owner has).
+        Loopback needs neither (ADR 0012)."""
+        if not self.server:
+            return None
+        return satellite_token() or self.token
 
     @property
     def exposed(self) -> bool:
@@ -300,3 +329,227 @@ def resolve_targets(term: str, entities: list[dict]) -> list[str]:
     if lights:
         return lights
     return [e["entity_id"] for e in entities if matches(e, "switch.")]
+
+
+# Which provider answers each LLM task (ADR 0018). DeepSeek is the default
+# because it is cheaper, Gemini the fallback; `config.toml` can change both and
+# route single tasks elsewhere:
+#
+#     [llm]
+#     default = "deepseek"
+#     fallback = "gemini"
+#     [llm.tasks]
+#     organize = "gemini"
+DEFAULT_LLM_ROUTING = ("deepseek", "gemini")
+
+
+def llm_routing() -> tuple[str, str | None, dict[str, str]]:
+    """(default, fallback, per-task routes), with unknown names dropped loudly.
+
+    A typo such as `deepseak` would otherwise route the task to a provider that
+    does not exist, which the chain skips — and the task would quietly run on the
+    fallback forever, with nobody knowing the setting was ignored.
+    """
+    from .providers import PROVIDER_NAMES
+
+    raw = _user_config().get("llm", {})
+    raw = raw if isinstance(raw, dict) else {}
+
+    def known(value, where: str) -> str | None:
+        if value in PROVIDER_NAMES:
+            return value
+        log.warning("config.toml: %s = %r is not a provider %s; ignored", where, value,
+                    PROVIDER_NAMES)
+        return None
+
+    default = DEFAULT_LLM_ROUTING[0]
+    if "default" in raw:
+        default = known(raw["default"], "llm.default") or default
+    fallback: str | None = DEFAULT_LLM_ROUTING[1]
+    if "fallback" in raw:
+        fallback = known(raw["fallback"], "llm.fallback") if raw["fallback"] else None
+
+    tasks = raw.get("tasks", {})
+    routes = {}
+    for task, value in (tasks.items() if isinstance(tasks, dict) else ()):
+        if (name := known(value, f"llm.tasks.{task}")) is not None:
+            routes[str(task)] = name
+    return default, fallback, routes
+
+
+def llm_prices() -> dict:
+    """USD per million tokens, per model: the built-ins, plus `[llm.prices]`.
+
+        [llm.prices.gemini-flash-latest]
+        input = 0.30
+        output = 2.50
+
+    A malformed entry is dropped with a warning rather than priced at zero,
+    because zero would read as "free" in the Digest.
+    """
+    from .usage import DEFAULT_PRICES, Price
+
+    raw = _user_config().get("llm", {})
+    raw = raw.get("prices", {}) if isinstance(raw, dict) else {}
+    prices = dict(DEFAULT_PRICES)
+    for model, entry in (raw.items() if isinstance(raw, dict) else ()):
+        try:
+            prices[str(model)] = Price(input=float(entry["input"]), output=float(entry["output"]))
+        except (KeyError, TypeError, ValueError):
+            log.warning("config.toml: llm.prices.%s needs numeric input and output; ignored",
+                        model)
+    return prices
+
+
+def telegram_owner() -> str | None:
+    """The Owner's Telegram username from `[channel.telegram] owner`, normalised.
+
+    Only used to *pair* (D21): the first message from this username binds its
+    numeric id, and from then on the id is what counts. `@` and case are dropped
+    because Telegram usernames are case-insensitive and people type the `@`.
+    """
+    raw = _user_config().get("channel", {})
+    raw = raw.get("telegram", {}) if isinstance(raw, dict) else {}
+    owner = raw.get("owner") if isinstance(raw, dict) else None
+    if not isinstance(owner, str) or not owner.strip().lstrip("@"):
+        return None
+    return owner.strip().lstrip("@").lower()
+
+
+def grants_config() -> tuple[dict, dict]:
+    """(`[members]`, `[grants]`) from config.toml, parsed by `grants.py`."""
+    from . import grants
+
+    raw = _user_config()
+    return grants.invited(raw.get("members", {})), grants.load(raw.get("grants", {}))
+
+
+DEFAULT_LISTS = {"compras": "household"}
+
+
+def lists_config() -> dict[str, str]:
+    """`[lists]` — name → scope. `compras` exists unless the file says otherwise.
+
+    Declared by the Owner (decided 2026-09-25), so the model can only put items in
+    Lists that exist, and "Compras", "compras do mês" and "mercado" do not grow
+    side by side. Only household Lists are declared here for now: a personal List
+    belongs to one Member, and creating those is F4's, from the chat or the board.
+    """
+    raw = _user_config().get("lists")
+    if raw is None:
+        return dict(DEFAULT_LISTS)
+    out = {}
+    for name, scope in (raw.items() if isinstance(raw, dict) else ()):
+        if scope == "household":
+            out[str(name).lower()] = scope
+        else:
+            log.warning("config.toml: lists.%s = %r; only \"household\" is declared here "
+                        "(personal Lists are created from the chat, F4)", name, scope)
+    return out
+
+
+def telegram_groups() -> set[str]:
+    """`[channel.telegram] groups` — the chat ids of groups the bot listens to.
+
+    By id, never by title: a group's title is editable by any of its members.
+    """
+    raw = _user_config().get("channel", {})
+    raw = raw.get("telegram", {}) if isinstance(raw, dict) else {}
+    groups = raw.get("groups", []) if isinstance(raw, dict) else []
+    return {str(g) for g in groups} if isinstance(groups, list) else set()
+
+
+def chat_config() -> dict:
+    """`[chat]` — the soft guardrail and the hard ceilings (D29, D30).
+
+        [chat]
+        house_rules = "Não dê diagnóstico médico; sugira procurar um profissional."
+        daily_usd_per_member = 0.50
+        monthly_usd_household = 10.0
+
+    A ceiling of 0 or less, or a malformed one, falls back to the default rather
+    than to "no ceiling": a typo must not remove the limit.
+    """
+    raw = _user_config().get("chat", {})
+    raw = raw if isinstance(raw, dict) else {}
+
+    def ceiling(key: str, default: float) -> float:
+        value = raw.get(key, default)
+        if isinstance(value, int | float) and value > 0:
+            return float(value)
+        log.warning("config.toml: chat.%s = %r is not a positive number; using %s",
+                    key, value, default)
+        return default
+
+    rules = raw.get("house_rules", "")
+    name = raw.get("bot_name", "")
+    personality = raw.get("bot_personality", "")
+    return {
+        # Who the bot IS, for the whole house — not Persona, which is how it
+        # addresses one Member. Style only: it never overrides a guardrail.
+        "bot_name": name if isinstance(name, str) else "",
+        "bot_personality": personality if isinstance(personality, str) else "",
+        "house_rules": rules if isinstance(rules, str) else "",
+        "daily_usd_per_member": ceiling("daily_usd_per_member", 0.50),
+        "monthly_usd_household": ceiling("monthly_usd_household", 10.0),
+    }
+
+
+def digest_weather() -> dict | None:
+    """`[digest]` latitude/longitude/place, for the weather section. Unset, the
+    Digest simply has no weather — the house's location is not something to guess.
+
+        [digest]
+        latitude = -23.55
+        longitude = -46.63
+        place = "São Paulo"
+    """
+    raw = _user_config().get("digest", {})
+    raw = raw if isinstance(raw, dict) else {}
+    lat, lon = raw.get("latitude"), raw.get("longitude")
+    if not (isinstance(lat, int | float) and isinstance(lon, int | float)):
+        return None
+    return {"latitude": lat, "longitude": lon, "place": str(raw.get("place", ""))}
+
+
+def satellite_file() -> Path:
+    return config_dir() / "satellite.json"
+
+
+def satellite_token() -> str | None:
+    try:
+        return json.loads(satellite_file().read_text()).get("token")
+    except (OSError, ValueError):
+        return None
+
+
+def save_satellite_token(token: str) -> Path:
+    path = satellite_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"token": token}, f)
+    return path
+
+
+def rag_folders() -> list[str]:
+    """`[rag] folders` — on a Satellite, the folders to index for search by meaning.
+
+        [rag]
+        folders = ["~/notas", "~/repos/meu-projeto/docs"]
+    """
+    raw = _user_config().get("rag", {})
+    folders = raw.get("folders", []) if isinstance(raw, dict) else []
+    return [str(f) for f in folders if isinstance(f, str)] if isinstance(folders, list) else []
+
+
+def files_folders() -> list[str]:
+    """`[files] folders` — on a Satellite, the folders the agent may list, read
+    and send from (F9, D41). Decided on the laptop, never by the server.
+
+        [files]
+        folders = ["~/Documentos", "~/Downloads"]
+    """
+    raw = _user_config().get("files", {})
+    folders = raw.get("folders", []) if isinstance(raw, dict) else []
+    return [str(f) for f in folders if isinstance(f, str)] if isinstance(folders, list) else []

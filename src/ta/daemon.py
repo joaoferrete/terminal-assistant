@@ -13,6 +13,8 @@ import contextlib
 import hmac
 import json
 import logging
+import os
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -20,28 +22,64 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from starlette.routing import Route
 
-from . import capabilities, engine, i18n, priorities, store
+from . import (
+    board_access,
+    builtin_tools,  # noqa: F401 - registers the built-in Tools
+    capabilities,
+    engine,
+    grants,
+    i18n,
+    priorities,
+    rag,
+    store,
+    usage,
+)
+from . import digest as digest_mod
+from . import members as members_mod
+from . import memory as memory_mod
 from . import notes as notes_mod
+from . import satellite as satellite_mod
+from . import settings as settings_mod
+from . import tools as tools_mod
 from .actuators.home import Home, HomeError, StateWatcher
 from .actuators.lighter import Lighter
 from .actuators.notify import Notifier
+from .bot import AgentDeps, Bot
+from .channel.telegram import TelegramChannel
 from .config import (
     LOOPBACK,
     Config,
     ConfigError,
     _commandable,
+    chat_config,
     config_dir,
+    config_file,
+    digest_weather,
+    env_file,
+    grants_config,
+    lists_config,
+    llm_prices,
     resolve_entity,
     resolve_targets,
+    telegram_groups,
+    telegram_owner,
 )
-from .db import connect
-from .llm import LLM, LLMUnavailable
+from .config import groups as config_groups
+from .db import connect, default_db_path
+from .llm import LLM, LLMUnavailable, current_member, for_member
+from .members import OWNER, OWNER_ID, SYSTEM, Viewer
 from .scheduler import Scheduler, lateness_label, lateness_of
+from .sensors import gmail as gmail_mod
 from .sensors.calendar import Calendar
+from .sensors.google_calendar import Connector as GoogleConnector
+from .sensors.google_calendar import GoogleCalendar
+from .sensors.google_calendar import Link as GoogleLink
+from .sensors.google_calendar import TokenStore as GoogleTokens
 from .sensors.mic import MicWatcher
+from .speech import Transcriber
 
 log = logging.getLogger("ta")
 
@@ -121,21 +159,103 @@ class TokenAuth(BaseHTTPMiddleware):
             return header[7:].strip()
         return request.query_params.get("token", "")
 
+    def _member(self, request: Request) -> int | None:
+        """Who this request speaks for, or None if it proves nobody."""
+        # A session cookie first: it is the only credential that names a Member
+        # other than the Owner, and it is what survives a reload (T1.7).
+        cookie = request.cookies.get(board_access.COOKIE)
+        if cookie and (member := board_access.session_member(self._token, cookie)):
+            return member
+        # `compare_digest` instead of `==`: comparing a secret with an early
+        # exit leaks the correct prefix through response timing.
+        presented = self._presented(request)
+        if presented and hmac.compare_digest(presented, self._token):
+            return OWNER_ID   # TA_TOKEN is the Owner's own credential
+        # A Satellite's token is a signed session, sent as a Bearer (T6.1).
+        if presented and (member := board_access.session_member(self._token, presented)):
+            return member
+        return OWNER_ID if _peer_local(request) else None
+
     async def dispatch(self, request: Request, call_next):
-        if not _peer_local(request):
-            # `compare_digest` instead of `==`: comparing a secret with an early
-            # exit leaks the correct prefix through response timing.
-            presented = self._presented(request)
-            if not presented or not hmac.compare_digest(presented, self._token):
-                log.warning(
-                    "401 from %s on %s", request.client.host if request.client else "?",
-                    request.url.path,
-                )
-                return JSONResponse(
-                    {"error": i18n.t("auth.missing_credential")},
-                    status_code=401,
-                )
+        code = request.query_params.get("code")
+        if request.url.path == "/board" and code:
+            return self._redeem(request, code)
+        # Trading a one-time code for a Satellite token needs no credential: the
+        # code IS the credential, issued privately by the bot.
+        if request.url.path == "/satellite/redeem":
+            return await call_next(request)
+        member = self._member(request)
+        request.state.viewer = Viewer(member) if member is not None else None
+        if member is None:
+            log.warning(
+                "401 from %s on %s", request.client.host if request.client else "?",
+                request.url.path,
+            )
+            return JSONResponse(
+                {"error": i18n.t("auth.missing_credential")},
+                status_code=401,
+            )
         return await call_next(request)
+
+    def _redeem(self, request: Request, code: str):
+        """Trade a one-time code from the bot for a session cookie (T1.7)."""
+        member = request.app.state.board_codes.redeem(code)
+        if member is None:
+            return JSONResponse({"error": i18n.t("auth.code_used")}, status_code=401)
+        # A redirect, so the code leaves the address bar and the history.
+        resp = RedirectResponse("/board", status_code=303)
+        resp.set_cookie(
+            board_access.COOKIE,
+            board_access.session_cookie(self._token, member),
+            max_age=int(board_access.SESSION_TTL.total_seconds()),
+            httponly=True,
+            # Lax, not Strict. The link is opened from the Telegram app, a
+            # cross-site navigation, and a Strict cookie is withheld from the
+            # redirect that follows it — the first load would 401 with the
+            # cookie sitting right there.
+            samesite="lax",
+            path="/",
+        )
+        return resp
+
+
+def _viewer(request: Request) -> Viewer:
+    """Who this request speaks for. With no `TA_TOKEN` there is no middleware,
+    and the daemon is on loopback: whoever reaches it is on this machine, the
+    Owner's (ADR 0012)."""
+    return getattr(request.state, "viewer", None) or OWNER
+
+
+def _permissions(request: Request) -> grants.Permissions:
+    """What the viewer may do (D12). Read from config.toml each time: it is
+    cached by `_user_config`, and a Grant edited there applies on restart."""
+    return _member_permissions(request.app.state.conn, _viewer(request).member_id)
+
+
+def _member_permissions(conn, member_id: int) -> grants.Permissions:
+    member = members_mod.get(conn, member_id)
+    if member is None:
+        return grants.NOTHING
+    invited, defined = grants_config()
+    return grants.permissions(member.handle, is_owner=member.is_owner, members=invited,
+                              grants=defined, groups=config_groups())
+
+
+def _forbidden() -> JSONResponse:
+    return JSONResponse({"error": i18n.t("api.forbidden")}, status_code=403)
+
+
+def _visible(request: Request, note_id: int) -> store.Note | JSONResponse:
+    """The Note, if this viewer may see it; otherwise the 404 to return.
+
+    Every route that changes a Note goes through here FIRST. Three of them
+    (move, done, status) used to write before checking anything — a 500 on an
+    unknown id, and with Members, a way to edit somebody else's Note by id.
+    """
+    try:
+        return store.get_note(request.app.state.conn, note_id, viewer=_viewer(request))
+    except KeyError:
+        return JSONResponse({"error": i18n.t("api.note_missing", id=note_id)}, status_code=404)
 
 
 def _note_json(n: store.Note, *, today: date | None = None) -> dict:
@@ -168,6 +288,7 @@ def _note_json(n: store.Note, *, today: date | None = None) -> dict:
         "terminal": n.is_terminal,
         "tags": n.tags,
         "deleted_at": n.deleted_at,
+        "list_id": n.list_id,
         # Derived roles, made explicit so the client does not recompute the rule.
         "roles": {"task": n.is_task, "reminder": n.is_reminder},
     }
@@ -255,6 +376,7 @@ async def health(request: Request) -> JSONResponse:
                 "key_configured": bool(cfg.gemini_api_key),
                 "model": app.state.llm.model,
             },
+            "deepseek": {"key_configured": bool(cfg.deepseek_api_key)},
             "calendar": {"available": app.state.calendar.available},
             "mic": {"available": app.state.mic.available, "active": app.state.mic.active},
             "lighter": {"available": app.state.lighter.available},
@@ -272,12 +394,221 @@ async def notes_create(request: Request) -> JSONResponse:
     raw = (body.get("text") or "").strip()
     if not raw:
         return JSONResponse({"error": i18n.t("api.empty_text")}, status_code=400)
-    note = store.add_note(request.app.state.conn, raw)
-    # Review goes out in the background and the 201 comes back now: capture never
-    # waits for the network (ADR 0003). Whatever it changes shows up on the board
-    # at the next reload.
-    _schedule_review(request.app, note)
+    try:
+        captured_at = _captured_at(body.get("captured_at"))
+    except ValueError:
+        return JSONResponse({"error": i18n.t("api.bad_captured_at")}, status_code=400)
+    # The viewer's: before this, a housemate's capture on the board became the
+    # Owner's Note, since every capture path used to be the Owner's.
+    note = _capture(request.app, raw, owner_id=_viewer(request).member_id, now=captured_at)
     return JSONResponse(_note_json(note), status_code=201)
+
+
+def _captured_at(raw) -> datetime | None:
+    """When a queued capture was really written (T6.2, invariant 5).
+
+    A Satellite that was offline sends its Notes later, with the moment they were
+    typed — "amanhã" written on Monday must mean Tuesday, not the day it arrived.
+    Bounded: not in the future, and not older than a month.
+    """
+    if not raw:
+        return None
+    at = datetime.fromisoformat(raw)
+    now = datetime.now()
+    if at > now + timedelta(minutes=5) or at < now - timedelta(days=31):
+        raise ValueError(raw)
+    return at
+
+
+def _agent_deps(app: Starlette) -> AgentDeps:
+    """The agent's collaborators (F4): the built-in Tools plus the household's."""
+    report = tools_mod.load_tools(config_dir() / "tools")
+    for filename, err in report.errors:
+        log.error("tool file %s: %s", filename, err)
+    return AgentDeps(
+        llm=app.state.llm,
+        registry=tools_mod.registered,
+        permissions=lambda member_id: _member_permissions(app.state.conn, member_id),
+        services={
+            "app": app,
+            # The one capture path, so a List item added by the agent is born
+            # like one added on the board (not reviewed, marked as such).
+            "capture": lambda raw, owner_id=OWNER_ID, list_id=None: _capture(
+                app, raw, owner_id=owner_id, list_id=list_id),
+            "digest": lambda member_id: _build_digest(app, member_id),
+            "delete_event": lambda member_id, note_id: _delete_event(app, member_id, note_id),
+            "mail": lambda member_id: gmail_mod.Gmail(
+                member_id, app.state.google_mail, app.state.mail_tokens),
+        },
+        persona=lambda member_id: builtin_tools.persona_line(app.state.conn, member_id),
+        house_rules=lambda: chat_config()["house_rules"],
+        identity=lambda: (chat_config()["bot_name"], chat_config()["bot_personality"]),
+        within_budget=lambda member_id: _within_budget(app.state.conn, member_id),
+    )
+
+
+def _calendar_for(app: Starlette, member_id: int):
+    """The Member's calendar: their Google accounts if connected (D14), else the
+    machine's Evolution calendar — which on a laptop is the Owner's, and on the
+    server is simply unavailable."""
+    connector = getattr(app.state, "google", None)
+    if connector is None or not connector.configured:
+        return app.state.calendar
+    google = GoogleCalendar(member_id, connector, app.state.google_tokens)
+    return google if google.available else app.state.calendar
+
+
+def _calendar_today(app: Starlette, member_id: int):
+    cal = _calendar_for(app, member_id)
+    if not cal.available:
+        return None
+
+    async def read() -> list[dict]:
+        return [_event_json(e) for e in await asyncio.to_thread(cal.today)]
+    return read
+
+
+class _OwnerCalendar:
+    """What Rules see as the calendar: the Owner's, whichever backend it is.
+    Resolved on every call, so connecting Google later needs no restart."""
+
+    def __init__(self, app: Starlette) -> None:
+        self._app = app
+
+    def __getattr__(self, name):
+        return getattr(_calendar_for(self._app, OWNER_ID), name)
+
+
+async def _build_digest(app: Starlette, member_id: int) -> str:
+    """One Member's Digest, now (D15, D35)."""
+    conn = app.state.conn
+    settings = digest_mod.Settings.load(conn, member_id)
+    src = digest_mod.Sources(
+        conn=conn,
+        calendar_today=_calendar_today(app, member_id),
+        weather=digest_weather(),
+        adguard=digest_mod.adguard_from_env(),
+        prices=llm_prices(),
+    )
+    opening = ""
+    # The prose is decoration (ADR 0003): only with a model, within the budget,
+    # and a Digest without it is complete.
+    if app.state.llm.configured and _within_budget(conn, member_id):
+        try:
+            tasks = store.due_today(conn, viewer=Viewer(member_id))
+            with for_member(member_id):
+                opening = await app.state.llm.digest_prose(
+                    [], [{"text": n.text} for n in tasks])
+        except Exception as e:
+            log.info("digest prose skipped: %s", e)
+    return await digest_mod.build(src, member_id,
+                                  is_admin=_member_permissions(conn, member_id).is_admin,
+                                  sections=settings.sections, opening=opening)
+
+
+async def _digest_loop(app: Starlette, *, every: float = 60.0) -> None:
+    """Send each Member's Digest at their hour, once a day (T5.4)."""
+    while True:
+        try:
+            await _send_due_digests(app)
+        except Exception:
+            log.exception("digest round failed")
+        await asyncio.sleep(every)
+
+
+async def _scheduled_loop(app: Starlette, *, every: float = 20.0) -> None:
+    """Run the scheduled actions that are due (F9, D39). Every 20 s: "in 10
+    minutes" should not mean eleven."""
+    while True:
+        try:
+            await app.state.bot.run_scheduled()
+        except Exception:
+            log.exception("scheduled round failed")
+        await asyncio.sleep(every)
+
+
+async def _send_due_digests(app: Starlette, now: datetime | None = None) -> int:
+    now = now or datetime.now()
+    conn, sent = app.state.conn, 0
+    for member in members_mod.all_members(conn):
+        settings = digest_mod.Settings.load(conn, member.id)
+        if not digest_mod.is_due(settings, now):
+            continue
+        chat = conn.execute(
+            "SELECT external_id FROM channel_identities WHERE channel = ? AND member_id = ?",
+            (app.state.channel.name, member.id)).fetchone()
+        if chat is None:
+            continue          # nobody to send it to; try again when they pair
+        text = await _build_digest(app, member.id)
+        await app.state.channel.send(chat[0], text)
+        settings.last = now.date().isoformat()
+        settings.save(conn, member.id)
+        sent += 1
+    return sent
+
+
+def _within_budget(conn, member_id: int, now: datetime | None = None) -> bool:
+    """Under the Member's daily and the household's monthly ceiling (D30)."""
+    limits, prices = chat_config(), llm_prices()
+    now = now or datetime.now()
+    day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return (usage.spent_by_member(conn, member_id, day, prices) < limits["daily_usd_per_member"]
+            and usage.spent_total(conn, day.replace(day=1), prices)
+            < limits["monthly_usd_household"])
+
+
+def _sync_household(conn) -> None:
+    """Members and Lists follow config.toml at every boot (F3).
+
+    Created, never deleted: dropping a line from the file revokes access, but
+    what a person wrote, and the Lists with things in them, stay.
+    """
+    invited, _ = grants_config()
+    members_mod.sync(conn, owner=telegram_owner(), invited=list(invited))
+    now = datetime.now().isoformat(timespec="seconds")
+    for name, scope in lists_config().items():
+        conn.execute(
+            "INSERT OR IGNORE INTO lists (name, scope, owner_id, created_at) VALUES (?, ?, ?, ?)",
+            (name, scope, OWNER_ID, now),
+        )
+
+
+def _board_link(app: Starlette, cfg: Config, member_id: int = OWNER_ID) -> str | None:
+    """The address the bot sends for `/board`, or None if a phone cannot reach it.
+
+    On loopback nothing outside this machine can open it, so there is no link to
+    send. With `TA_TOKEN` the link carries a one-time code; without one, the
+    daemon is on loopback anyway.
+    """
+    if not cfg.exposed or cfg.token is None:
+        return None
+    base = cfg.public_url or (
+        f"http://{addr}:{cfg.port}" if (addr := board_access.lan_address()) else None
+    )
+    if base is None:
+        return None
+    return f"{base.rstrip('/')}/board?code={app.state.board_codes.issue(member_id)}"
+
+
+def _capture(
+    app: Starlette, raw: str, *, owner_id: int = OWNER_ID, list_id: int | None = None,
+    now: datetime | None = None,
+) -> store.Note:
+    """Capture a Note: the one path shared by `POST /notes` and the bot.
+
+    Review goes out in the background and the Note comes back now: capture never
+    waits for the network (ADR 0003). Whatever it changes shows up on the board
+    at the next reload.
+    """
+    note = store.add_note(app.state.conn, raw, owner_id=owner_id, list_id=list_id, now=now)
+    if list_id is not None:
+        # A List item is never reviewed: a model call so "leite" gains a deadline
+        # and a tag is cost with no use. Marking it reviewed is what keeps it out
+        # of the backlog queue too, not just out of this capture's review.
+        store.mark_reviewed(app.state.conn, note.id)
+        return note
+    _schedule_review(app, note)
+    return note
 
 
 # The confidence floor for acting alone. Below it, review does nothing: a wrong
@@ -328,6 +659,25 @@ def _schedule_review(
         task.add_done_callback(app.state.reviews.discard)
 
 
+async def _review_call(app: Starlette, note: store.Note, targets):
+    return await app.state.llm.review_capture(
+        note.text,
+        due=note.due,
+        remind_at=note.remind_at,
+        # The WRITER's Priorities: Ana's note is weighed by what matters to
+        # Ana, not to the Owner (D22).
+        priorities=priorities.current(app.state.conn, note.owner_id) or "",
+        # Only the domain, not the address: it is what decides the routing,
+        # and sending the whole email outside would be extra data for the
+        # same result.
+        accounts=", ".join(
+            f"{'pessoal' if a.personal else 'trabalho'}: "
+            f"{a.account.rsplit('@', 1)[-1] if '@' in a.account else '?'}"
+            for a in targets
+        ),
+    )
+
+
 async def _review_capture(app: Starlette, note_id: int) -> None:
     """Fix what the regex could not know, and create the event if appropriate.
 
@@ -345,7 +695,7 @@ async def _review_capture(app: Starlette, note_id: int) -> None:
 
 async def _review_one(app: Starlette, note_id: int) -> None:
     try:
-        note = store.get_note(app.state.conn, note_id)
+        note = store.get_note(app.state.conn, note_id, viewer=SYSTEM)
     except KeyError:
         return  # deleted before review got to it
 
@@ -356,21 +706,11 @@ async def _review_one(app: Starlette, note_id: int) -> None:
     try:
         # A broad Exception on purpose: this function is optional by design, and
         # nothing it does is worth taking down the daemon or losing the Note.
-        targets = await asyncio.to_thread(app.state.calendar.write_targets)
-        r = await app.state.llm.review_capture(
-            note.text,
-            due=note.due,
-            remind_at=note.remind_at,
-            priorities=priorities.current(app.state.conn) or "",
-            # Only the domain, not the address: it is what decides the routing,
-            # and sending the whole email outside would be extra data for the
-            # same result.
-            accounts=", ".join(
-                f"{'pessoal' if a.personal else 'trabalho'}: "
-                f"{a.account.rsplit('@', 1)[-1] if '@' in a.account else '?'}"
-                for a in targets
-            ),
-        )
+        # The writer's own calendars: Ana's appointment goes into Ana's account.
+        targets = await asyncio.to_thread(_calendar_for(app, note.owner_id).write_targets)
+        # The review serves the Note's writer: it counts against their ceiling.
+        with for_member(note.owner_id):
+            r = await _review_call(app, note, targets)
     except Exception as e:
         # Not marked reviewed: it stays queued for the next capture with network.
         if attempts >= MAX_REVIEW_ATTEMPTS:
@@ -391,6 +731,15 @@ async def _review_one(app: Starlette, note_id: int) -> None:
     if r.confidence < MIN_CONFIDENCE:
         log.info("review of #%s ignored: confidence %.2f", note_id, r.confidence)
         return
+
+    # One message with several things in it (D5): the review PROPOSES the split,
+    # and the writer decides with a button. The model never creates the Notes.
+    parts = [x.strip() for x in (getattr(r, "parts", None) or []) if x and x.strip()]
+    if len(parts) >= 2 and hasattr(app.state, "bot"):
+        try:
+            await app.state.bot.propose_split(note, parts)
+        except Exception:
+            log.exception("could not propose splitting #%s", note_id)
 
     changes: list[str] = []
 
@@ -459,8 +808,19 @@ async def _review_one(app: Starlette, note_id: int) -> None:
         uid = await _create_event_automatically(app, note_id, r, targets)
         if uid:
             changes.append(f"{i18n.t('review.event_created')}: {r.title}")
+            # T5.2, decided 2026-09-26: no confirmation, but said in the writer's
+            # chat at once, with [Undo] (ADR 0007 amendment).
+            bot = getattr(app.state, "bot", None)
+            if bot is not None:
+                try:
+                    await bot.event_created(note, r.title or i18n.t("review.untitled"),
+                                            datetime.fromisoformat(r.start))
+                except Exception:
+                    log.exception("could not tell about the event of #%s", note_id)
 
-    if changes:
+    # The desktop is the Owner's: a housemate's Note, and the event made from
+    # it, is not announced there (the same leak T9.7 found in the Reminders).
+    if changes and note.owner_id == OWNER_ID:
         # Invisible autonomy is worse than none: if the app touched your note or
         # wrote to your calendar, you find out immediately.
         await app.state.notify.send(
@@ -511,8 +871,9 @@ async def _create_event_automatically(app: Starlette, note_id: int, r, targets) 
         log.info("review of #%s returned an invalid date: %r", note_id, r.start)
         return None
 
+    owner = store.get_note(app.state.conn, note_id, viewer=SYSTEM).owner_id
     uid = await asyncio.to_thread(
-        app.state.calendar.create_event, chosen.uid,
+        _calendar_for(app, owner).create_event, chosen.uid,
         r.title or i18n.t("review.untitled"), start_at, end_at,
     )
     if uid:
@@ -522,6 +883,20 @@ async def _create_event_automatically(app: Starlette, note_id: int, r, targets) 
             (note_id, uid, chosen.uid, datetime.now().isoformat(timespec="seconds")),
         )
     return uid
+
+
+async def _delete_event(app: Starlette, member_id: int, note_id: int) -> bool:
+    """Undo an event the review created from the Member's own Note (T5.2)."""
+    conn = app.state.conn
+    row = conn.execute(
+        "SELECT l.uid, l.source_uid FROM calendar_links l JOIN notes n ON n.id = l.note_id"
+        " WHERE l.note_id = ? AND n.owner_id = ?", (note_id, member_id)).fetchone()
+    cal = _calendar_for(app, member_id)
+    if row is None or not hasattr(cal, "delete_event"):
+        return False
+    await asyncio.to_thread(cal.delete_event, row["source_uid"], row["uid"])
+    conn.execute("DELETE FROM calendar_links WHERE note_id = ?", (note_id,))
+    return True
 
 
 def _iso_date(s: str) -> date | None:
@@ -553,7 +928,7 @@ async def review_all(request: Request) -> JSONResponse:
             {"error": i18n.t("api.review_off")}, status_code=400
         )
 
-    n = store.queue_all_for_review(app.state.conn)
+    n = store.queue_all_for_review(app.state.conn, viewer=_viewer(request))
     _schedule_review(app, limite=200)
     return JSONResponse({"queued": n, "running": len(app.state.in_review)})
 
@@ -576,7 +951,11 @@ async def notes_list(request: Request) -> JSONResponse:
     # `deleted=1` returns ONLY the deleted ones: it is the trash, not an "also include".
     deleted = request.query_params.get("deleted") == "1"
     notes = store.list_notes(
-        request.app.state.conn, include_done=include_done, deleted=deleted
+        request.app.state.conn, viewer=_viewer(request), include_done=include_done,
+        deleted=deleted,
+        # List items live in the List view, outside the Horizon order (D7). The
+        # trash still shows them: recovering a deleted item happens there too.
+        in_lists=deleted,
     )
     # Display order comes from here, not from the client: the board's three
     # views, `ta list` and any other consumer get the same order without each
@@ -584,6 +963,222 @@ async def notes_list(request: Request) -> JSONResponse:
     reference_day = date.today()
     notes = store.by_urgency(notes, today=reference_day)
     return JSONResponse({"notes": [_note_json(n, today=reference_day) for n in notes]})
+
+
+async def satellite_signal(request: Request) -> JSONResponse:
+    """A Satellite reports its microphone (T6.3). Only the Owner's: the machine
+    signals drive the Owner's Rules, and a housemate's laptop joining a call is
+    not a reason to turn on the Owner's ring light."""
+    viewer = _viewer(request)
+    if viewer.member_id != OWNER_ID:
+        return _forbidden()
+    body = await request.json()
+    request.app.state.hub.seen(viewer.member_id)
+    if "mic" in body:
+        await request.app.state.on_mic(bool(body["mic"]), list(body.get("apps") or []))
+    return JSONResponse({"ok": True})
+
+
+async def satellite_actions(request: Request) -> JSONResponse:
+    """Long poll: the actions waiting for this Member's Satellite (T6.3)."""
+    wait = min(float(request.query_params.get("wait", 25)), 50)
+    actions = await request.app.state.hub.next(_viewer(request).member_id, wait)
+    return JSONResponse({"actions": actions})
+
+
+async def satellite_answer(request: Request) -> JSONResponse:
+    """A Satellite answers a question the server asked it (F9, D41)."""
+    body = await request.json()
+    ok = request.app.state.hub.answer(_viewer(request).member_id, str(body.get("id", "")),
+                                      body.get("answer") or {})
+    return JSONResponse({"ok": ok}, status_code=200 if ok else 404)
+
+
+# ── The config page (F8, D38) ──────────────────────────────────────────────
+CONFIG_HTML = Path(__file__).parent / "web" / "config.html"
+
+
+def _password_hash(app: Starlette) -> str | None:
+    """Read from `.env` on every login, not from the environment the daemon started
+    with: `ta passwd` writes the file, and the new password should work without a
+    restart."""
+    path = app.state.env_path
+    for line in path.read_text().splitlines() if path.exists() else []:
+        if line.startswith("TA_ADMIN_PASSWORD_HASH="):
+            return line.split("=", 1)[1]
+    return None
+
+
+def _is_owner(request: Request) -> bool:
+    member = members_mod.get(request.app.state.conn, _viewer(request).member_id)
+    return bool(member and member.is_owner)
+
+
+def _config_guard(request: Request) -> JSONResponse | None:
+    """Both factors (D38): the Owner's board session, AND a live config session."""
+    if not _is_owner(request):
+        return _forbidden()
+    member = settings_mod.config_member(
+        _password_hash(request.app), request.cookies.get(settings_mod.CONFIG_COOKIE),
+        time.time())
+    if member != _viewer(request).member_id:
+        return JSONResponse({"error": i18n.t("config.login_needed")}, status_code=401)
+    return None
+
+
+async def config_page(request: Request) -> HTMLResponse:
+    if not _is_owner(request):
+        return HTMLResponse(i18n.t("api.forbidden"), status_code=403)
+    html = CONFIG_HTML.read_text(encoding="utf-8").replace(
+        I18N_MARKER, json.dumps(i18n.catalogo(), ensure_ascii=False), 1)
+    return HTMLResponse(html, headers={"Cache-Control": "no-store, must-revalidate"})
+
+
+async def config_login(request: Request) -> JSONResponse:
+    if not _is_owner(request):
+        return _forbidden()
+    stored = _password_hash(request.app)
+    if not stored:
+        return JSONResponse({"error": i18n.t("config.no_password")}, status_code=409)
+    password = (await request.json()).get("password") or ""
+    # scrypt is slow on purpose; off the loop, so a login cannot stall the bot.
+    if not await asyncio.to_thread(settings_mod.verify_password, password, stored):
+        log.warning("config login refused")
+        return JSONResponse({"error": i18n.t("config.wrong_password")}, status_code=401)
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(settings_mod.CONFIG_COOKIE,
+                    settings_mod.config_cookie(stored, _viewer(request).member_id, time.time()),
+                    max_age=settings_mod.CONFIG_TTL, httponly=True, samesite="strict",
+                    path="/config")
+    return resp
+
+
+async def config_state(request: Request) -> JSONResponse:
+    if (refused := _config_guard(request)) is not None:
+        return refused
+    return JSONResponse({"toml": settings_mod.read(config_file()),
+                         "env": settings_mod.read_env(request.app.state.env_path)})
+
+
+async def config_save(request: Request) -> JSONResponse:
+    if (refused := _config_guard(request)) is not None:
+        return refused
+    body = await request.json()
+    try:
+        if body.get("fields") or body.get("tables"):
+            settings_mod.write(config_file(), body)
+        if body.get("env"):
+            settings_mod.write_env(request.app.state.env_path,
+                                   {k: str(v) for k, v in body["env"].items()
+                                    if k in settings_mod.ENV_FIELDS})
+    except settings_mod.Invalid as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    # What the daemon reads per request (Grants, aliases, house rules) applies now.
+    from .config import _user_config
+
+    _user_config.cache_clear()
+    return JSONResponse({"ok": True})
+
+
+async def config_secret(request: Request) -> JSONResponse:
+    if (refused := _config_guard(request)) is not None:
+        return refused
+    body = await request.json()
+    key, value = body.get("key", ""), (body.get("value") or "").strip()
+    if key not in settings_mod.SECRETS or not value:
+        return JSONResponse({"error": i18n.t("api.nothing_to_do")}, status_code=400)
+    try:
+        settings_mod.write_env(request.app.state.env_path, {key: value})
+    except settings_mod.Invalid as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    log.warning("secret %s replaced from the config page", key)
+    return JSONResponse({"ok": True})
+
+
+async def config_restart(request: Request) -> JSONResponse:
+    """Exit with a failure code, so systemd's `Restart=on-failure` brings the daemon
+    back with the new settings. Scheduled after the response, so the page hears
+    that it worked."""
+    if (refused := _config_guard(request)) is not None:
+        return refused
+    log.warning("restart requested from the config page")
+    _exit_soon(RESTART_EXIT_CODE)
+    return JSONResponse({"ok": True})
+
+
+def _exit_soon(code: int) -> None:
+    """Its own function so a test can replace it without touching asyncio."""
+    asyncio.get_running_loop().call_later(0.5, os._exit, code)
+
+
+# Any non-zero code makes `Restart=on-failure` restart the unit. 75 is EX_TEMPFAIL:
+# "try again", which is what this is.
+RESTART_EXIT_CODE = 75
+
+
+async def rag_manifest(request: Request) -> JSONResponse:
+    """A Satellite says which files it has, by hash (F7). The answer: which of them
+    to send, and the files it no longer has are forgotten."""
+    files = (await request.json()).get("files") or {}
+    me = _viewer(request).member_id
+    known = rag.manifest(request.app.state.conn, me)
+    gone = [p for p in known if p not in files]
+    rag.forget(request.app.state.conn, me, gone)
+    return JSONResponse({"need": [p for p, sha in files.items() if known.get(p) != sha],
+                         "forgotten": len(gone)})
+
+
+async def rag_file(request: Request) -> JSONResponse:
+    body = await request.json()
+    path, sha, text = body.get("path"), body.get("sha"), body.get("text") or ""
+    if not path or not sha:
+        return JSONResponse({"error": i18n.t("api.nothing_to_do")}, status_code=400)
+    embedder = request.app.state.embedder
+    if isinstance(embedder, rag.Embedder) and not rag.available():
+        return JSONResponse({"error": i18n.t("api.rag_missing")}, status_code=503)
+    pieces, vectors = await asyncio.to_thread(rag.embed_file, embedder, text)
+    n = rag.store_file(request.app.state.conn, member_id=_viewer(request).member_id,
+                       path=path, sha=sha, pieces=pieces, vectors=vectors)
+    return JSONResponse({"chunks": n})
+
+
+async def satellite_redeem(request: Request) -> JSONResponse:
+    """A one-time code from the bot (`/satellite`) → this Member's Satellite token."""
+    code = ((await request.json()).get("code") or "").strip()
+    member = request.app.state.satellite_codes.redeem(code)
+    token = request.app.state.config.token
+    if member is None or not token:
+        return JSONResponse({"error": i18n.t("auth.code_used")}, status_code=401)
+    return JSONResponse({"token": board_access.session_cookie(token, member)})
+
+
+async def lists_route(request: Request) -> JSONResponse:
+    """The Lists the viewer sees, with their open items (T3.5)."""
+    perms = _permissions(request)
+    return JSONResponse({"lists": [
+        {"id": lv.id, "name": lv.name, "scope": lv.scope,
+         # Whether the viewer may add to it: a household List needs the Grant,
+         # one's own personal List never does.
+         "writable": lv.scope == "personal" or perms.list_(lv.name),
+         "items": [_note_json(n) for n in lv.items]}
+        for lv in store.lists_for(request.app.state.conn, viewer=_viewer(request))
+    ]})
+
+
+async def list_add(request: Request) -> JSONResponse:
+    list_id = int(request.path_params["list_id"])
+    text = ((await request.json()).get("text") or "").strip()
+    if not text:
+        return JSONResponse({"error": i18n.t("api.empty_text")}, status_code=400)
+    viewer = _viewer(request)
+    lv = next((x for x in store.lists_for(request.app.state.conn, viewer=viewer)
+               if x.id == list_id), None)
+    if lv is None:
+        return JSONResponse({"error": i18n.t("api.list_missing")}, status_code=404)
+    if lv.scope == "household" and not _permissions(request).list_(lv.name):
+        return _forbidden()
+    note = _capture(request.app, text, owner_id=viewer.member_id, list_id=list_id)
+    return JSONResponse(_note_json(note), status_code=201)
 
 
 async def notes_delete(request: Request) -> JSONResponse:
@@ -594,12 +1189,10 @@ async def notes_delete(request: Request) -> JSONResponse:
     """
     note_id = int(request.path_params["note_id"])
     conn = request.app.state.conn
-    try:
-        store.get_note(conn, note_id)
-    except KeyError:
-        return JSONResponse({"error": i18n.t("api.note_missing", id=note_id)}, status_code=404)
+    if isinstance(found := _visible(request, note_id), JSONResponse):
+        return found
     store.soft_delete(conn, note_id)
-    return JSONResponse(_note_json(store.get_note(conn, note_id)))
+    return JSONResponse(_note_json(store.get_note(conn, note_id, viewer=_viewer(request))))
 
 
 async def notes_purge(request: Request) -> JSONResponse:
@@ -610,10 +1203,8 @@ async def notes_purge(request: Request) -> JSONResponse:
     """
     note_id = int(request.path_params["note_id"])
     conn = request.app.state.conn
-    try:
-        nota = store.get_note(conn, note_id)
-    except KeyError:
-        return JSONResponse({"error": i18n.t("api.note_missing", id=note_id)}, status_code=404)
+    if isinstance(nota := _visible(request, note_id), JSONResponse):
+        return nota
     if not nota.is_deleted:
         return JSONResponse(
             {"error": i18n.t("api.note_not_in_trash", id=note_id)},
@@ -631,24 +1222,24 @@ async def trash_purge(request: Request) -> JSONResponse:
             {"error": i18n.t("api.confirm_required")},
             status_code=400,
         )
-    n = store.purge_all(request.app.state.conn)
+    n = store.purge_all(request.app.state.conn, viewer=_viewer(request))
     return JSONResponse({"purged": n})
 
 
 async def notes_restore(request: Request) -> JSONResponse:
     note_id = int(request.path_params["note_id"])
     conn = request.app.state.conn
-    try:
-        store.get_note(conn, note_id)
-    except KeyError:
-        return JSONResponse({"error": i18n.t("api.note_missing", id=note_id)}, status_code=404)
+    if isinstance(found := _visible(request, note_id), JSONResponse):
+        return found
     store.restore(conn, note_id)
-    return JSONResponse(_note_json(store.get_note(conn, note_id)))
+    return JSONResponse(_note_json(store.get_note(conn, note_id, viewer=_viewer(request))))
 
 
 async def notes_move(request: Request) -> JSONResponse:
     note_id = int(request.path_params["note_id"])
     body = await request.json()
+    if isinstance(found := _visible(request, note_id), JSONResponse):
+        return found
     store.move_note(
         request.app.state.conn,
         note_id,
@@ -658,7 +1249,9 @@ async def notes_move(request: Request) -> JSONResponse:
         group_name=body.get("group"),
         color=body.get("color"),
     )
-    return JSONResponse(_note_json(store.get_note(request.app.state.conn, note_id)))
+    return JSONResponse(
+        _note_json(store.get_note(request.app.state.conn, note_id, viewer=_viewer(request)))
+    )
 
 
 async def notes_done(request: Request) -> JSONResponse:
@@ -668,8 +1261,10 @@ async def notes_done(request: Request) -> JSONResponse:
     if await request.body():
         done = bool((await request.json()).get("done", True))
     conn = request.app.state.conn
+    if isinstance(found := _visible(request, note_id), JSONResponse):
+        return found
     store.mark_done(conn, note_id) if done else store.mark_undone(conn, note_id)
-    return JSONResponse(_note_json(store.get_note(conn, note_id)))
+    return JSONResponse(_note_json(store.get_note(conn, note_id, viewer=_viewer(request))))
 
 
 async def notes_status(request: Request) -> JSONResponse:
@@ -677,15 +1272,19 @@ async def notes_status(request: Request) -> JSONResponse:
     note_id = int(request.path_params["note_id"])
     status = (await request.json()).get("status", "")
     conn = request.app.state.conn
+    if isinstance(found := _visible(request, note_id), JSONResponse):
+        return found
     try:
         store.set_status(conn, note_id, status)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
-    return JSONResponse(_note_json(store.get_note(conn, note_id)))
+    return JSONResponse(_note_json(store.get_note(conn, note_id, viewer=_viewer(request))))
 
 
 async def export(request: Request) -> PlainTextResponse:
-    return PlainTextResponse(store.export_markdown(request.app.state.conn))
+    return PlainTextResponse(
+        store.export_markdown(request.app.state.conn, viewer=_viewer(request))
+    )
 
 
 async def board(request: Request) -> HTMLResponse:
@@ -728,13 +1327,15 @@ async def today(request: Request) -> JSONResponse:
         with contextlib.suppress(Exception):
             await warm
 
-    events = await asyncio.to_thread(app.state.calendar.today, day)
+    events = await asyncio.to_thread(_calendar_for(app, _viewer(request).member_id).today, day)
     # `day` rather than `date.today()`: with `--date`, the band has to be counted
     # against the requested day, otherwise everything it returns becomes
     # `overdue`. Only `overdue` and `today` appear here, because `due_today`
     # filters `due <= day`.
     reference_day = day or date.today()
-    tasks = store.by_urgency(store.due_today(app.state.conn, today=day), today=reference_day)
+    tasks = store.by_urgency(
+        store.due_today(app.state.conn, viewer=_viewer(request), today=day), today=reference_day
+    )
     # The weather goes into the Digest because it was asked for, and degrades to
     # None silently: the Digest must not fail because Home Assistant is down.
     weather = None
@@ -766,6 +1367,12 @@ async def home_light(request: Request) -> JSONResponse:
             return JSONResponse(
                 {"error": i18n.t("api.no_match", termo=termo)}, status_code=404
             )
+        # Only what the viewer's Grant covers (D12). All out of reach is a 403,
+        # not a 404: the Entity exists, it is just not theirs to switch.
+        perms = _permissions(request)
+        targets = [e for e in targets if perms.entity(e)]
+        if not targets:
+            return _forbidden()
         # With no explicit brightness, turning a light on means turning it fully
         # on. The `switch` domain ignores the value (see `Home.switch_on`), so
         # the default changes nothing for a plug.
@@ -788,6 +1395,7 @@ async def home_off(request: Request) -> JSONResponse:
     body = await request.json() if await request.body() else {}
     target = body.get("entity")
     home = request.app.state.home
+    perms = _permissions(request)
     try:
         if target:
             entities = resolve_targets(target, await home.entities("light.", "switch."))
@@ -795,20 +1403,26 @@ async def home_off(request: Request) -> JSONResponse:
                 return JSONResponse(
                     {"error": i18n.t("api.no_match", termo=target)}, status_code=404
                 )
+            if not (entities := [e for e in entities if perms.entity(e)]):
+                return _forbidden()
         else:
             # With no target, turn off everything that is on. Never a hardcoded
             # list: the inventory belongs to Home Assistant (ADR 0001).
+            # "Everything" means everything THIS viewer may switch: a housemate's
+            # "turn it all off" must not reach the Owner's bedroom mid-call.
             entities = [
                 e["entity_id"]
                 for e in await home.entities("light.", "switch.")
-                if e["state"] == "on" and _commandable(e)
+                if e["state"] == "on" and _commandable(e) and perms.entity(e["entity_id"])
             ]
         resultados = []
         for entity in entities:
             await home.turn_off(entity)
             estado, confirmado = await home.confirm(entity, "off")
             resultados.append({"entity_id": entity, "state": estado, "confirmed": confirmado})
-        await request.app.state.lighter.enable(False)
+        # The ringlight is the Owner's desk, not the house's.
+        if perms.is_admin:
+            await request.app.state.lighter.enable(False)
     except HomeError as e:
         return JSONResponse({"error": str(e)}, status_code=502)
     return JSONResponse({"turned_off": [r["entity_id"] for r in resultados], "results": resultados})
@@ -827,13 +1441,17 @@ async def home_entities(request: Request) -> JSONResponse:
         ents = await request.app.state.home.entities("light.", "switch.", "media_player.")
     except HomeError as e:
         return JSONResponse({"error": str(e)}, status_code=502)
+    perms = _permissions(request)
     return JSONResponse(
-        {"entities": [{"entity_id": e["entity_id"], "state": e["state"]} for e in ents]}
+        {"entities": [{"entity_id": e["entity_id"], "state": e["state"]} for e in ents
+                      if perms.entity(e["entity_id"])]}
     )
 
 
 async def media(request: Request) -> JSONResponse:
     """Media on the Echos. Zero Alexa code: they are Home Assistant `media_player`s (ADR 0009)."""
+    if not _permissions(request).is_admin:
+        return _forbidden()
     body = await request.json()
     cfg = request.app.state.config
     pedido = (body.get("entity") or "").strip()
@@ -872,6 +1490,8 @@ async def media(request: Request) -> JSONResponse:
 
 
 async def lighter_route(request: Request) -> JSONResponse:
+    if not _permissions(request).is_admin:
+        return _forbidden()
     body = await request.json() if await request.body() else {}
     lg = request.app.state.lighter
     if not lg.available:
@@ -899,13 +1519,14 @@ async def organize(request: Request) -> JSONResponse:
     conn = app.state.conn
     # Deliberately in STORED order, without `by_urgency`: it is what the model
     # has to see in order to refine, and it is the order it will rewrite.
-    notes = store.list_notes(conn)
+    notes = store.list_notes(conn, viewer=_viewer(request))
     if not notes:
         return JSONResponse({"placed": 0, "groups": []})
     reference_day = date.today()
     try:
         res = await app.state.llm.organize(
-            [_note_json(n, today=reference_day) for n in notes], priorities.current(conn) or ""
+            [_note_json(n, today=reference_day) for n in notes],
+            priorities.current(conn, _viewer(request).member_id) or "",
         )
     except LLMUnavailable as e:
         return JSONResponse({"error": str(e)}, status_code=503)
@@ -939,7 +1560,9 @@ async def detect_event(request: Request) -> JSONResponse:
     note_id = body.get("note_id")
     text = body.get("text")
     if note_id is not None:
-        text = store.get_note(app.state.conn, int(note_id)).text
+        if isinstance(found := _visible(request, int(note_id)), JSONResponse):
+            return found
+        text = found.text
     if not text:
         return JSONResponse({"error": "falta text ou note_id"}, status_code=400)
     try:
@@ -994,23 +1617,24 @@ async def create_event(request: Request) -> JSONResponse:
 async def priorities_route(request: Request) -> JSONResponse:
     app = request.app
     conn = app.state.conn
+    me = _viewer(request).member_id
     if request.method == "GET":
         return JSONResponse(
-            {"content": priorities.current(conn), "questions": priorities.QUESTIONS}
+            {"content": priorities.current(conn, me), "questions": priorities.QUESTIONS}
         )
     body = await request.json()
     if "answers" in body:
         conteudo = priorities.from_answers(body["answers"])
-        priorities.save(conn, conteudo)
+        priorities.save(conn, conteudo, member_id=me)
         return JSONResponse({"content": conteudo})
     if "instruction" in body:
         try:
-            conteudo = await priorities.rewrite(conn, app.state.llm, body["instruction"])
+            conteudo = await priorities.rewrite(conn, app.state.llm, body["instruction"], me)
         except LLMUnavailable as e:
             return JSONResponse({"error": str(e)}, status_code=503)
         return JSONResponse({"content": conteudo})
     if "content" in body:
-        priorities.save(conn, body["content"])
+        priorities.save(conn, body["content"], member_id=me)
         return JSONResponse({"content": body["content"]})
     return JSONResponse({"error": i18n.t("api.nothing_to_do")}, status_code=400)
 
@@ -1020,7 +1644,9 @@ async def digest_prose(request: Request) -> JSONResponse:
     app = request.app
     events = await asyncio.to_thread(app.state.calendar.today)
     reference_day = date.today()
-    tasks = store.by_urgency(store.due_today(app.state.conn), today=reference_day)
+    tasks = store.by_urgency(
+        store.due_today(app.state.conn, viewer=_viewer(request)), today=reference_day
+    )
     try:
         text = await app.state.llm.digest_prose(
             [_event_json(e) for e in events], [_note_json(n, today=reference_day) for n in tasks]
@@ -1062,18 +1688,31 @@ async def _fire_reminders(app: Starlette, now: datetime) -> None:
     conn = app.state.conn
     for note in store.pending_reminders(conn, now=now):
         late = lateness_label(lateness_of(note.remind_at, now))
-        await app.state.notify.send("Lembrete", f"{note.text}{late}", urgency="critical")
-
-        for echo in app.state.config.echo_entities:
-            with contextlib.suppress(HomeError):
-                await app.state.home.announce(echo, f"Lembrete: {note.text}")
+        # The desktop, the house speakers and the Rules are the Owner's. Before F9
+        # every Member's Reminder went to them: a housemate's "ligar pro médico"
+        # would have popped up on the Owner's laptop, and been read aloud.
+        mine = note.owner_id == OWNER_ID
+        if mine:
+            await app.state.notify.send(i18n.t("reminder.title"), f"{note.text}{late}",
+                                        urgency="critical")
+            for echo in app.state.config.echo_entities:
+                with contextlib.suppress(HomeError):
+                    await app.state.home.announce(echo, f"{i18n.t('reminder.title')}: {note.text}")
 
         store.mark_fired(conn, note.id, now=now)
-        log.info("reminder #%s disparado%s", note.id, late)
-        await engine.dispatch(
-            app.state.rules,
-            _make_context(app, engine.Trigger("reminder", note.id), note=_note_json(note)),
-        )
+        log.info("reminder #%s fired%s", note.id, late)
+        # And to its writer's private chat, whoever they are (F9).
+        bot = getattr(app.state, "bot", None)
+        if bot is not None:
+            try:
+                await bot.remind(note, late)
+            except Exception:
+                log.exception("reminder #%s could not reach the chat", note.id)
+        if mine:
+            await engine.dispatch(
+                app.state.rules,
+                _make_context(app, engine.Trigger("reminder", note.id), note=_note_json(note)),
+            )
 
 
 def _wire_engine(app: Starlette) -> None:
@@ -1095,11 +1734,32 @@ def _wire_engine(app: Starlette) -> None:
         )
 
     app.state.mic = MicWatcher(on_mic)
+    # The same callback serves a Satellite's report (F6): the meeting Rule does
+    # not know whether the microphone is on this machine or on the Owner's laptop.
+    app.state.on_mic = on_mic
     app.state.scheduler = Scheduler(on_time, lambda now: _fire_reminders(app, now))
     app.state.state_watcher = StateWatcher(app.state.home, on_state)
 
 
 # ── App ─────────────────────────────────────────────────────────────────────
+def _usage_recorder(app: Starlette):
+    """Write each answered model call to `llm_usage` (ADR 0018).
+
+    Never raises. The call it describes already succeeded, and failing it over
+    the bookkeeping would throw away a review the user is waiting for.
+    """
+    prices = llm_prices()
+
+    def on_usage(provider: str, model: str, task: str, spent) -> None:
+        try:
+            usage.record(app.state.conn, provider=provider, model=model, task=task,
+                         usage=spent, prices=prices, member_id=current_member())
+        except Exception:
+            log.exception("could not record model usage for %s/%s", provider, task)
+
+    return on_usage
+
+
 def create_app(
     config: Config | None = None,
     *,
@@ -1107,6 +1767,8 @@ def create_app(
     rules_dir=None,
     calendar=None,
     lighter=None,
+    channel=None,
+    env_path=None,
     background: bool = True,
 ) -> Starlette:
     """Monta o app.
@@ -1134,16 +1796,68 @@ def create_app(
         app.state.in_review = set()
         app.state.review_sem = asyncio.Semaphore(CONCURRENT_REVIEWS)
         app.state.conn = connect(db_path)
+        # Untranscribed audio lives next to the database: same owner, same
+        # backup, and a test's temporary database takes its audio with it.
+        db_path_resolved = Path(db_path) if db_path else default_db_path()
         app.state.home = Home(cfg.ha_url, cfg.ha_token)
         # `lighter` is injectable for the same reason as `calendar`: without it,
         # every test that boots the app runs a real `gsettings` and changes the
         # user's extension settings — including leaving `auto-switch` on at
         # shutdown. A test does not touch the desktop.
+        app.state.env_path = env_path if env_path is not None else env_file()
+        app.state.hub = satellite_mod.Hub()
+        app.state.embedder = rag.Embedder()
+        app.state.satellite_codes = board_access.BoardCodes()
         app.state.lighter = lighter if lighter is not None else Lighter()
         app.state.notify = Notifier()
+        # On a server there is no desktop: the Owner's Satellite is the ring light
+        # and the notification (F6). A laptop running the daemon keeps its own.
+        if not app.state.lighter.available:
+            app.state.lighter = satellite_mod.RemoteLighter(app.state.hub, OWNER_ID)
+        if not app.state.notify.available:
+            app.state.notify = satellite_mod.RemoteNotifier(app.state.hub, OWNER_ID)
         app.state.calendar = calendar if calendar is not None else Calendar()
-        app.state.llm = LLM(cfg.gemini_api_key)
-        app.state.cal_adapter = CalendarAdapter(app.state.calendar)
+        app.state.llm = LLM.from_config(cfg)
+        app.state.llm.on_usage = _usage_recorder(app)
+        app.state.google = GoogleConnector(cfg.google_client_id, cfg.google_client_secret)
+        app.state.google_tokens = GoogleTokens(db_path_resolved.parent / "google")
+        # Gmail, read-only (D40): the same OAuth client, its own scope and tokens.
+        app.state.google_mail = GoogleConnector(cfg.google_client_id, cfg.google_client_secret,
+                                                scopes=gmail_mod.SCOPES)
+        app.state.mail_tokens = GoogleTokens(db_path_resolved.parent / "google-mail")
+        app.state.cal_adapter = CalendarAdapter(_OwnerCalendar(app))
+        # Injectable like `calendar`: a test hands in a fake and never reaches
+        # Telegram.
+        app.state.channel = channel if channel is not None else TelegramChannel(
+            cfg.telegram_token
+        )
+        _sync_household(app.state.conn)
+        # Conversation Memory has a retention (D13). At boot is enough: the daemon
+        # restarts on every deploy, and a few extra days of memory harm nothing.
+        if forgotten := memory_mod.forget_older(app.state.conn):
+            log.info("forgot %d message(s) past the retention", forgotten)
+        app.state.board_codes = board_access.BoardCodes()
+        app.state.bot = Bot(
+            app.state.conn,
+            app.state.channel,
+            capture=lambda raw, owner_id=OWNER_ID: _capture(app, raw, owner_id=owner_id),
+            owner_username=telegram_owner(),
+            board_link=lambda member_id: _board_link(app, cfg, member_id),
+            invited=lambda: set(grants_config()[0]),
+            allowed_groups=telegram_groups,
+            transcriber=Transcriber(),
+            audio_dir=db_path_resolved.parent / "audio",
+            # The agent only when a model is there to drive it: without one, every
+            # text is captured, which is F1's behaviour and keeps invariant 1.
+            agent=_agent_deps(app) if app.state.llm.configured else None,
+            calendar_link=GoogleLink(app.state.google, app.state.google_tokens),
+            mail_link=GoogleLink(app.state.google_mail, app.state.mail_tokens,
+                                 account=gmail_mod.account_of),
+            # Only when the daemon is reachable from other machines with a token:
+            # otherwise there is no server for a Satellite to join.
+            satellite_code=(lambda member_id: app.state.satellite_codes.issue(member_id))
+            if cfg.exposed and cfg.token else (lambda member_id: None),
+        )
 
         report = engine.load_rules(rules_path)
         app.state.rules, app.state.rule_errors = report.rules, report.errors
@@ -1174,6 +1888,14 @@ def create_app(
                 asyncio.create_task(app.state.mic.run(), name="mic"),
                 asyncio.create_task(app.state.state_watcher.run(), name="state"),
             ]
+            # Without an Owner to pair there is nobody the bot may answer, so it
+            # does not poll at all rather than read messages it would drop.
+            if app.state.channel.configured and telegram_owner():
+                tasks.append(asyncio.create_task(
+                    app.state.channel.run(app.state.bot.handle), name="channel"
+                ))
+                tasks.append(asyncio.create_task(_digest_loop(app), name="digest"))
+                tasks.append(asyncio.create_task(_scheduled_loop(app), name="scheduled"))
         log.info(
             "daemon up on %s | %d rule(s), %d error(s)",
             cfg.base_url, len(app.state.rules), len(app.state.rule_errors),
@@ -1186,6 +1908,8 @@ def create_app(
             await asyncio.gather(*tasks, return_exceptions=True)
             await app.state.lighter.hand_back()
             await app.state.home.close()
+            if hasattr(app.state.channel, "close"):
+                await app.state.channel.close()
             app.state.conn.close()
 
     return Starlette(
@@ -1198,6 +1922,20 @@ def create_app(
             Route("/health", health),
             Route("/notes", notes_create, methods=["POST"]),
             Route("/notes", notes_list, methods=["GET"]),
+            Route("/lists", lists_route),
+            Route("/satellite/signal", satellite_signal, methods=["POST"]),
+            Route("/satellite/actions", satellite_actions),
+            Route("/satellite/answer", satellite_answer, methods=["POST"]),
+            Route("/satellite/redeem", satellite_redeem, methods=["POST"]),
+            Route("/rag/manifest", rag_manifest, methods=["POST"]),
+            Route("/config", config_page),
+            Route("/config/login", config_login, methods=["POST"]),
+            Route("/config/state", config_state),
+            Route("/config/save", config_save, methods=["POST"]),
+            Route("/config/secret", config_secret, methods=["POST"]),
+            Route("/config/restart", config_restart, methods=["POST"]),
+            Route("/rag/file", rag_file, methods=["POST"]),
+            Route("/lists/{list_id:int}/items", list_add, methods=["POST"]),
             Route("/notes/{note_id:int}/move", notes_move, methods=["POST"]),
             Route("/notes/{note_id:int}/done", notes_done, methods=["POST"]),
             Route("/notes/{note_id:int}/status", notes_status, methods=["POST"]),

@@ -71,3 +71,16 @@ network.
   somebody else's machine.
 - **`/health` still reports the presence of a secret, never its value.** The
   discipline is old and now has a test.
+
+## Amendment, 2026-09-25: several people, so a token per person
+
+With several Members and private Notes ([ADR 0016](0016-members-private-by-default-acting-as-the-author.md)),
+one shared token cannot say *who* is looking, and on a home server "arriving from
+loopback" no longer means "the owner". So:
+
+- The board is entered through a **magic link** requested from the Channel: a
+  one-time link, valid for five minutes, that becomes a session cookie for that
+  Member. The Channel has already proved who they are.
+- A Satellite authenticates with a token per Member, issued the same way.
+- The bot itself opens no port: the Channel is polled outwards, so the exposure this
+  ADR worried about does not grow.

@@ -103,6 +103,28 @@ class Home:
         domain = entity_id.split(".", 1)[0]
         return await self.call(domain, "turn_off", entity_id)
 
+    async def set_color(self, entity_id: str, color: str,
+                        brightness_pct: int | None = None) -> Any:
+        """A light in a colour: a CSS name ("blue", "warmwhite" is not one),
+        `#rrggbb`, or a temperature like "2700K".
+
+        Only lights have colour; on anything else it is refused rather than
+        silently turned on white, the same lesson as `switch_on`'s brightness.
+        """
+        if not entity_id.startswith("light."):
+            raise HomeError(f"{entity_id} is not a light: it has no colour")
+        extra: dict[str, Any] = {}
+        c = color.strip().lower()
+        if c.startswith("#") and len(c) == 7:
+            extra["rgb_color"] = [int(c[i:i + 2], 16) for i in (1, 3, 5)]
+        elif c.endswith("k") and c[:-1].isdigit():
+            extra["color_temp_kelvin"] = int(c[:-1])
+        else:
+            extra["color_name"] = c
+        if brightness_pct is not None:
+            extra["brightness_pct"] = max(1, min(100, brightness_pct))
+        return await self.call("light", "turn_on", entity_id, **extra)
+
     async def switch_on(self, entity_id: str, brightness_pct: int | None = None) -> Any:
         """Turn the Entity on, aware of its domain.
 

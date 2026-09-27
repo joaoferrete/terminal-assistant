@@ -24,11 +24,12 @@ and a model does not ([ADR 0010](adr/0010-the-clock-orders-the-board.md)).
 ## Turning it on
 
 ```bash
-# get a key at https://aistudio.google.com/apikey
-echo "GEMINI_API_KEY=your-key" >> .env
+# either one is enough; with both, DeepSeek answers and Gemini is the fallback
+echo "DEEPSEEK_API_KEY=your-key" >> .env    # https://platform.deepseek.com/api_keys
+echo "GEMINI_API_KEY=your-key" >> .env      # https://aistudio.google.com/apikey
 systemctl --user restart ta
 
-ta doctor          # AI (Gemini): ok
+ta doctor          # AI: ok
 ```
 
 ## What it adds
@@ -42,9 +43,13 @@ ta doctor          # AI (Gemini): ok
 | Detect an event from text | `ta event` | 1 |
 | The priorities interview | `ta init` | 1 |
 
-Default model is `gemini-flash-latest`, a moving alias — it never goes stale, at
-the cost of being able to change behaviour on its own. Pin it with
-`TA_GEMINI_MODEL` if you would rather have the reverse trade.
+Every task goes to DeepSeek (`deepseek-flash`) first, because it is cheaper, and
+to Gemini (`gemini-flash-latest`) if DeepSeek fails or answers something that does
+not fit the expected shape. A task can be routed elsewhere in `config.toml`; see
+[configuration.md](configuration.md#configtaconfigtoml) and
+[ADR 0018](adr/0018-llm-providers-routed-per-task.md). `gemini-flash-latest` is a
+moving alias: it never goes stale, at the cost of being able to change behaviour
+on its own. Pin either model with `TA_DEEPSEEK_MODEL` or `TA_GEMINI_MODEL`.
 
 ### The second pass
 

@@ -48,7 +48,8 @@ general:
 | **Lights, plugs, sensors** | a Home Assistant + token | the `home` commands say so and exit |
 | **Calendar, `ta today` events** | GNOME Online Accounts + Evolution | the digest still lists your tasks |
 | **Ringlight** | the [Lighter][lighter] GNOME extension | that action does nothing |
-| **AI features** | a Gemini API key | capture, board and rules are untouched |
+| **Telegram bot** | a bot token + your username | you still capture from the terminal and the board |
+| **AI features** | a DeepSeek or Gemini API key | capture, board and rules are untouched |
 
 The AI is genuinely optional, not nominally: **no feature you rely on depends on
 it**, nothing calls a model unless you ask, and opening the board never costs
@@ -94,7 +95,7 @@ Every fact has exactly one home. Start wherever your question is.
 
 | Per feature | |
 |---|---|
-| [Notes and the board](docs/notes.md) | Capture syntax, roles, ordering, the three views |
+| [Notes and the board](docs/notes.md) | Capture syntax, roles, ordering, the four views, Lists |
 | [Home Assistant](docs/home-assistant.md) | From zero: token, entities, aliases, the traps |
 | [Calendar](docs/calendar.md) | Online Accounts, typelibs, the dedicated calendar |
 | [AI](docs/ai.md) | What it adds, what it costs, how to turn it off |
@@ -122,6 +123,13 @@ calendar in particular reads Evolution Data Server through PyGObject, so it want
 the system Python — see [ADR 0005](docs/adr/0005-the-system-python-because-of-pygobject.md),
 because a `python3 -m venv` typed from reflex produces an environment where
 `import gi` fails with no obvious explanation.
+
+It runs on one machine — your laptop — by default. It can also run on an always-on
+home server, where the core and Home Assistant keep working with the laptop
+closed. Your computers then join it as **Satellites**, bringing back the microphone
+and the ring light; see
+[Install → on a home server](docs/install.md#alternative-on-a-home-server). What is
+still being built is in [the V2 plan](docs/PLAN.md).
 
 macOS and Windows are not supported. The core would probably run; nothing else
 would, and nobody has tried.

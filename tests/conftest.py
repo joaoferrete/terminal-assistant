@@ -29,10 +29,16 @@ SUITE_LANGUAGE = "pt"
 
 
 @pytest.fixture(autouse=True)
-def _clean_caches(monkeypatch):
+def _clean_caches(monkeypatch, tmp_path):
     from ta import config, i18n
 
     monkeypatch.setenv("TA_LANG", SUITE_LANGUAGE)
+    # The user configuration is not inherited either. On the author's machine
+    # `[aliases] quarto` points at a real lamp, and a test switching "quarto"
+    # switched that entity instead of the one in its fake inventory (F9). It
+    # passed on CI, which has no config.toml, and failed only where it ran for
+    # real. A test that needs a config.toml writes its own, as test_config_page does.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
     i18n.reset_cache()
     config._user_config.cache_clear()
     yield

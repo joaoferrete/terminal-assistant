@@ -243,7 +243,7 @@ and `ta revise` pushes everything open back into the queue.
 ### Everything AI says it is not configured
 
 ```bash
-ta doctor          # AI (Gemini): —
+ta doctor          # AI: —
 ```
 
 Set `GEMINI_API_KEY` in `.env` and restart. Or do not — capture, the board, the

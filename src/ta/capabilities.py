@@ -148,21 +148,78 @@ def _lighter(_: Config) -> Capability:
 
 
 def _ai(cfg: Config) -> Capability:
-    ok = bool(cfg.gemini_api_key)
+    # Either provider is enough: the routing skips whichever has no key (ADR 0018).
+    ok = bool(cfg.deepseek_api_key or cfg.gemini_api_key)
     return Capability(
         key="ai",
         label=t("cap.ai"),
         ok=ok,
-        reason="" if ok else "GEMINI_API_KEY is not set",
+        reason="" if ok else "neither DEEPSEEK_API_KEY nor GEMINI_API_KEY is set",
         # The sentence says it is optional on purpose: without that, a red line
         # in the table reads as a broken install — and it is not. Almost
         # everything works without it.
-        fix="" if ok else "optional. To enable it: GEMINI_API_KEY in .env",
+        fix="" if ok else "optional. To enable it: DEEPSEEK_API_KEY or GEMINI_API_KEY in .env",
         commands=("init", "priorities", "organize", "prose", "revise", "event"),
     )
 
 
-PROBES = (_notes, _calendar, _mic, _home, _lighter, _ai)
+def _telegram(cfg: Config) -> Capability:
+    from .config import telegram_owner
+
+    has_token, owner = bool(cfg.telegram_token), telegram_owner()
+    ok = has_token and bool(owner)
+    if not has_token:
+        reason = "TELEGRAM_BOT_TOKEN is not set"
+        fix = "optional. Create a bot with @BotFather and put TELEGRAM_BOT_TOKEN in .env"
+    elif not owner:
+        # A token with no owner would poll and answer nobody: say which half is missing.
+        reason = "no owner in config.toml, so the bot would answer nobody"
+        fix = 'add [channel.telegram] owner = "your_username" to config.toml'
+    else:
+        reason = fix = ""
+    return Capability(key="telegram", label=t("cap.telegram"), ok=ok, reason=reason, fix=fix)
+
+
+def _voice(_: Config) -> Capability:
+    from .speech import available
+
+    ok = available()
+    return Capability(
+        key="voice",
+        label=t("cap.voice"),
+        ok=ok,
+        reason="" if ok else "faster-whisper is not installed",
+        fix="" if ok else 'optional. To transcribe voice notes: pip install -e ".[voice]"',
+    )
+
+
+def _gcal(cfg: Config) -> Capability:
+    # The OAuth client only: which Members connected an account is theirs to do
+    # from the chat, and not a property of this machine.
+    ok = bool(cfg.google_client_id and cfg.google_client_secret)
+    return Capability(
+        key="gcal",
+        label=t("cap.gcal"),
+        ok=ok,
+        reason="" if ok else "GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are not set",
+        fix="" if ok else "optional. Create an OAuth client in Google Cloud (docs/calendar.md)",
+    )
+
+
+def _rag(_: Config) -> Capability:
+    from .rag import available
+
+    ok = available()
+    return Capability(
+        key="rag",
+        label=t("cap.rag"),
+        ok=ok,
+        reason="" if ok else "fastembed is not installed",
+        fix="" if ok else 'optional. To search your folders by meaning: pip install -e ".[rag]"',
+    )
+
+
+PROBES = (_notes, _calendar, _mic, _home, _lighter, _ai, _telegram, _voice, _gcal, _rag)
 
 
 def inspect(cfg: Config | None = None) -> list[Capability]:

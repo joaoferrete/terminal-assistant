@@ -48,7 +48,7 @@ flowchart TB
         HOME["actuators/home<br/><i>REST → Home Assistant</i>"]
         LIT["actuators/lighter<br/><i>gsettings → GNOME</i>"]
         NOT["actuators/notify<br/><i>notify-send</i>"]
-        LLM["llm.py<br/><i>Gemini</i>"]
+        LLM["llm.py + providers.py<br/><i>DeepSeek, Gemini</i>"]
     end
 
     MIC --> E
@@ -243,7 +243,7 @@ describing the code, it is deciding) nor `feat` (nothing shipped).
 
 **The scope** is optional, and when present comes from this list so that grepping
 it is reliable: `notes`, `board`, `cli`, `daemon`, `db`, `store`, `home`,
-`calendar`, `mic`, `lighter`, `ai`, `i18n`, `docs`, `ci`, `security`, `rules`.
+`calendar`, `mic`, `lighter`, `ai`, `channel`, `i18n`, `docs`, `ci`, `security`, `rules`.
 If none fits, leave it out rather than inventing one.
 
 **`!` before the colon** means a user has to do something — rotate a token, edit
