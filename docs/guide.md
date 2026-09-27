@@ -237,6 +237,25 @@ private never shows up in a group.
 comes with its links. What a page says can never make the bot act without your
 button.
 
+## Routines
+
+A **Routine** is a named sequence of actions, started by a phrase you choose.
+
+- **Create:** "cria uma rotina chegada que liga a luz da sala e o ventilador,
+  quando eu disser cheguei em casa" (`routine_create`). Up to 10 steps, each one
+  something the bot can do, such as lights and plugs, colours, Lists or music.
+- **Run:** say one of its phrases exactly ("cheguei em casa"). It runs at once
+  with no AI, so it is free. Or say it in other words ("tô chegando, prepara a
+  casa"), or "roda a rotina chegada" (`routine_run`). A scheduled action can run
+  one too: "todo dia às 7h roda a rotina manhã".
+- **The answer** lists each step, with [Undo all].
+- **See and delete:** "quais rotinas eu tenho?" (`routine_list`), "apaga a rotina
+  chegada" (`routine_delete`).
+
+A Routine is **yours** unless you say "da casa" when creating it. Then anyone in
+the house can start it, each with their own permissions: a step someone may not
+do is skipped, and the answer says so. Only you, or the owner, can delete it.
+
 ## Automations
 
 "O que está automatizado?" (`rules_list`) lists your scheduled actions and

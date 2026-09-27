@@ -671,6 +671,6 @@ async def mail_draft(ctx: ToolContext, body: str, to: str = "", subject: str = "
                       receipt={"summary": f"email draft saved in {account}"})
 
 
-# The parity Tools (F10, D47) live in their own module; importing it here is what
-# registers them wherever the built-ins are registered.
-from . import agent_parity  # noqa: E402, F401
+# The parity and Routine Tools (F10) live in their own modules; importing them here
+# is what registers them wherever the built-ins are registered.
+from . import agent_parity, agent_routines  # noqa: E402, F401

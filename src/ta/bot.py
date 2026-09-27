@@ -591,6 +591,8 @@ class Bot:
         # plain "Undo" under "I'll turn it on at 7" reads as undoing the light.
         if undo.get("kind") == "cancel_scheduled":
             return Button(t("bot.btn_cancel_scheduled"), f"undo:{rid}")
+        if undo.get("kind") == "undo_all":
+            return Button(t("bot.btn_undo_all"), f"undo:{rid}")
         return Button(t("bot.btn_undo"), f"undo:{rid}")
 
     async def _text(self, msg: Inbound, member_id: int, text: str) -> None:
@@ -609,6 +611,8 @@ class Bot:
             return
 
         deps = self.agent
+        if await self._routine_phrase(msg, member_id, text):
+            return
         if await self._prerouted(msg, member_id, text):
             return
         if not deps.within_budget(member_id):
@@ -676,6 +680,24 @@ class Bot:
         if cited := agent_mod.format_sources(reply.sources):
             parts.append(cited)
         await self._say(msg, "\n\n".join(parts), buttons or None, rids)
+
+    async def _routine_phrase(self, msg: Inbound, member_id: int, text: str) -> bool:
+        """"Cheguei em casa": one of a Routine's phrases runs it, with no model
+        (D57). True if it was one."""
+        from . import agent_routines, routines
+
+        routine = routines.by_phrase(self.conn, member_id, text)
+        if routine is None:
+            return False
+        turn, ctx = self._turn(msg, member_id)
+        result = await agent_routines.execute(ctx, routine)
+        done = result.receipt or {}
+        rid = self._receipt(msg, member_id, tool="routine_run", summary=done.get(
+            "summary", f"routine {routine.name}"), undo=done.get("undo"))
+        await self._say(msg, agent_routines.report(routine, done),
+                        [self._undo_button(rid, done["undo"])] if done.get("undo") else None,
+                        [rid])
+        return True
 
     async def _prerouted(self, msg: Inbound, member_id: int, text: str) -> bool:
         """Switching the house with no model (D9). True if it was handled."""
@@ -836,8 +858,18 @@ class Bot:
         await self._say(msg, done, buttons, [r.id])
 
     async def _undo(self, msg: Inbound, member_id: int, r) -> None:
-        u = r.undo or {}
-        if u.get("kind") == "delete_calendar_event":
+        await self._apply_undo(msg, member_id, r.undo or {})
+
+    async def _apply_undo(self, msg: Inbound, member_id: int, u: dict) -> None:
+        if u.get("kind") == "undo_all":
+            # A Routine's [Undo all] (D57): each step's own undo, last first, so
+            # the house goes back the way it came.
+            for step in reversed(u.get("undos", [])):
+                try:
+                    await self._apply_undo(msg, member_id, step)
+                except Exception:
+                    log.exception("undoing one step of a routine failed")
+        elif u.get("kind") == "delete_calendar_event":
             build = (self.agent.services if self.agent else {}).get("calendar")
             cal = build(member_id) if build else None
             if cal is not None and hasattr(cal, "delete_event"):

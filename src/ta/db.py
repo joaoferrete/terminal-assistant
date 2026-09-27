@@ -20,7 +20,7 @@ from pathlib import Path
 
 log = logging.getLogger("ta")
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 # The states of a Note. Stored in English because the rest of the vocabulary is
 # (see CONTEXT.md); the translated labels live in the interface.
@@ -409,6 +409,26 @@ MIGRATIONS: list[tuple[int, str]] = [
             last_run_at     TEXT
         );
         CREATE INDEX idx_scheduled_due ON scheduled(state, next_at);
+        """,
+    ),
+    (
+        15,
+        """
+        -- Routines (F10, D57, D58): a named sequence of Tool calls a Member made in
+        -- the chat, started by one of its phrases ("cheguei em casa"). `steps` is a
+        -- JSON list of {"tool", "args"}; `phrases` a JSON list of texts. Private
+        -- unless `scope` is 'household'.
+        CREATE TABLE routines (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id    INTEGER NOT NULL REFERENCES members(id),
+            name        TEXT    NOT NULL,
+            scope       TEXT    NOT NULL DEFAULT 'personal'
+                        CHECK (scope IN ('personal', 'household')),
+            steps       TEXT    NOT NULL,
+            phrases     TEXT    NOT NULL DEFAULT '[]',
+            created_at  TEXT    NOT NULL,
+            deleted_at  TEXT
+        );
         """,
     ),
 ]

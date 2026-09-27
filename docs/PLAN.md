@@ -87,7 +87,7 @@ in its tasks and in Discoveries; this section is only where things stand.*
   `ta-satellite`), `/conectar_agenda`, `/conectar_email`, a timer, and a
   scheduled light.
 - **Next: F10** (D43–D61, ADR 0020), built on `feat/agent-catalogue`, starting
-  with T10.5 (T10.1–T10.4 done; also Telegram formatting and progress messages).
+  with T10.6 (T10.1–T10.5 done; also Telegram formatting and progress messages).
 - Open the PRs for the stack, in order, if the user asks. Each targets the branch
   below it, or everything goes to `main` one after another, whichever the user
   prefers.
@@ -830,7 +830,7 @@ Build order, one stage at a time:
 - [x] **T10.4** Strangers (D60) and invitations from the chat (D59), `/moradores`
       (with each Member's last conversation), and `/satellites` (each computer by name,
       on or off now), asked by the user during the build.
-- [ ] **T10.5** Routines (D57, D58).
+- [x] **T10.5** Routines (D57, D58).
 - [ ] **T10.6** Chat Rules (D46, D54, D45): the store, triggers, conditions,
       firing with [Undo] and [Switch this rule off], plus `/agendado` listing
       everything.

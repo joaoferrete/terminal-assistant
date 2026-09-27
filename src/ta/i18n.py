@@ -577,6 +577,10 @@ MESSAGES: dict[str, dict[str, str]] = {
     "bot.reminder_done": {"pt": "Concluída ✓", "en": "Done ✓"},
     "bot.reminder_snoozed": {"pt": "Te lembro de novo às {at}.",
                              "en": "I'll remind you again at {at}."},
+    # Routines (F10, D57).
+    "bot.btn_undo_all": {"pt": "Desfazer tudo", "en": "Undo all"},
+    "bot.routine_ran": {"pt": "🏠 Rotina {name}:", "en": "🏠 Routine {name}:"},
+    "bot.routine_skipped": {"pt": "⏭️ pulei {what}", "en": "⏭️ skipped {what}"},
     # Scheduled actions (F9, D39).
     "bot.btn_cancel_scheduled": {"pt": "Cancelar agendamento", "en": "Cancel schedule"},
     "bot.scheduled_cancelled": {"pt": "Agendamento cancelado.", "en": "Schedule cancelled."},
