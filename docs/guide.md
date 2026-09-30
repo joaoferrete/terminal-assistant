@@ -451,5 +451,8 @@ Telegram shows the menu.
   Satellite is stopped (`systemctl --user restart ta-satellite`).
 - **A reminder did not ring**: check the time in the reply that confirmed it,
   and ask "quanto falta?".
+- **Times are a few hours off** (an appointment at the wrong hour, "what time
+  is it" answered in UTC): the server is on another time zone. The owner sets
+  `timezone = "America/Sao_Paulo"` (or their own) in `config.toml` and restarts.
 - **The bot says the AI is unavailable**: the note was still taken. The owner
   checks the API keys and the spending ceilings.

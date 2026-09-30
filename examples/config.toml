@@ -20,6 +20,12 @@
 # beats this file; `ta lang en` writes it here for you.
 # lang = "en"
 
+# ── Time zone ───────────────────────────────────────────────────────────────
+# Every hour the bot says, books on the calendar or fires a reminder at is in
+# this zone. Leave it out and it is the machine's own — right on a laptop, often
+# UTC on a server. `TZ` in the environment beats this file.
+# timezone = "America/Sao_Paulo"
+
 # ── Aliases ─────────────────────────────────────────────────────────────────
 # `ta on bedroom` instead of `ta on light.bedroom_lamp`.
 # To discover your own house's `entity_id`s: `ta entities`.

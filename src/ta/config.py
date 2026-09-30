@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 import tomllib
 from dataclasses import dataclass
 from functools import lru_cache
@@ -213,6 +214,35 @@ def _user_config() -> dict:
     except (OSError, tomllib.TOMLDecodeError) as e:
         log.warning("%s ignored: %s", path, e)
         return {}
+
+
+def apply_timezone() -> str | None:
+    """Put this process on the house's clock: `timezone = "America/Sao_Paulo"`.
+
+    Every time in the code is `datetime.now()` — naive, the process's local
+    time — and that was right while the daemon ran on the laptop. On the server
+    it is not: DietPi ships in UTC, and the bot booked appointments, answered
+    "what time is it" and fired reminders three hours off. Setting `TZ` once at
+    boot fixes all of them at the root instead of threading a zone through
+    every `now()`.
+
+    `TZ` already in the environment (or in `.env`) wins, as `TA_LANG` beats
+    `lang`. A name that is not a zone is logged and ignored: `time.tzset()`
+    would silently fall back to UTC, which is the bug again with no trace.
+    """
+    name = _user_config().get("timezone")
+    if os.environ.get("TZ") or not isinstance(name, str) or not name:
+        return os.environ.get("TZ") or None
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        log.warning("config.toml: timezone = %r is not a known zone; ignored", name)
+        return None
+    os.environ["TZ"] = name
+    time.tzset()
+    return name
 
 
 def entity_aliases() -> dict[str, str]:

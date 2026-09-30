@@ -107,6 +107,12 @@ office = ["light.", "switch."]
 # Overridden by TA_LANG if that is set. `ta lang en` writes this line for you.
 lang = "en"
 
+# The house's time zone, for every hour the bot says, books or fires. Unset, it
+# is the machine's own — fine on a laptop, wrong on a server installed in UTC,
+# where appointments came out three hours off. A `TZ` in the environment or in
+# `.env` beats this line. Applies on restart.
+timezone = "America/Sao_Paulo"
+
 # Which AI provider answers. These are the defaults; you only need the section
 # to change them. `fallback = ""` turns the fallback off.
 [llm]

@@ -54,6 +54,7 @@ from .config import (
     Config,
     ConfigError,
     _commandable,
+    apply_timezone,
     chat_config,
     config_dir,
     config_file,
@@ -2050,6 +2051,9 @@ def main() -> None:
     import uvicorn
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    # Before anything reads the clock: the scheduler, the agent's prompt and
+    # every stored timestamp all use the process's local time.
+    apply_timezone()
     cfg = Config.from_env()
     try:
         app = create_app(cfg)

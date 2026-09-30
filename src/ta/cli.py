@@ -17,7 +17,7 @@ import webbrowser
 import httpx
 
 from . import outbox
-from .config import Config, load_env_file
+from .config import Config, apply_timezone, load_env_file
 from .i18n import LANGS, lang, lang_source, reset_cache, t
 
 # The daemon answers fast on everything deterministic. The routes that call the
@@ -956,6 +956,9 @@ def main(argv: list[str] | None = None) -> int:
     # It does not overwrite what is already in the environment, so
     # `TA_LANG=en ta ...` still wins over the line in the file.
     load_env_file()
+    # After the `.env`, so a `TZ` there wins; the Satellite and `ta list` must
+    # print the same hours as the server.
+    apply_timezone()
 
     # The CLI is no place for library logs. Without this, probing the
     # capabilities to build `--help` printed `WARNING`s from Lighter and the

@@ -149,3 +149,42 @@ def test_the_example_rules_are_not_loaded_at_boot():
     assert EXAMPLE_RULES.name == "rules"
     assert EXAMPLE_RULES.parent.name == "examples"
     assert user_rules_dir() != EXAMPLE_RULES
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    """`apply_timezone` changes the process's clock; put it back afterwards."""
+    import time
+
+    monkeypatch.delenv("TZ", raising=False)
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+def test_the_house_timezone_moves_the_process_clock(tmp_path, clock):
+    # The bug: on a UTC server, "marca às 15h" was booked three hours off,
+    # because every time in the code is the process's naive local time.
+    from datetime import datetime
+
+    write(tmp_path, 'timezone = "America/Sao_Paulo"\n')
+    assert cfg_mod.apply_timezone() == "America/Sao_Paulo"
+    assert datetime.now().astimezone().utcoffset().total_seconds() == -3 * 3600
+
+
+def test_tz_in_the_environment_beats_the_file(tmp_path, clock, monkeypatch):
+    import os
+
+    monkeypatch.setenv("TZ", "Europe/Lisbon")
+    write(tmp_path, 'timezone = "America/Sao_Paulo"\n')
+    assert cfg_mod.apply_timezone() == "Europe/Lisbon"
+    assert os.environ["TZ"] == "Europe/Lisbon"
+
+
+def test_an_unknown_timezone_is_ignored_loudly(tmp_path, clock, caplog):
+    import os
+
+    write(tmp_path, 'timezone = "America/Sao_Paul"\n')
+    assert cfg_mod.apply_timezone() is None
+    assert "TZ" not in os.environ
+    assert "timezone" in caplog.text
